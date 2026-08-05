@@ -1,0 +1,296 @@
+<!-- 宠物乐园 Angular 版：外壳 + 导航 + 登录 + 模块容器 -->
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <h1>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 17v4M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M17 7l1.4-1.4M5.6 18.4L7 17"/><circle cx="12" cy="10" r="4" fill="currentColor" stroke="none"/></svg>
+    我的宠物乐园
+  </h1>
+  <div class="clock-badge">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    <span id="clockNum">{{ clockText() }}</span>
+  </div>
+  <div class="coins-badge">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#FFD166" stroke="#D18F00" stroke-width="1.5"/><text x="12" y="16.2" font-size="10.5" font-weight="900" text-anchor="middle" fill="#9C6A00">¥</text></svg>
+    <span>{{ coins }}</span>
+  </div>
+  <div class="top-actions">
+    <button class="icon-btn" (click)="exportData()" title="导出备份">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+    </button>
+    <button class="icon-btn" (click)="fileInput.click()" title="导入恢复">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
+    </button>
+    <button class="icon-btn user-btn" (click)="auth.isLoggedIn ? logout() : openLogin()" [title]="auth.isLoggedIn ? '退出登录' : '登录 / 注册'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+      <span class="user-name">{{ auth.user ? auth.user.nickname : (auth.isLoggedIn ? '退出' : '') }}</span>
+    </button>
+    <input #fileInput type="file" accept=".json,application/json" style="display:none" (change)="onImportFile($event)">
+  </div>
+</header>
+
+<!-- 今日待办 -->
+<section class="today">
+  <h2><span class="dot"></span>今天要处理</h2>
+  <div class="today-list">
+    <div class="task-item" *ngFor="let t of todayList">
+      <div class="txt"><span class="ti">{{ t.icon }}</span>{{ t.text }}</div>
+      <button *ngIf="t.btn" class="b" (click)="t.action()">{{ t.btn }}</button>
+    </div>
+  </div>
+</section>
+
+<!-- 模块容器 -->
+<main class="modules">
+  <section class="module" [class.on]="mod==='home'">
+    <div class="scene3d-wrap">
+      <app-scene3d></app-scene3d>
+      <div class="scene-meta">
+        <button class="weather-chip" (click)="weatherTip()" title="天气自动变化">
+          <span class="weather-emoji">{{ state.state.weather==='rain' ? '🌧️' : '☀️' }}</span>
+          <span>{{ state.state.weather==='rain' ? '下雨' : '晴天' }}</span>
+        </button>
+      </div>
+      <div class="scene-actions">
+        <button class="scene-btn primary" (click)="togglePetOut()" [disabled]="pet.sick" [title]="pet.out ? '叫宠物回家' : '让宠物出门玩'">
+          <span class="btn-emoji">{{ pet.out ? '🏠' : '🚪' }}</span>
+          <span>{{ pet.out ? '叫回家' : '出门玩' }}</span>
+        </button>
+        <button class="scene-btn" (click)="toggleFullscreen()" title="全屏 / 退出（ESC）" aria-label="全屏">
+          <span class="btn-emoji">{{ isFs ? '⤡' : '⤢' }}</span>
+          <span>{{ isFs ? '退出' : '全屏' }}</span>
+        </button>
+      </div>
+      <div class="scene-tip">拖动旋转 · 滚轮缩放 · 右键平移</div>
+    </div>
+    <div class="card">
+      <div class="pet-card">
+        <div class="pet-avatar" [style.background]="pet.sick ? '#E24B4A' : '#FFD166'">
+          <span class="pet-emoji">{{ pet.stage >= 3 ? '🦋' : '🐤' }}</span>
+        </div>
+        <div class="pet-info">
+          <h3>{{ pet.name }} <small>Lv.{{ pet.level }}</small></h3>
+          <div class="meter"><label>饱食</label><div class="bar"><i [style.width.%]="pet.satiety"></i></div><b>{{ pet.satiety }}</b></div>
+          <div class="meter"><label>心情</label><div class="bar"><i [style.width.%]="pet.mood"></i></div><b>{{ pet.mood }}</b></div>
+          <div class="meter"><label>体力</label><div class="bar"><i [style.width.%]="pet.energy"></i></div><b>{{ pet.energy }}</b></div>
+        </div>
+        <div class="pet-actions">
+          <button (click)="state.feed('carrot')" [disabled]="(pet.foods['carrot']||0)<=0">喂胡萝卜 {{ pet.foods['carrot']||0 }}</button>
+          <button (click)="state.feed('tomato')" [disabled]="(pet.foods['tomato']||0)<=0">喂番茄 {{ pet.foods['tomato']||0 }}</button>
+          <button (click)="state.playWithPet()">陪玩 +3</button>
+          <button (click)="state.watchFarm()">看护菜地 +2</button>
+          <button (click)="togglePetOut()" class="primary">{{ outBtnText }}</button>
+          <button *ngIf="pet.sick" (click)="state.buyMedicine()">喂药 20 金</button>
+        </div>
+      </div>
+      <div class="tips" *ngIf="isNight">🌙 天黑啦，注意体力消耗</div>
+    </div>
+  </section>
+
+  <section class="module" [class.on]="mod==='farm'">
+    <div class="card"><h3>🥕 小菜地 <small>Lv.{{ state.state.farm.level }}</small></h3>
+      <div class="grid">
+        <div class="plot" *ngFor="let f of state.state.farm.plots">
+          <div class="plot-crop" *ngIf="f.crop">
+            <b>{{ state.catByCode(f.crop)?.name }}</b>
+            <div class="bar"><i [style.width.%]="(f.grownDays/(state.catByCode(f.crop)?.grow_days||1)*100)"></i></div>
+            <span>{{ f.grownDays >= (state.catByCode(f.crop)?.grow_days ?? 0) ? '成熟啦！' : '成长中' }}</span>
+            <div class="plot-btns">
+              <button *ngIf="f.grownDays >= (state.catByCode(f.crop)?.grow_days ?? 0)" (click)="state.harvestPlot(f.id)">收获</button>
+              <button *ngIf="f.grownDays < (state.catByCode(f.crop)?.grow_days ?? 0)" (click)="state.waterPlot(f.id)">浇水</button>
+            </div>
+          </div>
+          <div class="plot-empty" *ngIf="!f.crop">
+            <span>空地</span>
+            <select #sel (change)="state.plant(f.id, sel.value); sel.value=''">
+              <option value="">种什么…</option>
+              <option *ngFor="let c of state.catsByType('crop')" [value]="c.code" [disabled]="c.level_req > state.state.farm.level">{{ c.name }}（{{ c.price }}金）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="upgrade" *ngIf="state.state.farm.level < 3" (click)="state.upgradeFarm()">升级菜地（{{ state.state.farm.level===1 ? '100' : '250' }}金）</button>
+    </div>
+  </section>
+
+  <section class="module" [class.on]="mod==='pond'">
+    <div class="card"><h3>🐟 小鱼塘 <small>Lv.{{ state.state.pond.level }}</small></h3>
+      <div class="grid">
+        <div class="plot" *ngFor="let f of state.state.pond.fish">
+          <div class="plot-crop" *ngIf="f.type">
+            <b>{{ state.catByCode(f.type)?.name }}</b>
+            <div class="bar"><i [style.width.%]="(f.grownDays/(state.catByCode(f.type)?.grow_days||1)*100)"></i></div>
+            <span>{{ f.grownDays >= (state.catByCode(f.type)?.grow_days ?? 0) ? '长大啦！' : '成长中' }}</span>
+            <div class="plot-btns">
+              <button *ngIf="f.grownDays >= (state.catByCode(f.type)?.grow_days ?? 0)" (click)="state.sellFish(f.id)">捞起卖钱</button>
+              <button *ngIf="f.grownDays < (state.catByCode(f.type)?.grow_days ?? 0)" (click)="state.feedFish(f.id)">喂食</button>
+            </div>
+          </div>
+          <div class="plot-empty" *ngIf="!f.type">
+            <span>空池</span>
+            <select #sel (change)="state.stockFish(f.id, sel.value); sel.value=''">
+              <option value="">买鱼苗…</option>
+              <option *ngFor="let c of state.catsByType('fish')" [value]="c.code" [disabled]="c.level_req > state.state.pond.level">{{ c.name }}（{{ c.price/2 }}金）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="upgrade" *ngIf="state.state.pond.level < 3" (click)="state.upgradePond()">升级鱼塘（{{ state.state.pond.level===1 ? '150' : '350' }}金）</button>
+    </div>
+  </section>
+
+  <section class="module" [class.on]="mod==='ranch'">
+    <div class="card"><h3>🐔 小牧场 <small>Lv.{{ state.state.ranch.level }}</small></h3>
+      <div class="grid">
+        <div class="plot" *ngFor="let a of state.state.ranch.stalls">
+          <div class="plot-crop" *ngIf="a.type">
+            <b>{{ state.catByCode(a.type)?.name }}</b>
+            <div class="bar"><i [style.width.%]="(a.grownDays/(state.catByCode(a.type)?.grow_days||1)*100)"></i></div>
+            <span>{{ a.productReady ? '有' + (state.catByCode(a.type)?.product ?? '产出') + '可收！' : (a.grownDays >= (state.catByCode(a.type)?.grow_days ?? 0) ? '成年啦' : '长大中') }}</span>
+            <div class="plot-btns">
+              <button *ngIf="a.productReady" (click)="state.collectProduct(a.id)">收{{ state.catByCode(a.type)?.product }}(+{{ state.catByCode(a.type)?.prod_price }})</button>
+              <button *ngIf="a.grownDays >= (state.catByCode(a.type)?.grow_days ?? 0) && !a.productReady" (click)="state.sellAnimal(a.id)">卖掉({{ state.catByCode(a.type)?.sell_price }}金)</button>
+              <button *ngIf="a.grownDays < (state.catByCode(a.type)?.grow_days ?? 0)" (click)="state.feedAnimal(a.id)">喂食</button>
+            </div>
+          </div>
+          <div class="plot-empty" *ngIf="!a.type">
+            <span>空栏</span>
+            <select #sel (change)="state.stockAnimal(a.id, sel.value); sel.value=''">
+              <option value="">买幼崽…</option>
+              <option *ngFor="let c of state.catsByType('animal')" [value]="c.code" [disabled]="c.level_req > state.state.ranch.level">{{ c.name }}（{{ c.price/2 }}金）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="upgrade" *ngIf="state.state.ranch.level < 3" (click)="state.upgradeRanch()">升级牧场（{{ state.state.ranch.level===1 ? '150' : '350' }}金）</button>
+    </div>
+  </section>
+
+  <section class="module" [class.on]="mod==='study'">
+    <div class="card">
+      <h3>📚 学习小课堂</h3>
+      <!-- 科目 Tab -->
+      <div class="study-subjects">
+        <button class="study-sub-tab" *ngFor="let subj of studySubjects; let si = index"
+                [class.on]="studySubjectIdx===si" (click)="state.switchStudySubject(si)">
+          {{ studySubjIcon(subj) }} <span>{{ subj.name }}</span>
+          <span *ngIf="state.studySubjectAllDone(subj)" class="done-mark">✓</span>
+        </button>
+      </div>
+      <div class="study-daily">今日已赚金币：{{ studyEarned }} / {{ studyLimit }}（学完一组 +10 金币）</div>
+
+      <!-- 学习会话（答题卡） -->
+      <div *ngIf="studySession" class="study-card">
+        <div class="word-progress">{{ studyCurrentSubj().name }}·{{ studyCurrentGroup().name }}　第 {{ studySession.itemIdx+1 }} / {{ studyCurrentGroup().items.length }} 题</div>
+
+        <!-- 单词卡（英语） -->
+        <ng-container *ngIf="studyCurrentGroup().qType==='card'">
+          <div class="word-icon" [innerHTML]="wordIconSvg(studyCurrentItem().icon)"></div>
+          <div class="word-en">{{ studyCurrentItem().en }}</div>
+          <div class="word-cn">{{ studyCurrentItem().cn }}</div>
+          <div class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.nextStudyItem()">认识啦，下一个</button>
+          </div>
+        </ng-container>
+
+        <!-- 选择题 -->
+        <ng-container *ngIf="studyCurrentGroup().qType==='choice'">
+          <div class="study-q">{{ studyCurrentItem().q }}</div>
+          <div class="study-opts">
+            <button class="study-opt" *ngFor="let op of studyCurrentItem().opts; let oi = index"
+                    [class.correct]="studySession.answered && op===studyCurrentItem().a"
+                    [class.wrong]="studySession.answered && studySession.picked===op && op!==studyCurrentItem().a"
+                    [disabled]="studySession.answered" (click)="state.pickStudyOpt(oi)">{{ op }}</button>
+          </div>
+          <div *ngIf="studySession.answered" class="study-answer" [class.bad]="studySession.picked!==studyCurrentItem().a">
+            {{ studySession.picked===studyCurrentItem().a ? '答对啦！' : '答案是：' + studyCurrentItem().a }}
+          </div>
+          <div *ngIf="studySession.answered" class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.nextStudyItem()">{{ studySession.itemIdx+1 < studyCurrentGroup().items.length ? '下一题' : '完成本组' }}</button>
+          </div>
+        </ng-container>
+
+        <!-- 填空 -->
+        <ng-container *ngIf="studyCurrentGroup().qType==='fill'">
+          <div class="study-q">{{ studyCurrentItem().q }}</div>
+          <div class="study-fill">
+            <input #fillInput type="text" inputmode="numeric" autocomplete="off" placeholder="填上答案" maxlength="12"
+                   (keydown.enter)="state.checkStudyFill(fillInput.value)">
+            <button (click)="state.checkStudyFill(fillInput.value)">确定</button>
+          </div>
+          <div *ngIf="studySession.answered" class="study-answer" [class.bad]="!studySession.fillOk">
+            {{ studySession.fillOk ? '答对啦！' : '答案是：' + studyCurrentItem().a }}
+          </div>
+          <div *ngIf="studySession.answered" class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.nextStudyItem()">{{ studySession.itemIdx+1 < studyCurrentGroup().items.length ? '下一题' : '完成本组' }}</button>
+          </div>
+        </ng-container>
+
+        <!-- 问答 -->
+        <ng-container *ngIf="studyCurrentGroup().qType==='qa'">
+          <div class="study-q">{{ studyCurrentItem().q }}</div>
+          <div *ngIf="!studySession.answered" class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.revealQa()">看答案</button>
+          </div>
+          <div *ngIf="studySession.answered" class="study-answer">{{ studyCurrentItem().a }}</div>
+          <div *ngIf="studySession.answered" class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.nextStudyItem()">{{ studySession.itemIdx+1 < studyCurrentGroup().items.length ? '下一题' : '完成本组' }}</button>
+          </div>
+        </ng-container>
+      </div>
+
+      <!-- 组列表 -->
+      <div *ngIf="!studySession" class="study-groups">
+        <button class="study-grp" *ngFor="let g of studyCurrentSubj().groups; let gi = index"
+                [class.done]="state.studyGroupDone(g.id)" (click)="state.startStudyGroup(studySubjectIdx, gi)">
+          <span class="grp-icon">{{ studyGroupIcon(g.id) }}</span>
+          <span>{{ studyCurrentSubj().name }}·{{ g.name }}</span>
+          <span *ngIf="state.studyGroupDone(g.id)" class="done-mark">✓</span>
+        </button>
+      </div>
+      <div *ngIf="!studySession" class="study-hint">选一组，答完就能赚 <b>10 金币</b>！每天最多赚 {{ studyLimit }} 金币，明天再来。</div>
+    </div>
+  </section>
+
+  <section class="module" [class.on]="mod==='data'">
+    <div class="card"><h3>📊 数据与备份</h3>
+      <div class="data-row">游戏天数：第 {{ (state.state.gameDays|number:'1.0-0') }} 天 · 天气：{{ state.state.weather==='rain' ? '🌧️ 雨' : '☀️ 晴' }}</div>
+      <div class="data-row">数据大小：约 {{ stateSize() }} KB</div>
+      <div class="data-btns">
+        <button (click)="state.exportData()">导出 JSON 备份</button>
+        <button (click)="fileInput2.click()">导入恢复</button>
+        <button (click)="state.loadSampleData()">重置示例数据</button>
+        <input #fileInput2 type="file" accept=".json" style="display:none" (change)="onImportFile($event)">
+      </div>
+      <p class="note">数据只保存在本机浏览器 + 云端账号存档（登录后自动同步）</p>
+    </div>
+  </section>
+</main>
+
+<!-- 底部导航 -->
+<nav class="nav">
+  <button [class.on]="mod==='home'" (click)="switchMod('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>家园</button>
+  <button [class.on]="mod==='farm'" (click)="switchMod('farm')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6m0 0c-3 0-5 2-5 5h2c0-2 1-3 3-3s3 1 3 3h2c0-3-2-5-5-5zM12 14v7M3 21h18"/></svg>菜地</button>
+  <button [class.on]="mod==='pond'" (click)="switchMod('pond')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="9" ry="7"/><path d="M3 12h18M12 5c-1.5 2-1.5 9 0 14M12 5c1.5 2 1.5 9 0 14"/></svg>鱼塘</button>
+  <button [class.on]="mod==='ranch'" (click)="switchMod('ranch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2m-8 0l1 14h8l1-14M10 11v6M14 11v6"/></svg>牧场</button>
+  <button [class.on]="mod==='study'" (click)="switchMod('study')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>学习</button>
+  <button [class.on]="mod==='data'" (click)="switchMod('data')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2m-8 0l1 14h8l1-14M10 11v6M14 11v6"/></svg>数据</button>
+</nav>
+
+<!-- 登录弹层 -->
+<div class="modal-mask" [class.show]="showLogin" (click)="showLogin && closeLogin()">
+  <div class="modal login-box" (click)="$event.stopPropagation()">
+    <h3>登录 / 注册</h3>
+    <input [(ngModel)]="loginUser" placeholder="用户名" autocomplete="off">
+    <input [(ngModel)]="loginPass" type="password" placeholder="密码（至少 6 位）">
+    <p class="login-msg" *ngIf="loginMsg">{{ loginMsg }}</p>
+    <button class="btn-login" (click)="doLogin()" [disabled]="loginBusy">{{ loginBusy ? '登录中…' : '登 录' }}</button>
+    <button class="btn-reg" (click)="doRegister()" [disabled]="loginBusy">注册新账号</button>
+    <button class="btn-ghost" (click)="closeLogin()">暂不登录（本地模式）</button>
+  </div>
+</div>
