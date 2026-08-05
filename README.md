@@ -63,6 +63,42 @@ pet-park/
 
 ## 🚀 快速启动
 
+### ③ Docker 一键部署（推荐，无需本地装 JDK/Node/MySQL）
+
+前提：已安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/) 并启动。
+
+```bash
+# Windows（PowerShell）
+.\deploy.ps1
+
+# Linux / macOS
+./deploy.sh
+```
+
+一键完成：MySQL 容器（自动建表+60题库）→ 后端容器（Maven 打包 fat jar）→ 前端容器（Node 构建 + Nginx 托管 + /api 反代）。
+
+| 服务 | 地址 |
+|------|------|
+| 前端入口 | http://localhost:8081 |
+| 后端 API | http://localhost:8082/api |
+| MySQL | localhost:3307（root/123456，可改 .env） |
+
+常用命令：
+```bash
+.\deploy.ps1 -Logs     # 查看日志
+.\deploy.ps1 -Down     # 停止服务
+.\deploy.ps1 -OnlyUp   # 重新启动（不重建）
+.\deploy.ps1 -Reset    # 重置数据重新部署
+```
+
+自定义端口/密码：复制 `.env.example` 为 `.env` 后修改（FRONTEND_PORT / MYSQL_ROOT_PASSWORD / JWT_SECRET 等）。
+
+Docker 文件说明：
+- `docker-compose.yml`：三服务编排（mysql + backend + frontend）
+- `pet-park-server/Dockerfile`：多阶段构建（Maven → JRE17）
+- `pet-park-ng/Dockerfile` + `nginx.conf`：多阶段构建（Node → Nginx，/api 反代到 backend:8080）
+- `deploy.ps1` / `deploy.sh`：一键脚本（打包/启动/停止/日志/重置）
+
 ### ① 单文件版（最简单，零依赖）
 直接双击打开 `pet-park/index.html`，浏览器即可玩。
 - 所有数据保存在浏览器 localStorage（`wb_petpark_v7`）

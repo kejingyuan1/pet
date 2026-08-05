@@ -1,0 +1,75 @@
+# ============================================================
+# 宠物乐园 一键 Docker 编排
+# 三个服务：mysql（数据库） + backend（Spring Boot）+ frontend（Nginx + Angular）
+#
+# 使用：docker compose up -d --build
+# 访问：http://localhost:8081
+# ============================================================
+
+services:
+  # ---------- MySQL 5.7 ----------
+  mysql:
+    image: mysql:5.7
+    container_name: pet-park-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pet_park}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"        # 宿主机 3307 避免与本地 MySQL 3306 冲突
+    volumes:
+      - mysql-data:/var/lib/mysql           # 数据持久化
+      - ./pet-park-server/src/main/resources/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro   # 首次启动自动建表+种子数据
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-123456}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - pet-park-net
+
+  # ---------- Spring Boot 后端 ----------
+  backend:
+    build: ./pet-park-server
+    container_name: pet-park-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy        # 等 MySQL 健康后再启动
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-pet_park}
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      JWT_SECRET: ${JWT_SECRET:-pet-park-secret-key-please-change-me-0123456789abcdef}
+      SERVER_PORT: 8080
+      TZ: Asia/Shanghai
+    ports:
+      - "${BACKEND_PORT:-8082}:8080"      # 宿主机 8082（可选：调试用；前端走 nginx 反代不直接暴露）
+    networks:
+      - pet-park-net
+
+  # ---------- Nginx + Angular 前端 ----------
+  frontend:
+    build: ./pet-park-ng
+    container_name: pet-park-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8081}:80"       # ★ 访问入口：http://localhost:8081
+    networks:
+      - pet-park-net
+
+volumes:
+  mysql-data:
+
+networks:
+  pet-park-net:
+    driver: bridge

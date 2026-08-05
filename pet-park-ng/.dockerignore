@@ -1,0 +1,10 @@
+# 前端 Docker 构建排除项
+node_modules/
+dist/
+dist-manual/
+out-tsc/
+tmp/
+.playwright-cli/
+.git/
+.idea/
+*.log

@@ -1,0 +1,9 @@
+# 后端 Docker 构建排除项
+target/
+mvn-out.txt
+server.log
+*.class
+*.jar
+.git/
+.idea/
+*.iml
