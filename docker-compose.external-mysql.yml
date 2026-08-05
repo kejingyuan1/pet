@@ -1,0 +1,49 @@
+# ============================================================
+# 宠物乐园 Docker 编排 —— 复用外部 MySQL 版（生产推荐）
+#
+# 适用场景：服务器已有 MySQL（如宝塔面板 3306），Docker 只跑
+#           backend（Spring Boot）+ frontend（Nginx+Angular）
+#
+# 使用：
+#   1. 先手动初始化数据库：mysql -uroot -p --default-character-set=utf8mb4 < production/init.sql
+#   2. cp production/.env.production .env  并修改 DB_HOST / 密码
+#   3. docker compose -f docker-compose.external-mysql.yml up -d --build
+#   4. 访问 http://localhost:8081
+# ============================================================
+
+services:
+  # ---------- Spring Boot 后端（连外部 MySQL） ----------
+  backend:
+    build: ./pet-park-server
+    container_name: pet-park-backend
+    restart: unless-stopped
+    environment:
+      # ★ 外部 MySQL 连接信息（宝塔 MySQL 通常只监听 127.0.0.1，见下方注意事项）
+      DB_HOST: ${DB_HOST:-127.0.0.1}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${MYSQL_DATABASE:-pet_park}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: "${MYSQL_ROOT_PASSWORD:-Bt@Mysql2026!}"
+      JWT_SECRET: ${JWT_SECRET:-please-change-me-0123456789abcdef}
+      SERVER_PORT: 8080
+      TZ: Asia/Shanghai
+    ports:
+      - "${BACKEND_PORT:-8082}:8080"      # 可选：调试用；生产可不暴露
+    networks:
+      - pet-park-net
+
+  # ---------- Nginx + Angular 前端 ----------
+  frontend:
+    build: ./pet-park-ng
+    container_name: pet-park-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8081}:80"       # ★ 访问入口
+    networks:
+      - pet-park-net
+
+networks:
+  pet-park-net:
+    driver: bridge
