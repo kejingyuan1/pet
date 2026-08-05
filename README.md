@@ -1,7 +1,8 @@
-# 我的宠物乐园 · 发布版 v26
+# 我的宠物乐园 · 发布版 v30
 
 > 单文件 HTML 离线版 + Angular 19 前端 + Spring Boot 3 后端 + MySQL 5.7
 > 一站式「种植 / 养鱼 / 放牧 / 学习」个人数字工作台
+> **v30 新增：场景资源化架构 — 房屋/动植物/鱼/地图全部支持外部模型文件（.glb/.gltf）引入**
 
 ---
 
@@ -17,15 +18,22 @@ pet-park/
 ├── pet-park-ng/                      # Angular 19 前端
 │   ├── proxy.conf.json               # /api → 127.0.0.1:8080
 │   ├── package.json                  # 依赖（@angular 19 + three 0.128）
+│   ├── public/
+│   │   └── assets/                   # ★ v30 资源化：外部模型配置
+│   │       ├── scene.config.json     # 场景布局配置（位置/缩放/模型引用）
+│   │       ├── models/               # .glb/.gltf 模型文件（房屋/树/动物/鱼/宠物）
+│   │       ├── textures/             # 贴图
+│   │       └── README.md             # 资源接入指南
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── models.ts            # 类型 + 5 科目 14 组 60 题 题库
 │   │   │   ├── services/
 │   │   │   │   ├── state.service.ts # 游戏逻辑（菜地/鱼塘/牧场/学习）
+│   │   │   │   ├── asset.service.ts # ★ v30 资源加载服务（GLTFLoader + TextureLoader）
 │   │   │   │   ├── auth.service.ts  # JWT 鉴权
 │   │   │   │   └── category.service.ts
 │   │   │   ├── components/
-│   │   │   │   └── scene3d/         # Three.js r128 3D 场景
+│   │   │   │   └── scene3d/         # Three.js r128 3D 场景（v30 资源驱动 + 内置回退）
 │   │   │   ├── app.component.*      # 外壳 + 6 模块导航
 │   │   │   └── app.config.ts
 │   │   └── ...
@@ -88,6 +96,14 @@ npm install
 npm start
 ```
 前端监听 `http://localhost:4200`，所有 `/api/*` 自动代理到 8080（无需在前端暴露后端地址）
+
+#### 步骤 D：替换 3D 模型（可选，v30）
+把 `.glb` / `.gltf` 文件放进 `pet-park-ng/public/assets/models/` 目录
+（如 `house.glb`、`tree.glb`、`chicken.glb`、`goldfish.glb` 等）
+
+然后编辑 `public/assets/scene.config.json` 填模型路径 + 位置 + 缩放。
+
+详细说明见 `pet-park-ng/public/assets/README.md`。模型文件不存在会自动回退内置几何体（不报错）。
 
 ---
 

@@ -1,0 +1,66 @@
+{
+  "_comment": "宠物乐园 3D 场景资源配置（v30 资源化架构）\n后续所有房屋/动植物/鱼/地图都通过外部模型引入：\n1. 把 .glb/.gltf 模型文件放进 public/assets/models/ 目录\n2. 在下方对应条目填写 model 路径、位置、缩放、旋转\n3. 未填 model 的条目自动回退到内置几何体（不报错）\n支持的模型格式：glb / gltf（GLTFLoader，Three.js r128）",
+  "camera": {
+    "position": [3.5, 12, 17],
+    "fov": 42
+  },
+  "ground": {
+    "model": "",
+    "radius": 10,
+    "color": "#7CCE8B"
+  },
+  "sea": {
+    "model": "",
+    "radius": 16,
+    "color": "#4FA8E8",
+    "opacity": 0.55
+  },
+  "buildings": [
+    {
+      "id": "house",
+      "name": "房屋",
+      "model": "assets/models/house.glb",
+      "position": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "rotationY": 0,
+      "fallback": { "color": "#FFE8C8", "roofColor": "#E86A4B" }
+    }
+  ],
+  "trees": [
+    { "id": "tree1", "model": "assets/models/tree.glb", "position": [-4.5, 0, -2.2], "scale": [1, 1, 1], "fallback": { "trunk": "#8A5A22", "crown": "#4EA860" } },
+    { "id": "tree2", "model": "assets/models/tree.glb", "position": [-2.0, 0, 4.5], "scale": [0.9, 1.1, 0.9], "fallback": { "trunk": "#8A5A22", "crown": "#4EA860" } },
+    { "id": "tree3", "model": "assets/models/tree.glb", "position": [3.0, 0, 4.5], "scale": [1.1, 0.95, 1.1], "fallback": { "trunk": "#8A5A22", "crown": "#4EA860" } },
+    { "id": "tree4", "model": "assets/models/tree.glb", "position": [3.0, 0, -3.4], "scale": [1, 1, 1], "fallback": { "trunk": "#8A5A22", "crown": "#4EA860" } },
+    { "id": "tree5", "model": "assets/models/tree.glb", "position": [-1.0, 0, -4.0], "scale": [0.85, 1.05, 0.85], "fallback": { "trunk": "#8A5A22", "crown": "#4EA860" } },
+    { "id": "tree6", "model": "assets/models/tree.glb", "position": [0.5, 0, -4.5], "scale": [1.05, 0.9, 1.05], "fallback": { "trunk": "#8A5A22", "crown": "#4EA860" } }
+  ],
+  "farm": {
+    "model": "assets/models/farm.glb",
+    "position": [0, 0, 0],
+    "size": [1.5, 0.08, 1.3],
+    "color": "#A8845A",
+    "useLayoutSpot": true
+  },
+  "pond": {
+    "model": "assets/models/pond.glb",
+    "position": [0, 0, 0],
+    "radius": 0.85,
+    "color": "#4CC9F0",
+    "opacity": 0.85,
+    "useLayoutSpot": true
+  },
+  "animals": [
+    { "id": "chicken1", "type": "chicken", "model": "assets/models/chicken.glb", "position": [0, 0, 0], "scale": [1, 1, 1], "useRanchStall": 0 },
+    { "id": "duck1", "type": "duck", "model": "assets/models/duck.glb", "position": [0, 0, 0], "scale": [1, 1, 1], "useRanchStall": 1 },
+    { "id": "cow1", "type": "cow", "model": "assets/models/cow.glb", "position": [0, 0, 0], "scale": [1, 1, 1], "useRanchStall": 2 }
+  ],
+  "fish": [
+    { "id": "fish1", "type": "goldfish", "model": "assets/models/goldfish.glb", "position": [0, 0, 0], "scale": [1, 1, 1], "usePondSlot": 0 },
+    { "id": "fish2", "type": "minnow", "model": "assets/models/minnow.glb", "position": [0, 0, 0], "scale": [1, 1, 1], "usePondSlot": 1 }
+  ],
+  "pet": {
+    "model": "assets/models/pet.glb",
+    "scale": [1, 1, 1],
+    "fallback": { "body": "#FFD166", "head": "#FFC46B" }
+  }
+}
