@@ -819,6 +819,7 @@ function onLoginSuccess(data){
   try{ localStorage.setItem("pp_token", data.token); }catch(e){}
   try{ localStorage.setItem("pp_user", JSON.stringify({userId:data.userId, username:data.username, nickname:data.nickname})); }catch(e){}
   closeLogin(); syncUserUI();
+  loadQuestionsRemote();   /* 题库从后端获取 */
   /* 登录后：拉云端存档覆盖本地 */
   apiFetch("/state").then(function(res){
     if(res.code === 0 && res.data && res.data.stateJson){
@@ -937,83 +938,59 @@ catsByType("fish").forEach(function(c){ FISHES[c.code] = { name:c.name, grow:c.g
 var FURNITURE = catsByType("furniture").map(function(c){ return { id:c.code, name:c.name, price:c.price, icon:c.icon }; });
 /* 五科目题库：英语 / 数学 / 汉字 / 成语 / 思维
    题型 qType：choice 选择 | fill 填空 | qa 问答 | card 单词卡（英语） */
-var STUDY_SUBJECTS = [
-  { id:"english", name:"英语", icon:"studyIconEn", groups:[
-    { id:"animals", name:"动物", qType:"card", items:[
-      {en:"cat",cn:"猫",icon:"wordCat"},{en:"dog",cn:"狗",icon:"wordDog"},
-      {en:"bird",cn:"鸟",icon:"wordBird"},{en:"fish",cn:"鱼",icon:"wordFish"},
-      {en:"rabbit",cn:"兔子",icon:"wordRabbit"} ] },
-    { id:"fruits", name:"水果", qType:"card", items:[
-      {en:"apple",cn:"苹果",icon:"wordApple"},{en:"banana",cn:"香蕉",icon:"wordBanana"},
-      {en:"grape",cn:"葡萄",icon:"wordGrape"},{en:"orange",cn:"橙子",icon:"wordOrange"},
-      {en:"watermelon",cn:"西瓜",icon:"wordWatermelon"} ] },
-    { id:"colors", name:"颜色", qType:"card", items:[
-      {en:"red",cn:"红色",icon:"wordRed"},{en:"blue",cn:"蓝色",icon:"wordBlue"},
-      {en:"green",cn:"绿色",icon:"wordGreen"},{en:"yellow",cn:"黄色",icon:"wordYellow"},
-      {en:"pink",cn:"粉色",icon:"wordPink"} ] },
-    { id:"numbers", name:"数字", qType:"card", items:[
-      {en:"one",cn:"一",icon:"wordOne"},{en:"two",cn:"二",icon:"wordTwo"},
-      {en:"three",cn:"三",icon:"wordThree"},{en:"four",cn:"四",icon:"wordFour"},
-      {en:"five",cn:"五",icon:"wordFive"} ] } ] },
-  { id:"math", name:"数学", icon:"studyIconMath", groups:[
-    { id:"add10", name:"10以内加法", qType:"choice", items:[
-      {q:"3 + 4 = ?", opts:["6","7","8","9"], a:"7"},
-      {q:"2 + 5 = ?", opts:["6","7","8","9"], a:"7"},
-      {q:"4 + 4 = ?", opts:["6","7","8","9"], a:"8"},
-      {q:"1 + 9 = ?", opts:["8","9","10","11"], a:"10"},
-      {q:"5 + 2 = ?", opts:["6","7","8","9"], a:"7"} ] },
-    { id:"sub10", name:"10以内减法", qType:"choice", items:[
-      {q:"8 - 3 = ?", opts:["4","5","6","7"], a:"5"},
-      {q:"9 - 4 = ?", opts:["4","5","6","7"], a:"5"},
-      {q:"7 - 2 = ?", opts:["4","5","6","7"], a:"5"},
-      {q:"10 - 6 = ?", opts:["3","4","5","6"], a:"4"},
-      {q:"6 - 1 = ?", opts:["3","4","5","6"], a:"5"} ] },
-    { id:"fill10", name:"数字填空", qType:"fill", items:[
-      {q:"5 + __ = 8", a:"3"},
-      {q:"__ + 2 = 9", a:"7"},
-      {q:"10 - __ = 4", a:"6"},
-      {q:"__ - 3 = 5", a:"8"},
-      {q:"4 + __ = 10", a:"6"} ] } ] },
-  { id:"hanzi", name:"汉字", icon:"studyIconHz", groups:[
-    { id:"basic", name:"认一认", qType:"qa", items:[
-      {q:"“日” 是什么？", a:"太阳。也指“天”，比如：今天、日子。"},
-      {q:"“月” 是什么？", a:"月亮。也指月份，比如：一月、二月。"},
-      {q:"“山” 是什么？", a:"山丘、高山。组词：大山、爬山。"},
-      {q:"“水” 是什么？", a:"水。组词：喝水、水果、河水。"},
-      {q:"“火” 是什么？", a:"火。组词：火车、火山、生火。"} ] },
-    { id:"antonym", name:"反义词", qType:"choice", items:[
-      {q:"“大” 的反义词是？", opts:["小","高","多"], a:"小"},
-      {q:"“上” 的反义词是？", opts:["前","下","左"], a:"下"},
-      {q:"“冷” 的反义词是？", opts:["凉","冰","热"], a:"热"},
-      {q:"“快” 的反义词是？", opts:["慢","飞","急"], a:"慢"},
-      {q:"“开” 的反义词是？", opts:["关","启","放"], a:"关"} ] } ] },
-  { id:"chengyu", name:"成语", icon:"studyIconCy", groups:[
-    { id:"animal", name:"动物成语", qType:"choice", items:[
-      {q:"“对牛弹琴”中的“牛”指什么？", opts:["哺乳动物","植物","石头","乐器"], a:"哺乳动物"},
-      {q:"“画蛇添足”中“蛇”没有哪样东西？", opts:["脚","头","尾巴","身体"], a:"脚"},
-      {q:"“亡羊补牢”指的是什么羊？", opts:["丢失的羊","跑得快的羊","白色的羊","小羊"], a:"丢失的羊"},
-      {q:"“守株待兔”中农夫等的是什么？", opts:["兔子","老虎","狐狸","小鸟"], a:"兔子"},
-      {q:"“狐假虎威”中谁借着老虎的威风？", opts:["狐狸","猴子","狼","狮子"], a:"狐狸"} ] },
-    { id:"common", name:"常用成语", qType:"choice", items:[
-      {q:"“一心一意”形容什么？", opts:["专心","害怕","开心","生气"], a:"专心"},
-      {q:"“半途而废”指做事怎么样？", opts:["坚持到底","做到一半放弃","很快完成","慢慢做"], a:"做到一半放弃"},
-      {q:"“马到成功”常用来祝福什么？", opts:["出行办事顺利","考试失败","生病","下雨"], a:"出行办事顺利"},
-      {q:"“井底之蛙”比喻什么？", opts:["见识短浅的人","很聪明的人","跳得高的人","爱干净的人"], a:"见识短浅的人"},
-      {q:"“亡羊补牢”告诉我们什么道理？", opts:["出了问题要及时补救","不要养羊","羊很危险","要睡懒觉"], a:"出了问题要及时补救"} ] } ] },
-  { id:"thinking", name:"思维", icon:"studyIconTh", groups:[
-    { id:"logic", name:"逻辑推理", qType:"choice", items:[
-      {q:"小明比小红高，小红比小刚高，谁最高？", opts:["小刚","小红","小明","一样高"], a:"小明"},
-      {q:"香蕉比苹果贵，苹果比梨贵，最便宜的是？", opts:["香蕉","苹果","梨","一样贵"], a:"梨"},
-      {q:"今天是星期二，再过 3 天是星期几？", opts:["星期三","星期四","星期五","星期六"], a:"星期五"},
-      {q:"哥哥今年 10 岁，弟弟比哥哥小 3 岁，弟弟几岁？", opts:["5岁","6岁","7岁","8岁"], a:"7岁"},
-      {q:"红球比蓝球大，蓝球比绿球大，最小的是？", opts:["红球","蓝球","绿球","一样大"], a:"绿球"} ] },
-    { id:"series", name:"找规律", qType:"choice", items:[
-      {q:"1、3、5、7、__？", opts:["8","9","10","11"], a:"9"},
-      {q:"2、4、6、8、__？", opts:["9","10","11","12"], a:"10"},
-      {q:"10、8、6、4、__？", opts:["1","2","3","5"], a:"2"},
-      {q:"1、2、4、7、__？", opts:["9","10","11","12"], a:"11"},
-      {q:"5、10、15、20、__？", opts:["21","22","24","25"], a:"25"} ] } ] }
-];
+/* 题库：全部从后端 /api/questions 拉取（前端不内置任何题目，杜绝单机版） */
+var STUDY_SUBJECTS = [];
+var QUESTIONS_LOADED = false;
+/* 从后端拉取题库并按 科目→分组 重组 */
+function loadQuestionsRemote(){
+  apiFetch("/questions").then(function(res){
+    if(res.code === 0 && res.data && res.data.length){
+      STUDY_SUBJECTS = rebuildSubjectsRemote(res.data);
+      QUESTIONS_LOADED = true;
+      renderStudy();
+    }
+  }).catch(function(){
+    toast("⚠️ 题库加载失败：无法连接后端（127.0.0.1:8080）");
+  });
+}
+/* 后端 questions 平铺数据 → 科目/分组结构（与前端渲染结构一致） */
+function rebuildSubjectsRemote(qs){
+  var meta = { english:{name:"英语",icon:"studyIconEn"}, math:{name:"数学",icon:"studyIconMath"},
+    hanzi:{name:"汉字",icon:"studyIconHz"}, chengyu:{name:"成语",icon:"studyIconCy"},
+    thinking:{name:"思维",icon:"studyIconTh"}, yuwen:{name:"语文",icon:"studyIconHz"} };
+  var order = ["english","math","hanzi","chengyu","thinking","yuwen"];
+  var subs = [];
+  for(var si=0; si<order.length; si++){
+    var sid = order[si];
+    if(!meta[sid]) continue;
+    var sq = qs.filter(function(q){ return q.subject === sid; });
+    if(!sq.length) continue;
+    var groups = {};
+    var gorder = [];
+    for(var i=0; i<sq.length; i++){
+      var q = sq[i];
+      var gid = q.groupId || "default";
+      if(!groups[gid]){ groups[gid] = { id:gid, name:q.groupName||gid, qType:(q.qType||q.qtype)||"choice", items:[] }; gorder.push(gid); }
+      groups[gid].items.push(toStudyItemRemote(q));
+    }
+    var gs = [];
+    for(var gi=0; gi<gorder.length; gi++){ gs.push(groups[gorder[gi]]); }
+    subs.push({ id:sid, name:meta[sid].name, icon:meta[sid].icon, groups:gs });
+  }
+  return subs;
+}
+function toStudyItemRemote(q){
+  if((q.qType||q.qtype) === "choice" && Array.isArray(q.options)){
+    var opts = [];
+    var ans = q.answer;
+    for(var i=0; i<q.options.length; i++){
+      opts.push(String(q.options[i].text));
+      if(q.options[i].correct) ans = String(q.options[i].text);
+    }
+    return { q:q.prompt, opts:opts, a:ans || String(q.answer) };
+  }
+  return { q:q.prompt, a:String(q.answer) };
+}
 
 /* ================= 状态 ================= */
 var state = defaultState();
@@ -2569,6 +2546,17 @@ function wordBlue(){ return colorCircle("#4CC9F0"); }
 function wordGreen(){ return colorCircle("#06D6A0"); }
 function wordYellow(){ return colorCircle("#FFD166"); }
 function wordPink(){ return colorCircle("#FF8FB5"); }
+/* 家庭/身体单词图标（v33 新增组） */
+function wordFather(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pfa" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#FFD9A8"/><stop offset="1" stop-color="#FF9E4A"/></radialGradient></defs><circle cx="32" cy="22" r="10" fill="url(#pfa)"/><path d="M12 54c0-11 9-16 20-16s20 5 20 16" fill="url(#pfa)"/><path d="M20 44 l4 8 M28 44 l4 8 M36 44 l4 8 M44 44 l4 8" stroke="#F07C00" stroke-width="3" fill="none" stroke-linecap="round"/></svg>'; }
+function wordMother(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pmo" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#FFD9E8"/><stop offset="1" stop-color="#FF8FB5"/></radialGradient></defs><circle cx="32" cy="20" r="10" fill="url(#pmo)"/><path d="M24 8 q8-6 16 0 q-8 4-16 0" fill="#C98A4B"/><path d="M12 54c0-11 9-16 20-16s20 5 20 16" fill="url(#pmo)"/><path d="M20 44 l4 8 M28 44 l4 8 M36 44 l4 8 M44 44 l4 8" stroke="#EF476F" stroke-width="3" fill="none" stroke-linecap="round"/></svg>'; }
+function wordBrother(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pbr" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#BFE9FF"/><stop offset="1" stop-color="#4CC9F0"/></radialGradient></defs><circle cx="24" cy="22" r="9" fill="url(#pbr)"/><circle cx="40" cy="18" r="8" fill="url(#pbr)"/><path d="M8 54c0-9 7-13 16-13s16 4 16 13" fill="url(#pbr)"/><path d="M26 50c0-7 6-10 13-10s13 3 13 10" fill="url(#pbr)"/><circle cx="22" cy="21" r="1.6" fill="#2B2118"/><circle cx="38" cy="17" r="1.4" fill="#2B2118"/></svg>'; }
+function wordSister(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="psi" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#FFE3F0"/><stop offset="1" stop-color="#FF6B9D"/></radialGradient></defs><circle cx="24" cy="20" r="9" fill="url(#psi)"/><circle cx="40" cy="16" r="8" fill="url(#psi)"/><path d="M20 8 q5-4 9 0 q-5 3-9 0" fill="#FFB35C"/><path d="M8 54c0-9 7-13 16-13s16 4 16 13" fill="url(#psi)"/><path d="M26 48c0-7 6-10 13-10s13 3 13 10" fill="url(#psi)"/><circle cx="22" cy="19" r="1.6" fill="#2B2118"/><circle cx="38" cy="15" r="1.4" fill="#2B2118"/></svg>'; }
+function wordBaby(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pba" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#FFF3D9"/><stop offset="1" stop-color="#FFD166"/></radialGradient></defs><circle cx="32" cy="30" r="16" fill="url(#pba)"/><path d="M24 22 q4-6 8 0 M32 22 q4-6 8 0" stroke="#B5651D" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="27" cy="30" r="2" fill="#2B2118"/><circle cx="37" cy="30" r="2" fill="#2B2118"/><path d="M28 38 q4 3 8 0" stroke="#2B2118" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 50c0-5 4-8 9-9M52 50c0-5-4-8-9-9" stroke="#F07C00" stroke-width="2" fill="none" stroke-linecap="round"/></svg>'; }
+function wordEye(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pey" cx="50%" cy="42%" r="60%"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#BFE9FF"/></radialGradient></defs><ellipse cx="32" cy="32" rx="24" ry="15" fill="url(#pey)" stroke="#2B2118" stroke-width="3"/><circle cx="32" cy="32" r="7" fill="#2B2118"/><circle cx="30" cy="29" r="2.5" fill="#fff"/><path d="M8 32q24-14 48 0" stroke="#4CC9F0" stroke-width="2" fill="none"/></svg>'; }
+function wordEar(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pea" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#FFD9C8"/><stop offset="1" stop-color="#FF9E7A"/></radialGradient></defs><path d="M22 14q-10 8-8 22 0 6 4 10" fill="none" stroke="url(#pea)" stroke-width="9" stroke-linecap="round"/><path d="M22 14q-8-4 0-8" fill="url(#pea)"/><circle cx="24" cy="32" r="8" fill="#FFB89E" opacity=".6"/><path d="M42 18q12 8 8 26-1 6-6 8" fill="none" stroke="#FF9E7A" stroke-width="8" stroke-linecap="round"/></svg>'; }
+function wordNose(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pno" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#FFD9C8"/><stop offset="1" stop-color="#FF9E7A"/></radialGradient></defs><circle cx="32" cy="34" r="13" fill="url(#pno)"/><path d="M32 21v8" stroke="#E85B3E" stroke-width="2.5" stroke-linecap="round"/><circle cx="26" cy="38" r="2.5" fill="#C43D1F"/><circle cx="38" cy="38" r="2.5" fill="#C43D1F"/><path d="M28 45q4 3 8 0" stroke="#C98A4B" stroke-width="2" fill="none" stroke-linecap="round"/></svg>'; }
+function wordHand(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pha" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#FFE3D9"/><stop offset="1" stop-color="#FFB38F"/></radialGradient></defs><rect x="20" y="18" width="24" height="34" rx="12" fill="url(#pha)"/><path d="M30 18v-6a4 4 0 0 1 8 0v6M34 14v-8a4 4 0 0 1 8 0v10M38 16v-4a4 4 0 0 1 8 0v14" stroke="#E8965A" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M44 30h6a4 4 0 0 1 0 8h-6" stroke="#E8965A" stroke-width="3" fill="none"/></svg>'; }
+function wordFoot(){ return '<svg viewBox="0 0 64 64"><defs><radialGradient id="pfo" cx="40%" cy="30%" r="80%"><stop offset="0" stop-color="#FFE3D9"/><stop offset="1" stop-color="#FFB38F"/></radialGradient></defs><ellipse cx="32" cy="40" rx="18" ry="11" fill="url(#pfo)"/><path d="M14 40q-5 1-5 6 0 5 5 6 5-1 5-6zM28 44q-5 1-5 6 0 5 5 6 5-1 5-6zM42 44q-5 1-5 6 0 5 5 6 5-1 5-6z" fill="#FFC9A8"/><path d="M14 34l2 6M28 34l2 6M42 34l2 6" stroke="#E8965A" stroke-width="2" stroke-linecap="round"/></svg>'; }
 function colorCircle(c){
   var u = uid("cc");
   return '<svg viewBox="0 0 64 64"><defs><radialGradient id="' + u + '" cx="35%" cy="30%" r="85%"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".3" stop-color="' + c + '"/><stop offset="1" stop-color="' + c + '"/></radialGradient></defs><circle cx="32" cy="32" r="21" fill="url(#' + u + ')" stroke="#2B2118" stroke-width="3.5"/><circle cx="26" cy="25" r="5.5" fill="#fff" opacity=".45"/></svg>';
@@ -2608,6 +2596,13 @@ function groupIcon(id){
   if(id==="animal"||id==="common") return '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="16" height="14" rx="3" fill="#FFE0CC" stroke="#F07C00" stroke-width="1.5"/><text x="12" y="17" font-size="11" font-weight="900" text-anchor="middle" fill="#B04A00">成</text></svg>';
   if(id==="logic") return '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="3" fill="#EAD8FD" stroke="#9B5DE5" stroke-width="1.5"/><text x="12" y="17" font-size="11" font-weight="900" text-anchor="middle" fill="#7A3CC8">推</text></svg>';
   if(id==="series") return '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="3" fill="#FFD8E0" stroke="#E85B9E" stroke-width="1.5"/><text x="12" y="17" font-size="11" font-weight="900" text-anchor="middle" fill="#B02E70">律</text></svg>';
+  if(id==="family") return '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="4" fill="#FFB35C"/><circle cx="16" cy="7" r="3.4" fill="#4CC9F0"/><path d="M4 20c0-3.5 2.5-5 5-5s5 1.5 5 5" fill="#FFB35C"/><path d="M13 18c0-2.8 2-4 4.4-4S21 15.2 21 18" fill="#4CC9F0"/></svg>';
+  if(id==="body") return '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="6" r="3.4" fill="#FF9E7A"/><path d="M5 21c0-4 3-6 7-6s7 2 7 6" fill="#FFB38F"/><path d="M7 9h10M7 9l-3 8M17 9l3 8M12 10v5" stroke="#E8965A" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>';
+  if(id==="mul10") return '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9" fill="#FFE9A8" stroke="#F0A500" stroke-width="1.5"/><path d="M9 9l6 6M15 9l-6 6" stroke="#B5651D" stroke-width="2.4" stroke-linecap="round"/></svg>';
+  if(id==="liangci") return '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="3" fill="#E8FAD8" stroke="#58B368" stroke-width="1.5"/><text x="12" y="17" font-size="10" font-weight="900" text-anchor="middle" fill="#2E7D3E">量</text></svg>';
+  if(id==="nature") return '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="3" fill="#D8F3E8" stroke="#06D6A0" stroke-width="1.5"/><text x="12" y="17" font-size="10" font-weight="900" text-anchor="middle" fill="#058F6E">然</text></svg>';
+  if(id==="shape") return '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="3" fill="#E5F0FF" stroke="#2FA8D8" stroke-width="1.5"/><path d="M12 7l4 7H8z" fill="#2FA8D8"/><circle cx="12" cy="17" r="2" fill="#F0A500"/></svg>';
+  if(id==="life") return '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="3" fill="#FFF3D9" stroke="#F0A500" stroke-width="1.5"/><path d="M12 7v4l3 2" stroke="#B5651D" stroke-width="1.8" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="4.4" stroke="#B5651D" stroke-width="1.8" fill="none"/></svg>';
   return '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9" fill="#FFE9A8" stroke="#F0A500" stroke-width="2"/><text x="12" y="16" font-size="10" font-weight="900" text-anchor="middle" fill="#B5651D">1</text></svg>';
 }
 /* 科目 Tab 图标 */
@@ -3742,6 +3737,7 @@ function init(){
     document.getElementById("loginMask").className = "modal-mask show";
   }
   syncRemote();
+  if(userToken){ loadQuestionsRemote(); }   /* 已登录：启动即拉题库 */
   renderAll();
   movePet(true);
   petMoveTimer = setInterval(function(){ movePet(false); }, 4000);

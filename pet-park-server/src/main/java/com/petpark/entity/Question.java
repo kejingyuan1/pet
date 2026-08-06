@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -20,6 +21,8 @@ public class Question {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String subject;
+    /** 题型：序列化强制为 qType（前端依赖），避免 Jackson 驼峰降为 qtype */
+    @JsonProperty("qType")
     private String qType;
     private String groupId;
     private String groupName;

@@ -4,84 +4,7 @@ import { GameState, Category, StudySubject, StudySession, GAME_DAY_MS, DAY_START
   FARM_PLOTS, FARM_UP_COST, POND_SLOTS, POND_UP_COST, RANCH_SLOTS, RANCH_UP_COST, STUDY_DAILY_LIMIT } from '../models';
 import { AuthService } from './auth.service';
 
-/** 五科目题库（与单文件版 STUDY_SUBJECTS 对齐；后端 /api/questions 同源） */
-export const STUDY_SUBJECTS: StudySubject[] = [
-  { id: 'english', name: '英语', icon: 'en', groups: [
-    { id: 'animals', name: '动物', qType: 'card', items: [
-      { en: 'cat', cn: '猫', icon: 'wordCat' }, { en: 'dog', cn: '狗', icon: 'wordDog' },
-      { en: 'bird', cn: '鸟', icon: 'wordBird' }, { en: 'fish', cn: '鱼', icon: 'wordFish' },
-      { en: 'rabbit', cn: '兔子', icon: 'wordRabbit' } ] },
-    { id: 'fruits', name: '水果', qType: 'card', items: [
-      { en: 'apple', cn: '苹果', icon: 'wordApple' }, { en: 'banana', cn: '香蕉', icon: 'wordBanana' },
-      { en: 'grape', cn: '葡萄', icon: 'wordGrape' }, { en: 'orange', cn: '橙子', icon: 'wordOrange' },
-      { en: 'watermelon', cn: '西瓜', icon: 'wordWatermelon' } ] },
-    { id: 'colors', name: '颜色', qType: 'card', items: [
-      { en: 'red', cn: '红色', icon: 'wordRed' }, { en: 'blue', cn: '蓝色', icon: 'wordBlue' },
-      { en: 'green', cn: '绿色', icon: 'wordGreen' }, { en: 'yellow', cn: '黄色', icon: 'wordYellow' },
-      { en: 'pink', cn: '粉色', icon: 'wordPink' } ] },
-    { id: 'numbers', name: '数字', qType: 'card', items: [
-      { en: 'one', cn: '一', icon: 'wordOne' }, { en: 'two', cn: '二', icon: 'wordTwo' },
-      { en: 'three', cn: '三', icon: 'wordThree' }, { en: 'four', cn: '四', icon: 'wordFour' },
-      { en: 'five', cn: '五', icon: 'wordFive' } ] } ] },
-  { id: 'math', name: '数学', icon: 'math', groups: [
-    { id: 'add10', name: '10以内加法', qType: 'choice', items: [
-      { q: '3 + 4 = ?', opts: ['6', '7', '8', '9'], a: '7' },
-      { q: '2 + 5 = ?', opts: ['6', '7', '8', '9'], a: '7' },
-      { q: '4 + 4 = ?', opts: ['6', '7', '8', '9'], a: '8' },
-      { q: '1 + 9 = ?', opts: ['8', '9', '10', '11'], a: '10' },
-      { q: '5 + 2 = ?', opts: ['6', '7', '8', '9'], a: '7' } ] },
-    { id: 'sub10', name: '10以内减法', qType: 'choice', items: [
-      { q: '8 - 3 = ?', opts: ['4', '5', '6', '7'], a: '5' },
-      { q: '9 - 4 = ?', opts: ['4', '5', '6', '7'], a: '5' },
-      { q: '7 - 2 = ?', opts: ['4', '5', '6', '7'], a: '5' },
-      { q: '10 - 6 = ?', opts: ['3', '4', '5', '6'], a: '4' },
-      { q: '6 - 1 = ?', opts: ['3', '4', '5', '6'], a: '5' } ] },
-    { id: 'fill10', name: '数字填空', qType: 'fill', items: [
-      { q: '5 + __ = 8', a: '3' },
-      { q: '__ + 2 = 9', a: '7' },
-      { q: '10 - __ = 4', a: '6' },
-      { q: '__ - 3 = 5', a: '8' },
-      { q: '4 + __ = 10', a: '6' } ] } ] },
-  { id: 'hanzi', name: '汉字', icon: 'hz', groups: [
-    { id: 'basic', name: '认一认', qType: 'qa', items: [
-      { q: '"日" 是什么？', a: '太阳。也指"天"，比如：今天、日子。' },
-      { q: '"月" 是什么？', a: '月亮。也指月份，比如：一月、二月。' },
-      { q: '"山" 是什么？', a: '山丘、高山。组词：大山、爬山。' },
-      { q: '"水" 是什么？', a: '水。组词：喝水、水果、河水。' },
-      { q: '"火" 是什么？', a: '火。组词：火车、火山、生火。' } ] },
-    { id: 'antonym', name: '反义词', qType: 'choice', items: [
-      { q: '"大" 的反义词是？', opts: ['小', '高', '多'], a: '小' },
-      { q: '"上" 的反义词是？', opts: ['前', '下', '左'], a: '下' },
-      { q: '"冷" 的反义词是？', opts: ['凉', '冰', '热'], a: '热' },
-      { q: '"快" 的反义词是？', opts: ['慢', '飞', '急'], a: '慢' },
-      { q: '"开" 的反义词是？', opts: ['关', '启', '放'], a: '关' } ] } ] },
-  { id: 'chengyu', name: '成语', icon: 'cy', groups: [
-    { id: 'animal', name: '动物成语', qType: 'choice', items: [
-      { q: '"对牛弹琴"中的"牛"指什么？', opts: ['哺乳动物', '植物', '石头', '乐器'], a: '哺乳动物' },
-      { q: '"画蛇添足"中"蛇"没有哪样东西？', opts: ['脚', '头', '尾巴', '身体'], a: '脚' },
-      { q: '"亡羊补牢"指的是什么羊？', opts: ['丢失的羊', '跑得快的羊', '白色的羊', '小羊'], a: '丢失的羊' },
-      { q: '"守株待兔"中农夫等的是什么？', opts: ['兔子', '老虎', '狐狸', '小鸟'], a: '兔子' },
-      { q: '"狐假虎威"中谁借着老虎的威风？', opts: ['狐狸', '猴子', '狼', '狮子'], a: '狐狸' } ] },
-    { id: 'common', name: '常用成语', qType: 'choice', items: [
-      { q: '"一心一意"形容什么？', opts: ['专心', '害怕', '开心', '生气'], a: '专心' },
-      { q: '"半途而废"指做事怎么样？', opts: ['坚持到底', '做到一半放弃', '很快完成', '慢慢做'], a: '做到一半放弃' },
-      { q: '"马到成功"常用来祝福什么？', opts: ['出行办事顺利', '考试失败', '生病', '下雨'], a: '出行办事顺利' },
-      { q: '"井底之蛙"比喻什么？', opts: ['见识短浅的人', '很聪明的人', '跳得高的人', '爱干净的人'], a: '见识短浅的人' },
-      { q: '"亡羊补牢"告诉我们什么道理？', opts: ['出了问题要及时补救', '不要养羊', '羊很危险', '要睡懒觉'], a: '出了问题要及时补救' } ] } ] },
-  { id: 'thinking', name: '思维', icon: 'th', groups: [
-    { id: 'logic', name: '逻辑推理', qType: 'choice', items: [
-      { q: '小明比小红高，小红比小刚高，谁最高？', opts: ['小刚', '小红', '小明', '一样高'], a: '小明' },
-      { q: '香蕉比苹果贵，苹果比梨贵，最便宜的是？', opts: ['香蕉', '苹果', '梨', '一样贵'], a: '梨' },
-      { q: '今天是星期二，再过 3 天是星期几？', opts: ['星期三', '星期四', '星期五', '星期六'], a: '星期五' },
-      { q: '哥哥今年 10 岁，弟弟比哥哥小 3 岁，弟弟几岁？', opts: ['5岁', '6岁', '7岁', '8岁'], a: '7岁' },
-      { q: '红球比蓝球大，蓝球比绿球大，最小的是？', opts: ['红球', '蓝球', '绿球', '一样大'], a: '绿球' } ] },
-    { id: 'series', name: '找规律', qType: 'choice', items: [
-      { q: '1、3、5、7、__？', opts: ['8', '9', '10', '11'], a: '9' },
-      { q: '2、4、6、8、__？', opts: ['9', '10', '11', '12'], a: '10' },
-      { q: '10、8、6、4、__？', opts: ['1', '2', '3', '5'], a: '2' },
-      { q: '1、2、4、7、__？', opts: ['9', '10', '11', '12'], a: '11' },
-      { q: '5、10、15、20、__？', opts: ['21', '22', '24', '25'], a: '25' } ] } ] }
-];
+/** 五科目题库：全部从后端 /api/questions 拉取（不内置题目，杜绝单机版） */
 
 /** 默认类目表（离线兜底；联网后由 /api/categories 覆盖） */
 const DEFAULT_CATEGORIES: Category[] = [
@@ -164,14 +87,15 @@ export class StateService {
     return s;
   }
 
-  /** 启动：load 本地 → 异步拉云端 → 拉类目 → 起 tick 定时器 */
+  /** 启动：load 本地 → 异步拉云端 → 拉类目 → 拉题库 → 起 tick 定时器 */
   init(): void {
     this.loadLocal();
     if (this.auth.isLoggedIn) this.syncFromServer();
     this.http.get<{ code: number; msg: string; data: Category[] }>('/api/categories').subscribe({
       next: res => { if (res.code === 0 && res.data && res.data.length) this.state.categories = res.data; },
-      error: () => { /* 离线回落内置 */ }
+      error: () => { /* 类目是配置数据，后端不可达时保持内置可接受 */ }
     });
+    this.loadQuestions();   // 题库一律从后端获取，前端不内置
     this.tickTimer = setInterval(() => { this.tick(); }, 2000);
   }
 
@@ -545,11 +469,73 @@ export class StateService {
     this.save();
   }
 
-  // ================= 学习（五科目多题型） =================
+  // ================= 学习（五科目多题型，题库全部来自后端） =================
   studySubjectIdx = 0;                       // 当前科目 Tab
   studySession: StudySession | null = null;  // 学习会话
+  /** 远程题库（从 /api/questions 拉取后重组），未加载完为空 */
+  remoteSubjects: StudySubject[] = [];
+  questionsLoaded = false;
 
-  studySubjects(): StudySubject[] { return STUDY_SUBJECTS; }
+  /** 从后端拉取题库并按 科目→分组 重组（前端不内置任何题目） */
+  loadQuestions(): void {
+    this.http.get<{ code: number; msg: string; data: any[] }>('/api/questions').subscribe({
+      next: res => {
+        if (res.code === 0 && Array.isArray(res.data) && res.data.length) {
+          this.remoteSubjects = this.rebuildSubjects(res.data);
+          this.questionsLoaded = true;
+        }
+      },
+      error: () => { this.questionsLoaded = false; }
+    });
+  }
+
+  /** 后端 questions 平铺数据 → 科目/分组结构 */
+  private rebuildSubjects(qs: any[]): StudySubject[] {
+    const subjectMeta: Record<string, { name: string; icon: string }> = {
+      english: { name: '英语', icon: 'en' }, math: { name: '数学', icon: 'math' },
+      hanzi: { name: '汉字', icon: 'hz' }, chengyu: { name: '成语', icon: 'cy' },
+      thinking: { name: '思维', icon: 'th' }, yuwen: { name: '语文', icon: 'hz' }
+    };
+    const order = ['english', 'math', 'hanzi', 'chengyu', 'thinking', 'yuwen'];
+    const subjects: StudySubject[] = [];
+    for (const subjId of order) {
+      const meta = subjectMeta[subjId];
+      if (!meta) continue;
+      const subjQs = qs.filter(q => q.subject === subjId);
+      if (!subjQs.length) continue;
+      const groupMap = new Map<string, { name: string; qType: string; items: any[] }>();
+      for (const q of subjQs) {
+        const gid = q.groupId || 'default';
+        if (!groupMap.has(gid)) {
+          groupMap.set(gid, { name: q.groupName || gid, qType: (q.qType || q.qtype) || 'choice', items: [] });
+        }
+        groupMap.get(gid)!.items.push(this.toStudyItem(q));
+      }
+      subjects.push({
+        id: subjId, name: meta.name, icon: meta.icon,
+        groups: Array.from(groupMap.entries()).map(([gid, g]) => ({
+          id: gid, name: g.name, qType: (g.qType as any) || 'choice', items: g.items
+        }))
+      });
+    }
+    return subjects;
+  }
+
+  /** 后端 Question → 前端 StudyItem（choice 的 options 解析 correct） */
+  private toStudyItem(q: any): any {
+    if ((q.qType || q.qtype) === 'choice' && Array.isArray(q.options)) {
+      const opts: string[] = [];
+      let ans = q.answer;
+      for (const o of q.options) {
+        opts.push(String(o.text));
+        if (o.correct) ans = String(o.text);
+      }
+      return { q: q.prompt, opts, a: ans || String(q.answer) };
+    }
+    return { q: q.prompt, a: String(q.answer) };
+  }
+
+  studySubjects(): StudySubject[] { return this.remoteSubjects; }
   studyTodayEarned(): number { this.resetStudyDaily(); return this.state.study.earned; }
   studyGroupDone(gid: string): boolean { return this.state.study.learned.indexOf(gid) >= 0; }
   studySubjectAllDone(subj: StudySubject): boolean { return subj.groups.every(g => this.studyGroupDone(g.id)); }
@@ -565,13 +551,13 @@ export class StateService {
   pickStudyOpt(i: number): void {
     const s = this.studySession;
     if (!s || s.answered) return;
-    const it = STUDY_SUBJECTS[s.subjIdx].groups[s.groupIdx].items[s.itemIdx];
+    const it = this.remoteSubjects[s.subjIdx].groups[s.groupIdx].items[s.itemIdx];
     s.answered = true; s.picked = it.opts ? it.opts[i] : null;
   }
   checkStudyFill(v: string): void {
     const s = this.studySession;
     if (!s || s.answered) return;
-    const it = STUDY_SUBJECTS[s.subjIdx].groups[s.groupIdx].items[s.itemIdx];
+    const it = this.remoteSubjects[s.subjIdx].groups[s.groupIdx].items[s.itemIdx];
     s.answered = true;
     s.fillOk = (v.trim().replace(/[，。\s]/g, '') === String(it.a).trim());
   }
@@ -580,14 +566,14 @@ export class StateService {
   nextStudyItem(): void {
     const s = this.studySession;
     if (!s) return;
-    const g = STUDY_SUBJECTS[s.subjIdx].groups[s.groupIdx];
+    const g = this.remoteSubjects[s.subjIdx].groups[s.groupIdx];
     if (s.itemIdx + 1 < g.items.length) { s.itemIdx++; s.answered = false; s.picked = null; }
     else this.finishStudyGroup();
   }
   finishStudyGroup(): void {
     const s = this.studySession;
     if (!s) return;
-    const subj = STUDY_SUBJECTS[s.subjIdx];
+    const subj = this.remoteSubjects[s.subjIdx];
     const g = subj.groups[s.groupIdx];
     if (this.state.study.learned.indexOf(g.id) < 0) this.state.study.learned.push(g.id);
     this.resetStudyDaily();
