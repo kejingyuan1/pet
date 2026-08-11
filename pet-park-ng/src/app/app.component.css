@@ -29,8 +29,8 @@
 /* 全局背景（动态渐变 + 漂浮色块） */
 body {
   margin: 0;
-  background: var(--bg-grad);
-  background-attachment: fixed;
+  background: linear-gradient(135deg, #FFE3C9 0%, #FFC8DD 50%, #D6B5FF 100%) !important;
+  background-attachment: fixed !important;
   min-height: 100vh;
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   color: #5A3E1E;
