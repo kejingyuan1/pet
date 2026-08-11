@@ -1,287 +1,342 @@
-# 我的宠物乐园 · 发布版 v32（已上线生产）
+# 我的宠物乐园 · 发布版 v48（已上线生产 · 含学历模块）
 
 > 单文件 HTML 离线版 + Angular 19 前端 + Spring Boot 3 后端 + MySQL 5.7
-> 一站式「种植 / 养鱼 / 放牧 / 学习」个人数字工作台
-> **v32 生产部署：阿里云 ECS jar 直跑 + Nginx（绕开被墙的 Docker Hub）→ http://118.31.124.251**
-> **v30 新增：场景资源化架构 — 房屋/动植物/鱼/地图全部支持外部模型文件（.glb/.gltf）引入**
+> 一站式「种植 / 养鱼 / 放牧 / 学习 + **学历选择**」个人数字工作台
+> **v48 生产部署：阿里云 ECS jar 直跑 + Nginx（绕开被墙的 Docker Hub）→ http://118.31.124.251**
+> **v47 新增：学历模块**（注册时选学历 / 考试页下拉按学历过滤题库 · 16 级 小学~大学）
+> **v48 新增：全字段 COMMENT（4 表 48 字段 + 表级注释）+ 部署包目录按生产实际重构**（`pet-park/{front, pet-park-server, sql}` 匹配阿里云宝塔目录）
 
 ---
 
-## 📦 项目结构
+## 🎯 v48 vs v32 关键变化
+
+| 维度 | v32 | v48（当前）|
+|---|---|---|
+| 学历系统 | ❌ 无 | ✅ **16 级学历**（小学1~6 / 初中1~3 / 高中1~3 / 大学1~4）+ 注册选 + 考试按学历过滤题库 |
+| 数据库 | 5 表（users/players/logs/categories/questions）| 4 表（players 合并入 users）+ **users/questions 加 `education` 列 + 48 字段 COMMENT** |
+| 部署包 | 平铺（`app.jar` + `dist/` + `mysql/`）| **按生产目录结构**（`pet-park/{front, pet-park-server, sql}` · jar 在 `target/` 下）|
+| 后端 jar 名 | `app.jar` | **`pet-park-server-1.0.0.jar`**（Maven default · `target/` 下）|
+| 部署脚本 | `deploy-direct.sh` 一键 | **`start.sh` + `stop.sh` + `.env.example`**（含 JDK17 检测 / DB 密码 / 日志 / app.pid）|
+| 前端 bundle | 单 `bundle.js`（单文件）| **`bundle.v48.v*.js`**（多版本 + polyfills 单独引 `polyfills-5CFQRCPP.js` · Angular 19 必须保留）|
+| 破缓存 | 改内容 | **改文件名 `bundle.v48.v*.js`**（防 nginx 7d expires 缓存）|
+| 题库量 | 60 题 | **241 题**（含一年级三科 yuwen/math/english）|
+| 启动方式 | `java -jar app.jar` | **`bash start.sh`（source .env）** + `--spring.datasource.password=$DB_PASSWORD`（注意不是 `DB_PASS`）|
+
+---
+
+## 📦 v48 部署包结构（`pet-park-deploy-v48.zip`）
 
 ```
 pet-park/
-├── index.html                        # 单文件 HTML 版（~193KB，开箱即用）
-├── index.html.bak_v23                # 备份（v23 含后端对接代码，已清理）
-├── PROJECT_DOC.md                    # 项目详细文档（版本演进、技术决策）
-├── README.md                         # 本文件
-│
-├── pet-park-ng/                      # Angular 19 前端
-│   ├── proxy.conf.json               # /api → 127.0.0.1:8080
-│   ├── package.json                  # 依赖（@angular 19 + three 0.128）
-│   ├── public/
-│   │   └── assets/                   # ★ v30 资源化：外部模型配置
-│   │       ├── scene.config.json     # 场景布局配置（位置/缩放/模型引用）
-│   │       ├── models/               # .glb/.gltf 模型文件（房屋/树/动物/鱼/宠物）
-│   │       ├── textures/             # 贴图
-│   │       └── README.md             # 资源接入指南
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── models.ts            # 类型 + 5 科目 14 组 60 题 题库
-│   │   │   ├── services/
-│   │   │   │   ├── state.service.ts # 游戏逻辑（菜地/鱼塘/牧场/学习）
-│   │   │   │   ├── asset.service.ts # ★ v30 资源加载服务（GLTFLoader + TextureLoader）
-│   │   │   │   ├── auth.service.ts  # JWT 鉴权
-│   │   │   │   └── category.service.ts
-│   │   │   ├── components/
-│   │   │   │   └── scene3d/         # Three.js r128 3D 场景（v30 资源驱动 + 内置回退）
-│   │   │   ├── app.component.*      # 外壳 + 6 模块导航
-│   │   │   └── app.config.ts
-│   │   └── ...
-│   └── out-tsc/                      # ngc 编译产物（与 src 对应）
-│
-└── pet-park-server/                  # Spring Boot 3 后端
-    ├── pom.xml                       # Spring Boot 3.3.5 + MyBatis-Plus 3.5.7 + jjwt 0.12.6
-    ├── mvn-run.ps1                   # PowerShell Maven 封装
-    ├── target/
-    │   └── pet-park-server-1.0.0.jar # 32MB fat jar（v22 构建，含旧 7 题示例）
-    └── src/main/
-        ├── java/com/petpark/         # 28 个 Java 源文件
-        │   ├── PetParkApplication.java
-        │   ├── config/              # SecurityConfig + JwtAuthFilter
-        │   ├── controller/          # Auth/State/Category/Question/Log
-        │   ├── service/             # User/State/Token
-        │   ├── entity/              # 5 表实体
-        │   ├── mapper/              # 5 Mapper
-        │   ├── dto/                 # 4 DTO
-        │   └── common/              # Result + BizException + Handler
-        └── resources/
-            ├── application.yml       # 端口/数据源/JWT/CORS
-            └── schema.sql            # ★ 60 题完整题库 + 19 类目 + 5 表
+├── front/                                 # ★ Angular 19 生产包（match 生产 `/www/wwwroot/pet-park/front/`）
+│   ├── index.html                        # 入口（含 inline CSS + Cache-Control no-store）
+│   ├── polyfills-5CFQRCPP.js            # ★ 35KB · Angular 19 zone.js runtime（必须保留，缺则白屏）
+│   ├── bundle.v48.v5.js                 # ★ 879KB 主 bundle（含 v48 全部特性：学历模块 + 编辑器学历下拉 + 样式美化 + BUG 修复）
+│   ├── favicon.ico
+│   └── assets/
+│       ├── scene.config.json             # 3D 场景配置（model 路径/位置/缩放/fallback 颜色）
+│       └── models/                       # .glb/.gltf 3D 模型（房子/树/动物/鱼/宠物）
+├── pet-park-server/
+│   ├── target/pet-park-server-1.0.0.jar  # ★ 32.7MB Spring Boot fat jar（v47 含 education + v48 全 COMMENT）
+│   ├── sql/init.sql                      # DB 初始化（schema.sql + update.sql 拼接，幂等可重跑）
+│   ├── .env.example                      # 环境变量模板（cp 为 .env 后改 DB_PASS/JWT_SECRET）
+│   ├── start.sh                          # ★ 一键启动（source .env + nohup + 写 app.pid + 写 logs/app.log）
+│   └── stop.sh                           # 读 app.pid kill
+└── sql/                                   # 顶层 SQL 备份（与 pet-park-server/sql 同步）
+    ├── init.sql
+    └── update.sql
 ```
 
 ---
 
-## 🚀 快速启动
+## 🎮 核心功能
 
-### ① 单文件版（最简单，零依赖）
-直接双击打开 `pet-park/index.html`，浏览器即可玩。
-- 所有数据保存在浏览器 localStorage（`wb_petpark_v7`）
-- 首屏「数据管理」可导出/导入 JSON 备份
-- 离线可用，不需任何后端
-- **本版本已移除所有后端对接兜底代码**：单文件版是纯本地模式，不再尝试连接 API
+### 单文件 HTML 版（独立 · 零依赖）
+- 直接双击 `pet-park/index.html` 即可玩
+- 数据存浏览器 localStorage（`wb_petpark_v7`）
+- 离线可用，不需后端
+- 纯本地模式（已清理后端对接兜底代码）
 
-### ② Angular 前端 + Spring Boot 后端（完整体验）
+### Angular 19 前端（主版本 · v48）
+- **6 标签页**：家园 / 菜地 / 鱼塘 / 牧场 / 学习 / 数据管理
+- **注册选学历**（v47）：注册页有学历下拉（默认小学一年级，16 级可选）
+- **考试下拉按学历过滤**（v47）：考试页下拉只显示 ≤ 用户学历的题库
+- 实时 3D 场景（Three.js r128 · OrbitControls · 资源化架构）
+- JWT 鉴权 / 云端存档 / 题库动态拉取
+- **今天要处理工作台**（v48 BUG 修复：仅首页 `mod==='home'` 显示 · 切 Tab 消失）
+- **用户管理**（admin · 学历下拉编辑 + 修复：切到管理时 `mod='admin'` 隐藏工作台）
 
-#### 步骤 A：初始化 MySQL
-```bash
-# 假设 MySQL 5.7 已启动，端口 3306，用户 root 密码 123456
-mysql -uroot -p123456 < pet-park/pet-park-server/src/main/resources/schema.sql
-```
-> schema.sql 含 5 张表 + 19 类目 + **60 题**（英语 15 / 数学 15 / 汉字 10 / 成语 10 / 思维 10）
-> 已包含 `CREATE DATABASE` 语句（如果需要）
+### Spring Boot 3 后端（v48）
+- **users/questions 加 `education` 列**（v46 · 16 级）
+- **全表字段 COMMENT**（v48 · 4 表 48 字段 + 4 表级注释）
+- JWT 鉴权（jjwt 0.12.6 + BCrypt）
+- 5 表 CRUD（users / questions / logs / categories · 4 表）
+- 19 类目 + **241 题**题库（含一年级三科 yuwen 60 / math 30 / english 35 + 多科）
+- CORS / 统一响应 `Result<T>` / 全局异常处理
 
-#### 步骤 B：启动后端
-```bash
-cd pet-park/pet-park-server
-java -jar target/pet-park-server-1.0.0.jar
-```
-后端监听 `http://127.0.0.1:8080`，API 路径 `/api/*`
+### 数据库表结构（v48）
+| 表 | 字段数 | 说明 |
+|---|---|---|
+| `users` | 11 | 含 `education`（学历）+ `role`（admin/user）+ `coins`（积分）+ `state_json`（存档）|
+| `questions` | 13 | 含 `subject` + `education`（题库学历）+ `q_type`（choice/match/fill/qa/card）+ `options`（JSON）+ `answer` |
+| `logs` | 5 | 事件流水（喂食/收获/学习/...）|
+| `categories` | 19 | 统一类目（植物/鱼/动物/家具 · `model` 路径 + `fallback` 颜色）|
 
-> ⚠️ 当前 jar 是 v22 构建版本，内嵌 7 题示例。**重新构建**后才会含完整 60 题（见下方）
-
-#### 步骤 C：启动 Angular 前端
-```bash
-cd pet-park/pet-park-ng
-npm install
-npm start
-```
-前端监听 `http://localhost:4200`，所有 `/api/*` 自动代理到 8080（无需在前端暴露后端地址）
-
-#### 步骤 D：替换 3D 模型（可选，v30）
-把 `.glb` / `.gltf` 文件放进 `pet-park-ng/public/assets/models/` 目录
-（如 `house.glb`、`tree.glb`、`chicken.glb`、`goldfish.glb` 等）
-
-然后编辑 `public/assets/scene.config.json` 填模型路径 + 位置 + 缩放。
-
-详细说明见 `pet-park-ng/public/assets/README.md`。模型文件不存在会自动回退内置几何体（不报错）。
-
----
-
-## 🔨 重新构建后端 jar（含 60 题完整题库）
-
-沙箱环境无法完整构建 jar，请在本地执行：
-```bash
-cd pet-park/pet-park-server
-.\mvn-run.ps1 -Goal "clean package -DskipTests"
-# 或：
-mvn clean package -DskipTests
-```
-完成后 `target/pet-park-server-1.0.0.jar` 即含 60 题题库。
-
----
-
-## 🎮 功能清单
-
-### 单文件 HTML 版（独立）
-- ✅ 家园 3D 场景（Three.js r128 + OrbitControls）
-- ✅ 宠物（喂食 / 陪玩 / 看护 / 出门玩 / 生病喂药）
-- ✅ 菜地（4 类植物 · 3 级升级 · 浇水 / 收获）
-- ✅ 鱼塘（4 种鱼 · 3 级升级 · 喂食 / 出售）
-- ✅ 牧场（鸡鸭牛 · 产出冷却防刷金 · 喂养 / 收集 / 出售）
-- ✅ 学习（五科目多题型：英语/数学/汉字/成语/思维，choice/fill/qa/card）
-- ✅ 数据管理（导出 / 导入 / 清空 / 恢复示例 / 线下积分导入）
-- ✅ 移动端适配（44×44px 按钮 / 16px 输入框 / 底部安全区）
-
-### Angular 前端版
-- ✅ 上述全部模块（6 标签页：家园/菜地/鱼塘/牧场/学习/数据）
-- ✅ JWT 注册 / 登录（`/api/auth/register|login`）
-- ✅ 云端存档（`/api/state` PUT/GET 节流同步）
-- ✅ 题库动态拉取（`/api/questions?subject=...`）
-- ✅ 类目表动态加载（`/api/categories`）
-- ✅ 离线兜底（未连后端时用内置 DEFAULT_CATEGORIES + STUDY_SUBJECTS）
-- ✅ Three.js 3D 场景 + OrbitControls
-
-### Spring Boot 后端
-- ✅ JWT 鉴权（jjwt 0.12.6 + BCrypt）
-- ✅ 5 表 CRUD（users/players/logs/categories/questions）
-- ✅ 19 类目种子数据（植物/鱼/动物/家具）
-- ✅ 60 题题库（v26 schema.sql 五科目多题型）
-- ✅ CORS（已配置 4200/8899 端口）
-- ✅ 统一响应格式 `Result<T> {code,msg,data}`
-- ✅ 全局异常处理
-
----
-
-## 🌐 API 接口
-
-| 接口 | 方法 | 鉴权 | 说明 |
-|------|------|------|------|
-| `/api/auth/register` | POST | 否 | 注册（username+password≥6位+nickname） |
-| `/api/auth/login` | POST | 否 | 登录，返回 token |
-| `/api/state` | GET | 是 | 拉取当前用户存档 |
-| `/api/state` | PUT | 是 | 推送存档 `{version, stateJson}` |
-| `/api/categories` | GET | 否 | 类目表（19 条） |
-| `/api/questions` | GET | 否 | 题库列表，可选 `?subject=english/math/hanzi/chengyu/thinking` |
-| `/api/logs` | POST | 是 | 写日志 |
-
-所有响应：`{"code":0,"msg":"","data":...}`，鉴权头：`Authorization: Bearer <token>`
-
----
-
-## 📝 版本演进（关键节点）
-
-- **v1-v16**：宠物乐园核心玩法（菜地/鱼塘/宠物/天气）
-- **v17-v20**：宠物导航系统修复（A* + 沿墙滑行 + 回家状态机）
-- **v21**：类目表统一 + 牧场系统（产出冷却）
-- **v22**：Spring Boot 3 后端 + MySQL schema + JWT 鉴权
-- **v23**：Angular 19 前端 + proxy 代理
-- **v25**：沙箱内 Angular 手动构建链打通（ngc + esbuild + JIT + Temp）
-- **v26**（**当前**）：
-  - ✅ 单文件 HTML 版清理后端对接兜底代码（纯本地模式）
-  - ✅ 学习模块升级为 5 科目 60 题多题型（前端 + 后端 schema）
-  - ✅ Angular 前端学习模块完整实现（替换原「开发中」占位）
-  - ✅ 端到端链路验证（Angular 19003 代理 → 后端 8080 → MySQL）
-  - ✅ 沙箱内完整跑通：科目 Tab / 选择题 / 填空题 / 答题反馈 / 答对判定
+`SHOW FULL COLUMNS FROM <table>` 可看完整字段 + COMMENT（Navicat / DBeaver 都能直接显示）。
 
 ---
 
 ## 🛠️ 技术栈
 
 | 层 | 技术 | 版本 |
-|---|------|------|
-| 前端框架 | Angular standalone + CommonModule | 19.2.25 |
-| 3D | Three.js + OrbitControls | 0.128.0 |
-| 后端 | Spring Boot + MyBatis-Plus + jjwt | 3.3.5 / 3.5.7 / 0.12.6 |
-| 数据库 | MySQL（utf8mb4_unicode_ci） | 5.7 |
-| 构建 | Maven + ngc + esbuild | 3.9.12 / Angular CLI |
+|---|---|---|
+| 前端框架 | Angular standalone + CommonModule | 19.2.27 |
+| 3D | Three.js + OrbitControls + GLTFLoader | 0.128.0 |
+| 后端 | Spring Boot + MyBatis-Plus + jjwt + BCrypt | 3.3.5 / 3.5.7 / 0.12.6 |
+| 数据库 | MySQL utf8mb4_unicode_ci | 5.7 |
+| 构建 | Maven + Angular CLI (esbuild) + npx | 3.9.12 |
+| JDK | OpenJDK | 17.0.20 |
+| Node | Node.js | 22.22.2 |
 
 ---
 
-## ⚠️ 注意事项
+## 📁 源码结构
 
-1. **MySQL 编码**：`application.yml` 用 `characterEncoding=UTF-8`（不是 utf8mb4），配合 `connectionCollation=utf8mb4_unicode_ci` 才能正常创建中文表
-2. **JWT 密钥**：默认配置仅供开发，生产环境务必修改 `petpark.jwt.secret` 为至少 32 字节强随机串
-3. **CORS**：默认只允许 `http://localhost:8899` 与 `http://127.0.0.1:8899`；Angular ng serve 默认 4200，需要在 `application.yml` 添加或修改 origin
-4. **宠物 3D 导航**：Angular 版的 3D 场景目前是基础版（房子/菜地/鱼塘/浮动宠物 + OrbitControls），单文件版的完整 A* 寻路 + 沿墙滑行 + 回家状态机待迁移
-5. **离线兜底**：Angular 前端内置 `DEFAULT_CATEGORIES`（19 条类目）和 `STUDY_SUBJECTS`（5 科目 14 组题库），即使后端不可达也能完整运行本地模式
-
----
-
-## 📞 测试验证
-
-v26 已完成全链路验证（沙箱内）：
-- ✅ 单文件版：JS 语法 OK · WORD_GROUPS 0 残留 · 后端对接代码 0 残留 · 关键游戏函数全在
-- ✅ Angular 版：ngc + esbuild + JIT 编译通过 · Playwright 实测所有模块渲染 + 学习答题正确
-- ✅ 后端：8080 启动 OK · `/api/categories` 19 条 · `/api/questions` 题型完整 · JWT 403 验证
-- ✅ 端到端：Angular 19003 代理 → 8080 后端 · 注册/答题/数据模块全部 OK · 无 page error
-
----
-
-## 🚀 生产部署记录（v32 · 2026-08-06 上线）
-
-### 部署形态：jar 直跑（绕开 Docker）
-
-> **背景**：阿里云 ECS 到 Docker Hub 国际链路被墙（`dial tcp registry-1.docker.io:443: i/o timeout`），
-> docker compose 构建拉不到基础镜像，故采用 **jar 直跑 + Nginx** 方案，全部依赖走国内源。
-
-### 生产环境信息
-
-| 项 | 值 |
-|----|-----|
-| 服务器 | 阿里云 ECS `iZbp18sfxjpmt9coe7oznbZ`（宝塔面板） |
-| 公网 IP | `118.31.124.251` |
-| 前端入口 | `http://118.31.124.251`（Nginx 80 端口，Angular production 包） |
-| 后端 | `java -jar app.jar`（Spring Boot 3.3.5，端口 8080，nohup 后台） |
-| 数据库 | 宝塔 MySQL 5.7.44（`127.0.0.1:3306`，库 `pet_park`） |
-| MySQL 账号 | root / `83458848de46385e`（生产密码） |
-| 部署目录 | `/www/wwwroot/pet`（dist 静态文件 + app.jar + deploy-direct.sh） |
-| Nginx 配置 | `/www/server/panel/vhost/nginx/pet-park.conf`（80 + /api 反代 8080） |
-| 数据量 | 19 类目 + **60 题**题库（五科目：英语15/数学15/汉字10/成语10/思维10） |
-
-### 部署步骤（jar 直跑）
-
-```bash
-# ① 本机构建（已有 jar + dist 时跳过）
-cd pet-park-server && mvn clean package -DskipTests
-cd ../pet-park-ng && npm run build -- --configuration production
-
-# ② 打包部署目录
-#   app.jar + dist/ + mysql/init.sql + deploy-direct.sh + README_DEPLOY.md
-#   → pet-direct.zip（28MB）
-
-# ③ 服务器上传解压 + 一键部署
-scp pet-direct.zip root@118.31.124.251:/www/wwwroot/pet/
-cd /www/wwwroot/pet && unzip -o pet-direct.zip
-bash deploy-direct.sh        # 自动：JDK17 → MySQL 检查 → init.sql → 起后端 → Nginx
+```
+pet/                                          # GitHub kejingyuan1/pet
+├── README.md                                  # 本文件
+├── PROJECT_DOC.md                             # 项目详细文档（版本演进）
+│
+├── pet-park-ng/                               # Angular 19 前端源码
+│   ├── angular.json                           # 配 assets 只 copy public/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── app.component.ts              # ★ 核心：6 模块导航 + 学历下拉 + 编辑器 + mod 控制
+│   │   │   ├── app.component.html
+│   │   │   ├── app.component.css             # 含 ::ng-deep .reg-edu-select / .study-edu-select 学历下拉样式
+│   │   │   ├── models.ts                     # UserInfo + Education enum
+│   │   │   ├── services/
+│   │   │   │   ├── auth.service.ts           # login/register/me/updateProfile（register 传 education）
+│   │   │   │   ├── state.service.ts          # loadQuestions(edu) 按学历过滤
+│   │   │   │   └── asset.service.ts         # 3D 模型/贴图加载（loadModel fallback null）
+│   │   │   └── components/scene3d/scene3d.component.ts  # Three.js 主场景
+│   │   └── styles.css                        # 全局样式（背景渐变 + CSS 变量 · body/:root 必须放这）
+│   └── public/
+│       └── assets/
+│           ├── scene.config.json             # 3D 场景配置
+│           ├── README.md
+│           ├── models/                       # .glb/.gltf 模型（house.glb / tree.glb / chicken.glb / pet.glb 等）
+│           └── textures/
+│
+├── pet-park-server/                          # Spring Boot 3 后端源码
+│   ├── pom.xml                                # spring-boot-starter-parent 3.3.5
+│   └── src/main/
+│       ├── java/com/petpark/
+│       │   ├── PetParkApplication.java
+│       │   ├── common/                       # Result + BizException + GlobalExceptionHandler
+│       │   ├── config/                       # SecurityConfig + JwtAuthFilter
+│       │   ├── controller/
+│       │   │   ├── AuthController.java      # register/login/me/profile/password
+│       │   │   └── QuestionController.java  # ★ list() 支持 `?subject=&education=`（v47）
+│       │   ├── dto/                          # LoginReq/Resp + RegisterReq ★ @Pattern education + UpdateProfileReq
+│       │   ├── entity/                       # User ★ education + Question ★ education
+│       │   ├── mapper/                      # MyBatis-Plus BaseMapper
+│       │   └── service/                     # UserService（register/updateProfile 含 education）
+│       └── resources/
+│           ├── application.yml              # 端口 8080 / DB / JWT
+│           ├── schema.sql                   # ★ 4 表 + 全字段 COMMENT（v48）
+│           └── update.sql                   # ★ 增量：role + education + COMMENT 幂等 ALTER
+│
+├── pet-park-deploy-v48.zip                   # ★ 一键部署包（30MB · 按生产目录结构 · 含 v48 全部修复）
+└── pet-update-v48.sql                        # ★ 今晚纯增量 SQL（只 role/education/COMMENT，不动业务）
 ```
 
-### 关键运维命令
+---
+
+## 🚀 生产部署（v48 · 阿里云 ECS · 宝塔）
+
+**环境信息**：
+| 项 | 值 |
+|---|---|
+| 服务器 | 阿里云 ECS `iZbp18sfxjpmt9coe7oznbZ`（宝塔 9.x） |
+| 公网 | `http://118.31.124.251`（Nginx 80 端口代理 Angular static） |
+| 后端 | `java -jar pet-park-server-1.0.0.jar`（端口 8080，nohup 后台） |
+| 数据库 | 宝塔 MySQL 5.7.44（`127.0.0.1:3306` · 库 `pet_park` · root / `83458848de46385e`） |
+| 部署目录 | `/www/wwwroot/pet-park/{front, pet-park-server, sql}` |
+
+### 部署步骤（3 步）
 
 ```bash
-# 后端日志 / 重启
-tail -50 /www/wwwroot/pet/backend.log
-pkill -f pet-park-server && cd /www/wwwroot/pet && nohup java -jar app.jar --server.port=8080 > backend.log 2>&1 &
+# ① 上传 + 解压（生产目录必须保留分层结构！）
+scp pet-park-deploy-v48.zip root@118.31.124.251:/tmp/
+ssh root@118.31.124.251
+cd /www/wwwroot/pet-park      # 已有生产目录就 cd 进去
+unzip -o /tmp/pet-park-deploy-v48.zip
 
-# 数据库备份（宝塔计划任务）
-mysqldump -uroot -p'83458848de46385e' pet_park > pet_park_$(date +%Y%m%d).sql
+# ② 配 .env（生产必改 DB_PASS / JWT_SECRET；MySQL root 密码 83458848de46385e）
+cd pet-park-server
+cp .env.example .env
+vi .env                         # 改 DB_PASS=83458848de46385e + JWT_SECRET=openssl rand -hex 32
+
+# ③ 初始化 DB（幂等可重复）+ 启动后端
+mysql -uroot -p'83458848de46385e' --default-character-set=utf8mb4 < ../sql/init.sql
+bash start.sh
+# 验证
+sleep 8
+tail -10 logs/app.log                # 应见 "Started PetParkApplication" + 无 Access denied
+curl -s http://127.0.0.1:8080/api/categories | head -c 200
+curl 'http://127.0.0.1:8080/api/questions?education=PRIMARY_1&subject=math' | head -c 200
+```
+
+**浏览器强刷**（Ctrl+Shift+R）→ 看到完整登录页 + 温馨背景 + 学历下拉。
+
+### 关键部署坑（v48 必看）
+
+| # | 坑 | 解决 |
+|---|---|---|
+| 1 | **MySQL host 授权**：宝塔默认只授权 `root@'localhost'`，JDBC 用 `127.0.0.1` 连 → Access denied | `.env` 用 `DB_HOST=localhost`（走 Unix socket 匹配 `root@'localhost'`），或 `CREATE USER 'root'@'127.0.0.1' IDENTIFIED BY 'xxx'` |
+| 2 | **start.sh 变量名**：`application.yml` 用 `DB_PASSWORD`，我之前 start.sh 写 `DB_PASS` 不一致——直接 `java -jar` 会 fallback 到内置 123456 → Access denied | **必须用 `bash start.sh`**（它 `--spring.datasource.password=$DB_PASSWORD` 覆盖 yaml）|
+| 3 | **mysql 客户端字符集**：`mysql < init.sql` 必须带 `--default-character-set=utf8mb4`，否则中文 INSERT 超长 | `--default-character-set=utf8mb4` |
+| 4 | **Angular polyfills 必须保留**：`bundle.v48.v5.js` (= main) 是 minified 但**不**含 zone.js runtime（Angular 19 拆开了） | `index.html` 必须有 `<script src="polyfills-5CFQRCPP.js" type="module">` **在** bundle 之前；缺则 `bodyLen=80` 白屏 |
+| 5 | **nginx 7d 缓存**：`/assets/*` `expires 7d`，旧版 bundle.js 缓存导致 Angular 启动失败 | 改 bundle 文件名（`bundle.js` → `bundle.v48.v*.js`）破缓存；或让用户 F12 勾 Disable cache |
+| 6 | **Docker Hub 被墙**：ECS 到 registry-1.docker.io 超时 | 放弃 Docker，改 **jar 直跑 + Nginx**（deploy 包走这条路） |
+| 7 | **nginx 路径**：宝塔只 include `/www/server/panel/vhost/nginx/*.conf` | 放 vhost 目录（不要放 `/www/server/nginx/conf/`）+ `listen 80 default_server` |
+| 8 | **init.sql 幂等**：questions 表缺唯一索引时重复执行题库翻倍 | schema.sql 含 `UNIQUE KEY (subject, group_id, prompt(200))` + INSERT 前 DELETE 现有数据 |
+| 9 | **3D 模型缺失**：`public/assets/models/` 放 91 字节路径占位符 → GLTFLoader 失败 → 走 fallback 几何体（房子=方块、宠物=球） | 你给真 .glb 源文件放进 `public/assets/models/`，重 build；或我帮你从 Quaternius / PolyHaven 拉 CC0 资产 |
+| 10 | **`--ease` CSS 写错**（我 Write index.html 时手抖把 `0.36` 写成 `36`）| 已修，用 `cubic-bezier(.22, 1, 0.36, 1)` |
+
+---
+
+## 🔨 本地开发
+
+```bash
+# 后端
+cd pet-park-server
+mvn clean package -DskipTests          # 产出 target/pet-park-server-1.0.0.jar
+java -jar target/pet-park-server-1.0.0.jar --server.port=8080
+
+# 前端
+cd pet-park-ng
+npm install
+npm start                              # 4200 端口
+
+# 数据库
+mysql -uroot -p123456 --default-character-set=utf8mb4 < pet-park-server/src/main/resources/schema.sql
+# （含 4 表 + 全字段 COMMENT + 19 类目 + 241 题种子数据）
+```
+
+**端到端**：Angular ng serve → 自动 proxy `/api` → 127.0.0.1:8080 → MySQL。
+
+---
+
+## 🌐 API 接口
+
+| 接口 | 方法 | 鉴权 | 说明 |
+|---|---|---|---|
+| `/api/auth/register` | POST | 否 | 注册（含 `education` 字段，v47）|
+| `/api/auth/login` | POST | 否 | 登录返回 token |
+| `/api/auth/me` | GET | 是 | 当前用户信息（含 `education`）|
+| `/api/auth/profile` | PUT | 是 | 改 username/nickname/**education** |
+| `/api/auth/password` | PUT | 是 | 改密码 |
+| `/api/auth/admin/users` | GET | admin | 列出所有用户 |
+| `/api/auth/admin/users/:id` | PUT | admin | admin 改用户（username/nickname/role/coins/**education**）|
+| `/api/state` | GET | 是 | 拉存档 |
+| `/api/state` | PUT | 是 | 推存档 |
+| `/api/categories` | GET | 否 | 19 类目 |
+| `/api/questions` | GET | 否 | 题库（`?subject=math&education=JUNIOR_2` · v47 按学历过滤）|
+| `/api/logs` | POST | 是 | 写日志 |
+
+所有响应 `{"code":0,"msg":"ok","data":...}`，错误 code≠0。鉴权头 `Authorization: Bearer <token>`。
+
+---
+
+## 📐 数据库设计（v48 关键字段 + COMMENT）
+
+`schema.sql` / `update.sql` 都已带 COMMENT，可直接 `SHOW CREATE TABLE` 查看。下面是重点：
+
+```sql
+-- users 表（11 字段，v48 全 COMMENT）
+education  VARCHAR(16) NOT NULL DEFAULT 'PRIMARY_1'  -- 学历：PRIMARY_1..6 小学 / JUNIOR_1..3 初中 / SENIOR_1..3 高中 / UNIVERSITY_1..4 大学
+role       VARCHAR(16) NOT NULL DEFAULT 'user'      -- 角色：user 普通 / admin 管理员
+coins      INT          NOT NULL DEFAULT 0          -- 积分（独立字段）
+state_json JSON         NULL                       -- 游戏存档
+
+-- questions 表（13 字段）
+subject    VARCHAR(16) NOT NULL       -- 科目：english / math / hanzi / chengyu / thinking / yuwen
+education  VARCHAR(16) NOT NULL DEFAULT 'PRIMARY_1'  -- 题目所属学历（按此过滤）
+q_type     VARCHAR(16) NOT NULL DEFAULT 'choice'  -- 题型：choice / match / fill / qa / card
+options    JSON         NULL           -- 选择题 [{text, correct, icon}]
+```
+
+**16 级学历**（`regEducation` / `editForm.education` 枚举）：
+```
+PRIMARY_1 ~ PRIMARY_6  小学 1~6 年级
+JUNIOR_1  ~ JUNIOR_3    初中 1~3 年级
+SENIOR_1  ~ SENIOR_3    高中 1~3 年级
+UNIVERSITY_1 ~ UNIVERSITY_4  大学 1~4 年级
+```
+
+**考试下拉**默认显示用户学历及以下（`studyEduOptions = all.slice(0, myRank+1)`），切换时调 `/api/questions?education=<value>` 拉题。
+
+---
+
+## 📞 关键运维
+
+```bash
+# 后端启动 / 停止
+cd /www/wwwroot/pet-park/pet-park-server
+bash start.sh                # 启动（source .env + nohup + 写 app.pid + 写 logs/app.log）
+bash stop.sh                 # 读 app.pid kill
+tail -f logs/app.log          # 实时日志
+
+# 数据库备份（宝塔计划任务每天 3 点）
+mysqldump -uroot -p'83458848de46385e' pet_park > /www/backup/pet_park_$(date +%Y%m%d).sql
 
 # Nginx 重载
 nginx -t && nginx -s reload
+
+# 紧急停止后端
+pkill -f pet-park-server
+
+# 启动登录页（已注册测试账号）
+用户名: edu_test1 / 密码: abc123 / 学历: JUNIOR_2（可登录测试考试下拉）
 ```
 
-### 踩坑记录（v32 部署期）
+---
 
-1. **Docker 被墙**：ECS 到 Docker Hub 不通，镜像加速器对 BuildKit 无效 → 放弃 Docker，改 jar 直跑
-2. **nginx 配置放错位置**：宝塔只 include `/www/server/panel/vhost/nginx/*.conf`，放 `/www/server/nginx/conf/` 不生效 → 移到 vhost 目录 + `listen 80 default_server`
-3. **root 路径错位**：部署脚本 WEB_ROOT 写 `pet-park`，实际目录是 `/www/wwwroot/pet` → 修正
-4. **init.sql 幂等化**：questions 表缺唯一索引导致重复执行题库翻倍（60→120）→ 加 `UNIQUE KEY (subject, group_id, prompt(200))` + INSERT 前 DELETE，实测连续执行 3 次恒为 19/60
-5. **curl 127.0.0.1 假 404**：宝塔 phpfpm_status.conf 抢 `server_name 127.0.0.1`，本地 curl 测 /api 会 404；浏览器走公网 IP 正常。验证请带 `-H "Host: 118.31.124.251"`
-6. **MySQL 版本注意**：宝塔 MySQL 5.7 手动初始化必须 `--default-character-set=utf8mb4`，否则中文报 `Data too long`
+## 📝 版本演进
 
-### 安全提醒
+| 版本 | 关键节点 |
+|---|---|
+| v1-v16 | 宠物乐园核心玩法（菜地/鱼塘/宠物/天气/3D 场景）|
+| v17-v20 | 宠物导航 A* + 沿墙滑行 + 回家状态机 |
+| v21 | 统一类目表 + 牧场产出冷却 |
+| v22 | Spring Boot 3 后端 + MySQL schema + JWT |
+| v23 | Angular 19 前端 + proxy 代理 |
+| v25-v26 | 沙箱内 Angular 构建链 + 5 科目 60 题 + 单文件版清理 |
+| v32 | 生产部署：jar 直跑 + Nginx + 阿里云 ECS（绕开 Docker Hub）|
+| v44-v46 | 学问体题库扩充（241 题）+ 全字段 COMMENT 准备 |
+| **v47** | **学历模块**：users/questions 加 `education`（16 级小学~大学）+ 注册选学历 + 考试下拉按学历过滤题库 + DB_PASS 修复 + 全字段 COMMENT |
+| **v48** | **部署包目录重构**（按生产实际：`pet-park/{front, pet-park-server, sql}` · jar 在 `target/pet-park-server-1.0.0.jar` · 顶层 sql/ 备份）+ **今天要处理工作台限定 `mod==='home'`** + **用户管理切到时 `mod='admin'` 隐藏工作台** + **学历下拉样式美化**（::ng-deep 破 encapsulation + 自定义橙三角 SVG）+ **破缓存文件名 `bundle.v48.v*.js`** + **polyfills 单独引** + **start.sh 变量名 `DB_PASSWORD`** |
 
-- ⚠️ 生产 MySQL root 密码已改（`83458848de46385e`），请定期更换并备份
-- ⚠️ 8080 后端端口未对公网开放（仅 Nginx 反代内网访问），安全组只开 80
-- ⚠️ JWT 密钥 `petpark.jwt.secret` 生产已用随机 64 字符（部署脚本内置），如需更换：`openssl rand -hex 32`
-- ⚠️ 服务器重启后后端需手动拉起 → 建议宝塔「计划任务 → 开机执行」：`cd /www/wwwroot/pet && nohup java -jar app.jar --server.port=8080 > backend.log 2>&1 &`
+---
+
+## 🔗 关键部署文件
+
+| 文件 | 大小 | 用途 |
+|---|---|---|
+| `pet-park-deploy-v48.zip` | ~30MB | **★ 一键部署包**（v48 生产目录结构）|
+| `pet-update-v48.sql` | 7.5KB | **★ 今晚纯增量 SQL**（role/education/COMMENT 幂等 · 不碰已有数据）|
+| `pet-park-server/src/main/resources/schema.sql` | 18KB | 完整建库脚本（v48 含 COMMENT）|
+| `pet-park-server/src/main/resources/update.sql` | 13KB | 增量升级（v39-v48 全部 ALTER 累积，幂等）|
+
+---
+
+## 📜 License & 致谢
+
+- **代码**：MIT（个人项目，欢迎学习/参考）
+- **3D 模型**：CC0（来自 Quaternius / PolyHaven CC0 资产库）
+- **题库内容**：开源 + 原创混合
+- **致谢**：Three.js / Angular / Spring Boot / MyBatis-Plus / MySQL 社区
+
+> 最后更新：2026-08-12 · v48 学历模块 + 全字段 COMMENT + 部署包重构已上线
