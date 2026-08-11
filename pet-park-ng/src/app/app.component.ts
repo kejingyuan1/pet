@@ -40,6 +40,8 @@ export class AppComponent implements OnInit, OnDestroy {
   // 管理员：用户管理
   adminUsers: any[] = [];
   showUserAdmin = false;
+  /** 进入用户管理前的页面（关闭时恢复） */
+  private prevMod = 'home';
   adminMsg = '';
   editUser: any = null;
   editForm = { username: '', nickname: '', role: 'user', coins: 0, password: '', education: 'PRIMARY_1' };
@@ -337,11 +339,15 @@ export class AppComponent implements OnInit, OnDestroy {
 
   /** 打开用户管理页并拉取列表 */
   openUserAdmin(): void {
+    this.prevMod = this.mod;          // 记录来源页面（关闭时恢复）
     this.showUserAdmin = true;
+    // ★ 关键修复：把 mod 置为 'admin'，让 today 工作台（仅 mod==='home' 显示）隐藏，
+    //   否则从首页切过来时工作台仍显示（其他页 mod 非 home 所以没这问题）
+    this.mod = 'admin';
     this.adminMsg = '';
     this.loadUsers();
   }
-  closeUserAdmin(): void { this.showUserAdmin = false; }
+  closeUserAdmin(): void { this.showUserAdmin = false; this.mod = this.prevMod; }
 
   loadUsers(): void {
     this.auth.adminListUsers().subscribe({
