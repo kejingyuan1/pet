@@ -58,8 +58,8 @@
   </div>
 </header>
 
-<!-- 今日待办 -->
-<section class="today">
+<!-- 今日待办（仅首页显示） -->
+<section class="today" *ngIf="mod==='home'">
   <h2><span class="dot"></span>今天要处理</h2>
   <div class="today-list">
     <div class="task-item" *ngFor="let t of todayList">

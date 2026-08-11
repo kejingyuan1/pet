@@ -61,7 +61,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   // ================= 模块切换 =================
-  switchMod(m: string): void { this.mod = m; this.renderToday(); }
+  switchMod(m: string): void { this.mod = m; this.showUserAdmin = false; this.renderToday(); }
 
   // ================= 时钟 + 日期 + 天气 =================
   /** 顶栏时钟：年月日 + 星期 + 实时天气（联网缓存 30 分钟） */
