@@ -18,9 +18,23 @@ export class AppComponent implements OnInit, OnDestroy {
   // 登录表单
   loginUser = '';
   loginPass = '';
+  // 注册表单（额外字段）
+  regNickname = '';
+  regPass2 = '';
+  regInvite = '';
+  loginMode: 'login' | 'register' = 'login';
   showLogin = false;
   loginBusy = false;
   loginMsg = '';
+
+  // 账号设置（用户管理）
+  showProfile = false;
+  profileMsg = '';
+  newNickname = '';
+  newUsername = '';
+  passMsg = '';
+  oldPass = '';
+  newPass = '';
 
   // 今日待办
   todayList: Array<{ icon: string; text: string; btn: string; action: () => void }> = [];
@@ -141,6 +155,7 @@ export class AppComponent implements OnInit, OnDestroy {
   // ================= 登录 =================
   openLogin(): void { this.showLogin = true; this.loginMsg = ''; }
   closeLogin(): void { this.showLogin = false; }
+  switchLoginMode(m: 'login' | 'register'): void { this.loginMode = m; this.loginMsg = ''; }
   doLogin(): void {
     if (!this.loginUser || !this.loginPass) { this.loginMsg = '请输入用户名和密码'; return; }
     this.loginBusy = true; this.loginMsg = '';
@@ -154,10 +169,15 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
   doRegister(): void {
+    // 前端校验（后端也会再校验一遍）
     if (!this.loginUser || !this.loginPass) { this.loginMsg = '请输入用户名和密码'; return; }
+    if (!this.regNickname || !this.regNickname.trim()) { this.loginMsg = '请输入昵称'; return; }
     if (this.loginPass.length < 6) { this.loginMsg = '密码至少 6 位'; return; }
+    if (!/[A-Za-z]/.test(this.loginPass) || !/\d/.test(this.loginPass)) { this.loginMsg = '密码必须同时包含数字和字母'; return; }
+    if (this.loginPass !== this.regPass2) { this.loginMsg = '两次输入的密码不一致'; return; }
+    if (!this.regInvite || !this.regInvite.trim()) { this.loginMsg = '请输入邀请码'; return; }
     this.loginBusy = true; this.loginMsg = '';
-    this.auth.register(this.loginUser, this.loginPass).subscribe({
+    this.auth.register(this.loginUser, this.loginPass, this.regNickname.trim(), this.regPass2, this.regInvite.trim()).subscribe({
       next: res => {
         this.loginBusy = false;
         if (res.code === 0) { this.auth.onAuthSuccess(res.data); this.showLogin = false; this.state.syncFromServer(); }
@@ -166,7 +186,92 @@ export class AppComponent implements OnInit, OnDestroy {
       error: () => { this.loginBusy = false; this.loginMsg = '无法连接服务器'; }
     });
   }
-  logout(): void { this.auth.logout(); }
+
+  // ================= 账号设置（用户管理） =================
+  /** 打开账号面板：预填当前资料 + 刷新服务端最新信息 */
+  openProfile(): void {
+    this.showProfile = true;
+    this.profileMsg = '';
+    this.passMsg = '';
+    this.newNickname = this.auth.user?.nickname || '';
+    this.newUsername = this.auth.user?.username || '';
+    this.oldPass = '';
+    this.newPass = '';
+    // 拉取服务端最新用户信息（改过名后刷新显示）
+    this.auth.getMe().subscribe({
+      next: res => {
+        if (res.code === 0 && res.data) {
+          this.auth.user = res.data;
+          this.newNickname = res.data.nickname || '';
+          this.newUsername = res.data.username || '';
+          try {
+            localStorage.setItem(this.auth['USER_KEY'], JSON.stringify({
+              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname
+            }));
+          } catch (e) { /* ignore */ }
+        }
+      },
+      error: () => { /* 静默：失败保留本地显示 */ }
+    });
+  }
+  closeProfile(): void { this.showProfile = false; }
+
+  /** 保存昵称 */
+  doUpdateNickname(): void {
+    if (!this.newNickname || !this.newNickname.trim()) { this.profileMsg = '昵称不能为空'; return; }
+    this.auth.updateProfile(undefined, this.newNickname.trim()).subscribe({
+      next: res => {
+        if (res.code === 0) {
+          this.auth.user = res.data;
+          try {
+            localStorage.setItem(this.auth['USER_KEY'], JSON.stringify({
+              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname
+            }));
+          } catch (e) { /* ignore */ }
+          this.profileMsg = '✅ 昵称已更新';
+        } else this.profileMsg = res.msg || '保存失败';
+      },
+      error: () => { this.profileMsg = '无法连接服务器'; }
+    });
+  }
+
+  /** 保存用户名 */
+  doUpdateUsername(): void {
+    if (!this.newUsername || !this.newUsername.trim()) { this.profileMsg = '用户名不能为空'; return; }
+    this.auth.updateProfile(this.newUsername.trim()).subscribe({
+      next: res => {
+        if (res.code === 0) {
+          this.auth.user = res.data;
+          try {
+            localStorage.setItem(this.auth['USER_KEY'], JSON.stringify({
+              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname
+            }));
+          } catch (e) { /* ignore */ }
+          this.profileMsg = '✅ 用户名已更新';
+        } else this.profileMsg = res.msg || '保存失败';
+      },
+      error: () => { this.profileMsg = '无法连接服务器'; }
+    });
+  }
+
+  /** 修改密码 */
+  doUpdatePassword(): void {
+    if (!this.oldPass || !this.newPass) { this.passMsg = '请填写旧密码和新密码'; return; }
+    if (this.newPass.length < 6) { this.passMsg = '新密码至少 6 位'; return; }
+    this.auth.updatePassword(this.oldPass, this.newPass).subscribe({
+      next: res => {
+        if (res.code === 0) { this.passMsg = '✅ 密码已修改'; this.oldPass = ''; this.newPass = ''; }
+        else this.passMsg = res.msg || '修改失败';
+      },
+      error: () => { this.passMsg = '无法连接服务器'; }
+    });
+  }
+
+  logout(): void {
+    this.auth.logout();
+    this.showProfile = false;
+    this.showLogin = false;
+  }
 
   // ================= 学习（委托给 StateService） =================
   get studySubjects() { return this.state.studySubjects(); }

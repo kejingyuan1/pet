@@ -39,8 +39,9 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/categories", "/api/questions").permitAll()  // 只读接口开放
+                .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()    // 登录注册开放
+                .requestMatchers("/api/categories", "/api/questions").permitAll()        // 只读数据开放
+                .requestMatchers("/api/auth/me", "/api/auth/profile", "/api/auth/password").authenticated()  // 资料管理需登录
                 .anyRequest().authenticated())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

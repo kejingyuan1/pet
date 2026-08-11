@@ -21,9 +21,9 @@ export class AuthService {
 
   get isLoggedIn(): boolean { return !!this.token; }
 
-  register(username: string, password: string, nickname?: string): Observable<{ code: number; msg: string; data: UserInfo }> {
+  register(username: string, password: string, nickname: string, confirmPassword: string, inviteCode: string): Observable<{ code: number; msg: string; data: UserInfo }> {
     return this.http.post<{ code: number; msg: string; data: UserInfo }>('/api/auth/register',
-      { username, password, nickname: nickname || username });
+      { username, password, nickname, confirmPassword, inviteCode });
   }
 
   login(username: string, password: string): Observable<{ code: number; msg: string; data: UserInfo }> {
@@ -55,5 +55,24 @@ export class AuthService {
   /** 给 HttpClient 注入 Bearer token 的 headers */
   authHeaders(): HttpHeaders {
     return new HttpHeaders({ 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.token });
+  }
+
+  /** 获取当前登录用户最新信息 */
+  getMe(): Observable<{ code: number; msg: string; data: UserInfo }> {
+    return this.http.get<{ code: number; msg: string; data: UserInfo }>('/api/auth/me', { headers: this.authHeaders() });
+  }
+
+  /** 修改资料：用户名 / 昵称（只传要改的） */
+  updateProfile(username?: string, nickname?: string): Observable<{ code: number; msg: string; data: UserInfo }> {
+    const body: any = {};
+    if (username !== undefined) body.username = username;
+    if (nickname !== undefined) body.nickname = nickname;
+    return this.http.put<{ code: number; msg: string; data: UserInfo }>('/api/auth/profile', body, { headers: this.authHeaders() });
+  }
+
+  /** 修改密码：校验旧密码后设置新密码 */
+  updatePassword(oldPassword: string, newPassword: string): Observable<{ code: number; msg: string; data: any }> {
+    return this.http.put<{ code: number; msg: string; data: any }>('/api/auth/password',
+      { oldPassword, newPassword }, { headers: this.authHeaders() });
   }
 }

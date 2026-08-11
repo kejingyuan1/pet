@@ -166,3 +166,36 @@ body { background: var(--bg); color: var(--ink); min-height: 100vh; padding-bott
 .study-btns button:active { transform: scale(.94); }
 .study-btns .s-next { background: linear-gradient(135deg, #FFB35C, #F07C00); }
 .study-btns .s-back { background: linear-gradient(135deg, #6FD6F7, #2FA8D8); }
+
+/* ================= 强制登录页 ================= */
+.login-full { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: linear-gradient(160deg, #FFF7E8 0%, #FFE9C9 55%, #FFD9A8 100%); }
+.login-card { width: 100%; max-width: 360px; background: #fff; border-radius: 30px; padding: 34px 28px 28px;
+  box-shadow: 0 30px 80px rgba(180, 120, 40, .28); text-align: center; animation: pop .3s ease; }
+.login-logo { width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 24px; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #FFB35C, #F07C00); color: #fff; }
+.login-logo svg { width: 40px; height: 40px; }
+.login-card h2 { margin: 0 0 4px; font-size: 1.5rem; color: #5A3E1E; }
+.login-sub { margin: 0 0 20px; font-size: .82rem; color: var(--sub); }
+.login-tabs { display: flex; background: #F6EDDD; border-radius: 14px; padding: 4px; margin-bottom: 16px; }
+.login-tabs button { flex: 1; border: none; background: none; padding: 11px 0; border-radius: 11px; font-size: .95rem;
+  font-weight: 800; color: var(--sub); cursor: pointer; }
+.login-tabs button.on { background: #fff; color: var(--orange-d); box-shadow: 0 3px 10px rgba(0,0,0,.08); }
+.login-card input { width: 100%; box-sizing: border-box; padding: 14px 15px; border-radius: 13px; border: 1.5px solid #E5D9C8;
+  font-size: 16px; margin-bottom: 12px; background: #FBF6EE; outline: none; }
+.login-card input:focus { border-color: #F07C00; background: #fff; }
+.login-card .btn-login { width: 100%; min-height: 50px; border: none; border-radius: 14px; font-size: 1.05rem; font-weight: 800;
+  cursor: pointer; background: linear-gradient(135deg, #FFB35C, #F07C00); color: #fff; }
+.login-card .btn-login:disabled { opacity: .6; }
+
+/* ================= 账号设置（用户管理） ================= */
+.profile-box { max-width: 360px; }
+.profile-box h3 { text-align: center; }
+.profile-id { text-align: center; font-size: .85rem; color: var(--sub); margin: -6px 0 14px; }
+.profile-box label { display: block; font-size: .78rem; font-weight: 800; color: #8A6B3F; margin: 2px 0 6px; }
+.profile-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.profile-row input { flex: 1; margin-bottom: 0; }
+.profile-row button { width: 72px; min-height: 46px; border: none; border-radius: 13px; font-size: .9rem; font-weight: 800;
+  cursor: pointer; background: linear-gradient(135deg, #6FD6F7, #2FA8D8); color: #fff; }
+.profile-box hr { border: none; border-top: 1px dashed #E5D9C8; margin: 16px 0; }
+.logout-btn { margin-top: 6px; }
