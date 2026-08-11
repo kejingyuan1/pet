@@ -204,6 +204,30 @@ p { line-height: 1.55; }
   transition: all .25s var(--ease);
 }
 .modal input:focus { border-color: var(--orange); background: rgba(255, 255, 255, .95); box-shadow: 0 0 0 4px rgba(255, 139, 61, .12); }
+
+/* ★ 学历下拉选择器：与 input 一致风格 + 自定义三角箭头（破浏览器默认丑陋外观） */
+.modal ::ng-deep .reg-edu-select,
+.modal ::ng-deep .study-edu-select {
+  width: 100%; box-sizing: border-box;
+  padding: 13px 36px 13px 14px;       /* 右边留 36px 给自定义三角 */
+  border-radius: var(--radius-sm);
+  border: 1.5px solid rgba(229, 217, 200, .6);
+  font-size: 16px; margin-bottom: 10px;
+  background-color: rgba(251, 246, 238, .7);
+  /* ★ 关键：去掉浏览器默认三角箭头 */
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+  /* ★ 自定义橙色三角（SVG data URI 嵌入背景） */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 6 5-6' fill='none' stroke='%23FF8B3D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat; background-position: right 14px center; background-size: 14px 10px;
+  outline: none; cursor: pointer; transition: all .25s var(--ease);
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+}
+.modal ::ng-deep .reg-edu-select:focus,
+.modal ::ng-deep .study-edu-select:focus {
+  border-color: var(--orange); background-color: rgba(255, 255, 255, .95);
+  box-shadow: 0 0 0 4px rgba(255, 139, 61, .12);
+}
 .login-msg { color: var(--red); font-size: .8rem; margin-bottom: 8px; text-align: center; }
 .modal button {
   width: 100%; min-height: 46px; border: none; border-radius: var(--radius-sm);

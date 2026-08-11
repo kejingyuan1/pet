@@ -384,6 +384,10 @@
     </select>
     <label>积分</label>
     <input [(ngModel)]="editForm.coins" type="number" placeholder="积分">
+    <label>学历</label>
+    <select [(ngModel)]="editForm.education" class="reg-edu-select" aria-label="学历">
+      <option *ngFor="let e of educationOptions" [value]="e.v">{{ e.l }}</option>
+    </select>
     <label>密码（留空不修改）</label>
     <input [(ngModel)]="editForm.password" type="password" placeholder="新密码">
     <button class="btn-login" (click)="saveEditUser()">保存</button>

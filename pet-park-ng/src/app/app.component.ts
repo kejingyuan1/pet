@@ -42,7 +42,7 @@ export class AppComponent implements OnInit, OnDestroy {
   showUserAdmin = false;
   adminMsg = '';
   editUser: any = null;
-  editForm = { username: '', nickname: '', role: 'user', coins: 0, password: '' };
+  editForm = { username: '', nickname: '', role: 'user', coins: 0, password: '', education: 'PRIMARY_1' };
 
   // 今日待办
   todayList: Array<{ icon: string; text: string; btn: string; action: () => void }> = [];
@@ -353,7 +353,7 @@ export class AppComponent implements OnInit, OnDestroy {
   /** 打开编辑弹窗 */
   openEditUser(u: any): void {
     this.editUser = u;
-    this.editForm = { username: u.username || '', nickname: u.nickname || '', role: u.role || 'user', coins: u.coins ?? 0, password: '' };
+    this.editForm = { username: u.username || '', nickname: u.nickname || '', role: u.role || 'user', coins: u.coins ?? 0, password: '', education: u.education || 'PRIMARY_1' };
   }
   closeEditUser(): void { this.editUser = null; }
 
@@ -366,6 +366,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.editForm.role !== this.editUser.role) body.role = this.editForm.role;
     if (this.editForm.coins !== (this.editUser.coins ?? 0)) body.coins = this.editForm.coins;
     if (this.editForm.password) body.password = this.editForm.password;
+    if (this.editForm.education !== (this.editUser.education || 'PRIMARY_1')) body.education = this.editForm.education;
     if (!Object.keys(body).length) { this.editUser = null; return; }
     this.auth.adminUpdateUser(this.editUser.userId, body).subscribe({
       next: res => {
