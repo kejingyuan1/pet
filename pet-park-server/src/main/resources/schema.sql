@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   username    VARCHAR(32)  NOT NULL UNIQUE,
   password    VARCHAR(100) NOT NULL,              -- BCrypt 哈希
   nickname    VARCHAR(32)  DEFAULT NULL,
+  education   VARCHAR(16)  NOT NULL DEFAULT 'PRIMARY_1', -- 学历：PRIMARY_1..6 / JUNIOR_1..3 / SENIOR_1..3 / UNIVERSITY_1..4
   role        VARCHAR(16)  NOT NULL DEFAULT 'user', -- 角色：user 普通 / admin 管理员
   coins       INT          NOT NULL DEFAULT 0,    -- 积分（独立字段，可查询/统计）
   state_json  JSON         NULL,                  -- 游戏存档（菜地/宠物等动态状态）
@@ -91,6 +92,7 @@ ON DUPLICATE KEY UPDATE name=VALUES(name);
 CREATE TABLE IF NOT EXISTS questions (
   id          BIGINT PRIMARY KEY AUTO_INCREMENT,
   subject     VARCHAR(16)  NOT NULL,              -- 科目：english|hanzi|chengyu|math|thinking
+  education   VARCHAR(16)  NOT NULL DEFAULT 'PRIMARY_1', -- 学历：PRIMARY_1..6 / JUNIOR_1..3 / SENIOR_1..3 / UNIVERSITY_1..4
   q_type      VARCHAR(16)  NOT NULL DEFAULT 'choice',
   group_id    VARCHAR(32)  DEFAULT NULL,          -- 分组标识（animals / 加法 / 反义词...）
   group_name  VARCHAR(32)  DEFAULT NULL,
