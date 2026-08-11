@@ -14,6 +14,8 @@ public class UserDetailResp {
     private String nickname;
     /** 积分（users.coins 独立字段） */
     private Integer coins;
+    /** 学历：PRIMARY_1..UNIVERSITY_4 */
+    private String education;
     /** 角色：user 普通 / admin 管理员 */
     private String role;
     private LocalDateTime createdAt;

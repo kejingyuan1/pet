@@ -89,6 +89,8 @@ export interface UserInfo {
   role?: string;
   /** 积分（users.coins 独立字段，后端权威） */
   coins?: number;
+  /** 学历：PRIMARY_1..PRIMARY_6 / JUNIOR_1..JUNIOR_3 / SENIOR_1..SENIOR_3 / UNIVERSITY_1..UNIVERSITY_4 */
+  education?: string;
   token?: string;
 }
 

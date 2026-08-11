@@ -477,8 +477,9 @@ export class StateService {
   questionsLoaded = false;
 
   /** 从后端拉取题库并按 科目→分组 重组（前端不内置任何题目） */
-  loadQuestions(): void {
-    this.http.get<{ code: number; msg: string; data: any[] }>('/api/questions').subscribe({
+  loadQuestions(education?: string): void {
+    const url = education ? `/api/questions?education=${encodeURIComponent(education)}` : '/api/questions';
+    this.http.get<{ code: number; msg: string; data: any[] }>(url).subscribe({
       next: res => {
         if (res.code === 0 && Array.isArray(res.data) && res.data.length) {
           this.remoteSubjects = this.rebuildSubjects(res.data);

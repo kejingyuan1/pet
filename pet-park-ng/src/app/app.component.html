@@ -17,6 +17,15 @@
     <input [(ngModel)]="loginPass" type="password" placeholder="密码（至少 6 位，须含数字和字母）" (keyup.enter)="loginMode==='login' ? doLogin() : doRegister()">
     <input *ngIf="loginMode==='register'" [(ngModel)]="regPass2" type="password" placeholder="确认密码" (keyup.enter)="doRegister()">
     <input *ngIf="loginMode==='register'" [(ngModel)]="regInvite" placeholder="邀请码" autocomplete="off" (keyup.enter)="doRegister()">
+    <select *ngIf="loginMode==='register'" [(ngModel)]="regEducation" class="reg-edu-select" aria-label="学历">
+      <option value="PRIMARY_1">小学一年级</option><option value="PRIMARY_2">小学二年级</option>
+      <option value="PRIMARY_3">小学三年级</option><option value="PRIMARY_4">小学四年级</option>
+      <option value="PRIMARY_5">小学五年级</option><option value="PRIMARY_6">小学六年级</option>
+      <option value="JUNIOR_1">初中一年级</option><option value="JUNIOR_2">初中二年级</option><option value="JUNIOR_3">初中三年级</option>
+      <option value="SENIOR_1">高中一年级</option><option value="SENIOR_2">高中二年级</option><option value="SENIOR_3">高中三年级</option>
+      <option value="UNIVERSITY_1">大学一年级</option><option value="UNIVERSITY_2">大学二年级</option>
+      <option value="UNIVERSITY_3">大学三年级</option><option value="UNIVERSITY_4">大学四年级</option>
+    </select>
     <p class="login-msg" *ngIf="loginMsg">{{ loginMsg }}</p>
     <button class="btn-login" (click)="loginMode==='login' ? doLogin() : doRegister()" [disabled]="loginBusy">
       {{ loginBusy ? '请稍候…' : (loginMode==='login' ? '登 录' : '注册并登录') }}
@@ -197,11 +206,26 @@
           <span *ngIf="state.studySubjectAllDone(subj)" class="done-mark">✓</span>
         </button>
       </div>
+      <div class="study-edu">
+        <label>考试学历：
+          <select [ngModel]="studyEducationDisplay" (ngModelChange)="onStudyEduChange($event)" class="study-edu-select" aria-label="考试学历">
+            <option *ngFor="let e of studyEduOptions" [value]="e.v">{{ e.l }}</option>
+          </select>
+        </label>
+      </div>
       <div class="study-daily">今日已赚金币：{{ studyEarned }} / {{ studyLimit }}（学完一组 +10 金币）</div>
 
       <!-- 学习会话（答题卡） -->
       <div *ngIf="studySession" class="study-card">
         <div class="word-progress">{{ studyCurrentSubj().name }}·{{ studyCurrentGroup().name }}　第 {{ studySession.itemIdx+1 }} / {{ studyCurrentGroup().items.length }} 题</div>
+
+        <!-- 🔊 读题：朗读题干 + 选项（所有题型通用） -->
+        <div class="read-row">
+          <button class="read-btn" (click)="isSpeaking ? stopRead() : readAloud()">
+            <span class="btn-emoji">{{ isSpeaking ? '⏹' : '🔊' }}</span>
+            <span>{{ isSpeaking ? '停止' : '读题' }}</span>
+          </button>
+        </div>
 
         <!-- 单词卡（英语） -->
         <ng-container *ngIf="studyCurrentGroup().qType==='card'">

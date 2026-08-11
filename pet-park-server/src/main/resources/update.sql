@@ -275,3 +275,26 @@ PREPARE str FROM @sr; EXECUTE str; DEALLOCATE PREPARE str;
 
 -- 把指定账号设为管理员（把 admin 改成你要的管理员用户名，重复执行幂等）
 -- UPDATE users SET role='admin' WHERE username='admin';
+
+-- ============================================================
+-- ★ v46 新增：users + questions 加 education 字段（学历：小学1~大学4）
+--   users.education     用户学历（注册时填写）
+--   questions.education 题目所属学历（前端下拉默认用户学历，可选手动≤用户学历的题库）
+-- 幂等：列不存在才加
+-- ============================================================
+
+-- 1. users 加 education 列
+SET @e = (SELECT COUNT(*) FROM information_schema.COLUMNS
+          WHERE table_schema='pet_park' AND table_name='users' AND column_name='education');
+SET @se = IF(@e = 0,
+  'ALTER TABLE users ADD COLUMN education VARCHAR(16) NOT NULL DEFAULT ''PRIMARY_1'' AFTER nickname',
+  'SELECT 1');
+PREPARE ste FROM @se; EXECUTE ste; DEALLOCATE PREPARE ste;
+
+-- 2. questions 加 education 列（现有 241 题默认归 PRIMARY_1 = 小学一年级）
+SET @qe = (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE table_schema='pet_park' AND table_name='questions' AND column_name='education');
+SET @sqe = IF(@qe = 0,
+  'ALTER TABLE questions ADD COLUMN education VARCHAR(16) NOT NULL DEFAULT ''PRIMARY_1'' AFTER subject',
+  'SELECT 1');
+PREPARE ste2 FROM @sqe; EXECUTE ste2; DEALLOCATE PREPARE ste2;

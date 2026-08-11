@@ -22,6 +22,8 @@ public class User {
     private String username;
     private String password;   // BCrypt 哈希
     private String nickname;
+    /** 学历：PRIMARY_1..PRIMARY_6 / JUNIOR_1..JUNIOR_3 / SENIOR_1..SENIOR_3 / UNIVERSITY_1..UNIVERSITY_4 */
+    private String education;
     /** 角色：user 普通 / admin 管理员 */
     private String role;
     /** 积分（独立字段，权威数据源） */

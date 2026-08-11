@@ -21,6 +21,8 @@ public class Question {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String subject;
+    /** 学历：PRIMARY_1..PRIMARY_6 / JUNIOR_1..JUNIOR_3 / SENIOR_1..SENIOR_3 / UNIVERSITY_1..UNIVERSITY_4 */
+    private String education;
     /** 题型：序列化强制为 qType（前端依赖），避免 Jackson 驼峰降为 qtype */
     @JsonProperty("qType")
     private String qType;

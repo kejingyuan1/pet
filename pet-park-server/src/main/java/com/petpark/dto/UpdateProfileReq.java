@@ -1,5 +1,6 @@
 package com.petpark.dto;
 
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 /**
@@ -12,4 +13,8 @@ public class UpdateProfileReq {
     private String username;
     /** 新昵称（可选，传了才改） */
     private String nickname;
+    /** 新学历（可选，传了才改，传空字符串=不改） */
+    @Pattern(regexp = "^(PRIMARY_[1-6]|JUNIOR_[1-3]|SENIOR_[1-3]|UNIVERSITY_[1-4])$",
+             message = "学历取值非法")
+    private String education;
 }

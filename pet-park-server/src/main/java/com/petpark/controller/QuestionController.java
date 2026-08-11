@@ -23,12 +23,16 @@ public class QuestionController {
 
     private final QuestionMapper questionMapper;
 
-    /** 题库列表：?subject=math 可选 */
+    /** 题库列表：?subject=math &education=JUNIOR_2 都可选；
+     *  education 给出时，返回 education <= 给出级别的所有题（用户可下拉选本人学历以下的题库） */
     @GetMapping
-    public Result<List<Question>> list(@RequestParam(required = false) String subject) {
+    public Result<List<Question>> list(@RequestParam(required = false) String subject,
+                                       @RequestParam(required = false) String education) {
         LambdaQueryWrapper<Question> qw = new LambdaQueryWrapper<Question>()
                 .eq(Question::getStatus, 1)
                 .eq(subject != null && !subject.isBlank(), Question::getSubject, subject)
+                .le(education != null && !education.isBlank(), Question::getEducation, education)
+                .orderByAsc(Question::getEducation)
                 .orderByAsc(Question::getLevel);
         return Result.ok(questionMapper.selectList(qw));
     }

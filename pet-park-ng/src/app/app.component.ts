@@ -22,6 +22,7 @@ export class AppComponent implements OnInit, OnDestroy {
   regNickname = '';
   regPass2 = '';
   regInvite = '';
+  regEducation = 'PRIMARY_1';
   loginMode: 'login' | 'register' = 'login';
   showLogin = false;
   loginBusy = false;
@@ -206,7 +207,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.auth.login(this.loginUser, this.loginPass).subscribe({
       next: res => {
         this.loginBusy = false;
-        if (res.code === 0) { this.auth.onAuthSuccess(res.data); this.showLogin = false; this.applyBackendCoins(res.data.coins); this.state.syncFromServer(); }
+        if (res.code === 0) {
+          this.auth.onAuthSuccess(res.data); this.showLogin = false; this.applyBackendCoins(res.data.coins); this.state.syncFromServer();
+          this.state.loadQuestions(res.data.education);  // 登录后按用户学历加载题库
+        }
         else this.loginMsg = res.msg || '登录失败';
       },
       error: () => { this.loginBusy = false; this.loginMsg = '无法连接服务器'; }
@@ -220,11 +224,15 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!/[A-Za-z]/.test(this.loginPass) || !/\d/.test(this.loginPass)) { this.loginMsg = '密码必须同时包含数字和字母'; return; }
     if (this.loginPass !== this.regPass2) { this.loginMsg = '两次输入的密码不一致'; return; }
     if (!this.regInvite || !this.regInvite.trim()) { this.loginMsg = '请输入邀请码'; return; }
+    if (!this.regEducation) { this.loginMsg = '请选择学历'; return; }
     this.loginBusy = true; this.loginMsg = '';
-    this.auth.register(this.loginUser, this.loginPass, this.regNickname.trim(), this.regPass2, this.regInvite.trim()).subscribe({
+    this.auth.register(this.loginUser, this.loginPass, this.regNickname.trim(), this.regPass2, this.regInvite.trim(), this.regEducation).subscribe({
       next: res => {
         this.loginBusy = false;
-        if (res.code === 0) { this.auth.onAuthSuccess(res.data); this.showLogin = false; this.applyBackendCoins(res.data.coins); this.state.syncFromServer(); }
+        if (res.code === 0) {
+          this.auth.onAuthSuccess(res.data); this.showLogin = false; this.applyBackendCoins(res.data.coins); this.state.syncFromServer();
+          this.state.loadQuestions(res.data.education);  // 注册后按用户学历加载题库
+        }
         else this.loginMsg = res.msg || '注册失败';
       },
       error: () => { this.loginBusy = false; this.loginMsg = '无法连接服务器'; }
@@ -251,7 +259,7 @@ export class AppComponent implements OnInit, OnDestroy {
           this.newUsername = res.data.username || '';
           try {
             localStorage.setItem(this.auth['USER_KEY'], JSON.stringify({
-              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname, coins: res.data.coins ?? 0
+              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname, coins: res.data.coins ?? 0, education: res.data.education ?? 'PRIMARY_1'
             }));
           } catch (e) { /* ignore */ }
         }
@@ -398,6 +406,33 @@ export class AppComponent implements OnInit, OnDestroy {
   // ================= 学习（委托给 StateService） =================
   get studySubjects() { return this.state.studySubjects(); }
   get studySession() { return this.state.studySession; }
+  /** 当前考试学历（空=默认用户学历） */
+  studyEducation = '';
+  /** 学历枚举（用于下拉选项） */
+  readonly educationOptions = [
+    { v: 'PRIMARY_1',    l: '小学一年级' }, { v: 'PRIMARY_2',    l: '小学二年级' },
+    { v: 'PRIMARY_3',    l: '小学三年级' }, { v: 'PRIMARY_4',    l: '小学四年级' },
+    { v: 'PRIMARY_5',    l: '小学五年级' }, { v: 'PRIMARY_6',    l: '小学六年级' },
+    { v: 'JUNIOR_1',     l: '初中一年级' }, { v: 'JUNIOR_2',     l: '初中二年级' }, { v: 'JUNIOR_3',     l: '初中三年级' },
+    { v: 'SENIOR_1',     l: '高中一年级' }, { v: 'SENIOR_2',     l: '高中二年级' }, { v: 'SENIOR_3',     l: '高中三年级' },
+    { v: 'UNIVERSITY_1', l: '大学一年级' }, { v: 'UNIVERSITY_2', l: '大学二年级' },
+    { v: 'UNIVERSITY_3', l: '大学三年级' }, { v: 'UNIVERSITY_4', l: '大学四年级' }
+  ];
+  /** 当前显示学历：用户手动选择 > 用户学历 > PRIMARY_1 */
+  get studyEducationDisplay(): string {
+    return this.studyEducation || (this.auth.user?.education ?? 'PRIMARY_1');
+  }
+  /** 下拉可选范围：用户学历及以下 */
+  get studyEduOptions() {
+    const all = this.educationOptions;
+    const myRank = all.findIndex(x => x.v === (this.auth.user?.education ?? 'PRIMARY_1'));
+    return myRank < 0 ? all : all.slice(0, myRank + 1);
+  }
+  /** 切换学历：重新拉题库（后端按 education <= 给值 过滤） */
+  onStudyEduChange(edu: string): void {
+    this.studyEducation = edu;
+    this.state.loadQuestions(edu);
+  }
   get studySubjectIdx() { return this.state.studySubjectIdx; }
   get studyEarned() { return this.state.studyTodayEarned(); }
   get studyLimit() { return 30; }
@@ -424,6 +459,50 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!s) return null;
     return this.studySubjects[s.subjIdx].groups[s.groupIdx].items[s.itemIdx];
   }
+
+  // ================= 读题（语音朗读） =================
+  isSpeaking = false;
+  /** 朗读当前题目：题干 + 选项（选择题）；★ 答完才附带答案 */
+  readAloud(): void {
+    const it = this.studyCurrentItem();
+    if (!it) return;
+    const parts: string[] = [];
+    if (it.q) parts.push(String(it.q));
+    if (it.en) parts.push(String(it.en));
+    if (it.cn) parts.push(String(it.cn));
+    if (Array.isArray(it.opts) && it.opts.length) {
+      parts.push('选项：' + it.opts.join('，'));
+    }
+    // ★ 答案只在答完之后才读（用户选择后才知道）
+    const s = this.studySession;
+    if (s && s.answered && it.a) {
+      parts.push('答案：' + String(it.a));
+    }
+    this.speakText(parts.join('。'));
+  }
+  /** 朗读指定文本（Web Speech API，中文语音优先） */
+  private speakText(text: string): void {
+    try {
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-CN';
+      u.rate = 0.95;
+      const voices = synth.getVoices();
+      const zh = voices.find(v => /zh|Chinese/i.test(v.lang));
+      if (zh) u.voice = zh;
+      u.onstart = () => { this.isSpeaking = true; };
+      u.onend = u.onerror = () => { this.isSpeaking = false; };
+      synth.speak(u);
+    } catch (e) { /* 浏览器不支持时静默 */ }
+  }
+  /** 停止朗读 */
+  stopRead(): void {
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+    this.isSpeaking = false;
+  }
+
   wordIconSvg(name: string): string {
     const svgs: Record<string, string> = {
       wordCat: '<svg viewBox="0 0 64 64"><ellipse cx="32" cy="42" rx="20" ry="18" fill="#FF9E4A"/><path d="M16 30 L8 14 L24 24 Z" fill="#FF8F6B"/><path d="M48 30 L56 14 L40 24 Z" fill="#FF8F6B"/><circle cx="26" cy="40" r="4.2" fill="#2B2118"/><circle cx="38" cy="40" r="4.2" fill="#2B2118"/><path d="M28 47 q4 3 8 0" stroke="#2B2118" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M23 49 q-5 7-9 5 M41 49 q5 7 9 5" stroke="#2B2118" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',

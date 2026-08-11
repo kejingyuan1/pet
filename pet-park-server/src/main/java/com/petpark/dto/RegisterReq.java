@@ -32,4 +32,10 @@ public class RegisterReq {
     /** 邀请码（配置在 application.yml，petpark.register.invite-code） */
     @NotBlank(message = "邀请码不能为空")
     private String inviteCode;
+
+    /** 学历（PRIMARY_1..UNIVERSITY_4） */
+    @NotBlank(message = "请选择学历")
+    @Pattern(regexp = "^(PRIMARY_[1-6]|JUNIOR_[1-3]|SENIOR_[1-3]|UNIVERSITY_[1-4])$",
+             message = "学历取值非法")
+    private String education;
 }

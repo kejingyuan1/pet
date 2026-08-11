@@ -55,6 +55,7 @@ public class UserService {
         user.setRole("user");                   // 注册一律普通用户（管理员手动指定）
         user.setCoins(0);                       // 新用户积分独立：初始 0，不继承任何值
         user.setVersion(7);
+        user.setEducation(req.getEducation() == null || req.getEducation().isBlank() ? "PRIMARY_1" : req.getEducation());
         user.setCreatedAt(LocalDateTime.now());
         userMapper.insert(user);
 
@@ -78,6 +79,7 @@ public class UserService {
         resp.setNickname(user.getNickname());
         resp.setRole(user.getRole() == null ? "user" : user.getRole());
         resp.setCoins(user.getCoins() == null ? 0 : user.getCoins());
+        resp.setEducation(user.getEducation() == null ? "PRIMARY_1" : user.getEducation());
         return resp;
     }
 
@@ -90,6 +92,7 @@ public class UserService {
         resp.setNickname(user.getNickname());
         resp.setRole(user.getRole() == null ? "user" : user.getRole());
         resp.setCoins(user.getCoins() == null ? 0 : user.getCoins());
+        resp.setEducation(user.getEducation() == null ? "PRIMARY_1" : user.getEducation());
         resp.setCreatedAt(user.getCreatedAt());
         return resp;
     }
@@ -115,6 +118,12 @@ public class UserService {
         if (req.getNickname() != null && !req.getNickname().isBlank()
                 && !req.getNickname().equals(user.getNickname())) {
             user.setNickname(req.getNickname());
+            changed = true;
+        }
+        // 改学历
+        if (req.getEducation() != null && !req.getEducation().isBlank()
+                && !req.getEducation().equals(user.getEducation())) {
+            user.setEducation(req.getEducation());
             changed = true;
         }
         if (changed) {

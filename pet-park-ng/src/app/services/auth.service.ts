@@ -21,9 +21,9 @@ export class AuthService {
 
   get isLoggedIn(): boolean { return !!this.token; }
 
-  register(username: string, password: string, nickname: string, confirmPassword: string, inviteCode: string): Observable<{ code: number; msg: string; data: UserInfo }> {
+  register(username: string, password: string, nickname: string, confirmPassword: string, inviteCode: string, education: string): Observable<{ code: number; msg: string; data: UserInfo }> {
     return this.http.post<{ code: number; msg: string; data: UserInfo }>('/api/auth/register',
-      { username, password, nickname, confirmPassword, inviteCode });
+      { username, password, nickname, confirmPassword, inviteCode, education });
   }
 
   login(username: string, password: string): Observable<{ code: number; msg: string; data: UserInfo }> {
@@ -38,7 +38,7 @@ export class AuthService {
     try {
       localStorage.setItem(this.TOKEN_KEY, this.token);
       localStorage.setItem(this.USER_KEY, JSON.stringify({
-        userId: data.userId, username: data.username, nickname: data.nickname, role: data.role ?? 'user', coins: data.coins ?? 0
+        userId: data.userId, username: data.username, nickname: data.nickname, role: data.role ?? 'user', coins: data.coins ?? 0, education: data.education ?? 'PRIMARY_1'
       }));
     } catch (e) { /* ignore */ }
   }
@@ -63,10 +63,11 @@ export class AuthService {
   }
 
   /** 修改资料：用户名 / 昵称（只传要改的） */
-  updateProfile(username?: string, nickname?: string): Observable<{ code: number; msg: string; data: UserInfo }> {
+  updateProfile(username?: string, nickname?: string, education?: string): Observable<{ code: number; msg: string; data: UserInfo }> {
     const body: any = {};
     if (username !== undefined) body.username = username;
     if (nickname !== undefined) body.nickname = nickname;
+    if (education !== undefined) body.education = education;
     return this.http.put<{ code: number; msg: string; data: UserInfo }>('/api/auth/profile', body, { headers: this.authHeaders() });
   }
 
