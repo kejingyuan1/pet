@@ -7,56 +7,56 @@ USE pet_park;
 
 -- 用户表（账号 + 积分 + 游戏存档，一用户一行）
 CREATE TABLE IF NOT EXISTS users (
-  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
-  username    VARCHAR(32)  NOT NULL UNIQUE,
-  password    VARCHAR(100) NOT NULL,              -- BCrypt 哈希
-  nickname    VARCHAR(32)  DEFAULT NULL,
-  education   VARCHAR(16)  NOT NULL DEFAULT 'PRIMARY_1', -- 学历：PRIMARY_1..6 / JUNIOR_1..3 / SENIOR_1..3 / UNIVERSITY_1..4
-  role        VARCHAR(16)  NOT NULL DEFAULT 'user', -- 角色：user 普通 / admin 管理员
-  coins       INT          NOT NULL DEFAULT 0,    -- 积分（独立字段，可查询/统计）
-  state_json  JSON         NULL,                  -- 游戏存档（菜地/宠物等动态状态）
-  version     INT          NOT NULL DEFAULT 7,    -- 对应前端存档版本号
-  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  username    VARCHAR(32)  NOT NULL UNIQUE COMMENT '用户名（登录账号，唯一）',
+  password    VARCHAR(100) NOT NULL COMMENT '密码（BCrypt 哈希）',
+  nickname    VARCHAR(32)  DEFAULT NULL COMMENT '昵称',
+  education   VARCHAR(16)  NOT NULL DEFAULT 'PRIMARY_1' COMMENT '学历：PRIMARY_1..6 小学 / JUNIOR_1..3 初中 / SENIOR_1..3 高中 / UNIVERSITY_1..4 大学',
+  role        VARCHAR(16)  NOT NULL DEFAULT 'user' COMMENT '角色：user 普通 / admin 管理员',
+  coins       INT          NOT NULL DEFAULT 0 COMMENT '积分（独立字段，可查询/统计）',
+  state_json  JSON         NULL COMMENT '游戏存档 JSON（菜地/宠物等动态状态）',
+  version     INT          NOT NULL DEFAULT 7 COMMENT '存档版本号（对应前端）',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间（自动）'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表（账号 + 积分 + 游戏存档，一用户一行）';
 
 -- 事件日志（可选：把 state.logs 抽成行，便于统计/排行）
 CREATE TABLE IF NOT EXISTS logs (
-  id         BIGINT PRIMARY KEY AUTO_INCREMENT,
-  user_id    BIGINT NOT NULL,
-  type       VARCHAR(16)  NOT NULL,               -- feed/play/harvest/watch/study/level...
-  text       VARCHAR(255) NOT NULL,
-  created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  id         BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  user_id    BIGINT NOT NULL COMMENT '用户ID（关联 users.id）',
+  type       VARCHAR(16)  NOT NULL COMMENT '日志类型：feed/play/harvest/watch/study/level...',
+  text       VARCHAR(255) NOT NULL COMMENT '日志内容',
+  created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   KEY idx_logs_user (user_id, created_at),
   CONSTRAINT fk_logs_user FOREIGN KEY (user_id) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='事件日志表（学习/喂食/收获等流水）';
 
 -- ============================================================
 -- 统一类目表（种植植物 / 养殖鱼 / 养殖动物 / 家具 ... 全部一张表）
 -- type 字段区分大类；价格、成长时间、产出物等字段全在此
 -- ============================================================
 CREATE TABLE IF NOT EXISTS categories (
-  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
-  code        VARCHAR(32)  NOT NULL UNIQUE,       -- 标识：carrot / goldfish / chicken / bed
-  name        VARCHAR(32)  NOT NULL,              -- 中文名
-  type        VARCHAR(16)  NOT NULL,              -- 大类：crop 植物 | fish 鱼 | animal 动物 | furniture 家具
-  price       INT          NOT NULL DEFAULT 0,    -- 购买价（金币）
-  sell_price  INT          NOT NULL DEFAULT 0,    -- 成熟/产出后售价
-  grow_days   DECIMAL(5,2) NOT NULL DEFAULT 0,    -- 成长所需天数
-  feed_days   DECIMAL(5,2) NOT NULL DEFAULT 0,    -- 浇水/喂养间隔（天）
-  exp         INT          NOT NULL DEFAULT 0,    -- 收获/售卖所得经验
-  level_req   INT          NOT NULL DEFAULT 1,    -- 解锁所需等级（或设施等级）
-  product     VARCHAR(32)  DEFAULT NULL,          -- 产出物名称（动物：鸡蛋/鸭蛋/牛奶）
-  prod_price  INT          NOT NULL DEFAULT 0,    -- 产出物售价
-  satiety     INT          NOT NULL DEFAULT 0,    -- 作为宠物食物时的饱食增加值
-  energy      INT          NOT NULL DEFAULT 0,    -- 作为宠物食物时的体力增加值
-  color       VARCHAR(16)  NOT NULL DEFAULT '#FFFFFF',
-  icon_svg    TEXT         DEFAULT NULL,          -- 可选：SVG 图标（不设则用 code 默认样式）
-  status      TINYINT      NOT NULL DEFAULT 1,    -- 1 启用 / 0 停用
-  sort_order  INT          NOT NULL DEFAULT 0,
-  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  code        VARCHAR(32)  NOT NULL UNIQUE COMMENT '唯一标识：carrot/goldfish/chicken/bed',
+  name        VARCHAR(32)  NOT NULL COMMENT '中文名',
+  type        VARCHAR(16)  NOT NULL COMMENT '大类：crop 植物 / fish 鱼 / animal 动物 / furniture 家具',
+  price       INT          NOT NULL DEFAULT 0 COMMENT '购买价（金币）',
+  sell_price  INT          NOT NULL DEFAULT 0 COMMENT '成熟/产出后售价（金币）',
+  grow_days   DECIMAL(5,2) NOT NULL DEFAULT 0 COMMENT '成长所需天数',
+  feed_days   DECIMAL(5,2) NOT NULL DEFAULT 0 COMMENT '浇水/喂养间隔（天）',
+  exp         INT          NOT NULL DEFAULT 0 COMMENT '收获/售卖所得经验',
+  level_req   INT          NOT NULL DEFAULT 1 COMMENT '解锁所需等级',
+  product     VARCHAR(32)  DEFAULT NULL COMMENT '产出物名称（动物：鸡蛋/鸭蛋/牛奶）',
+  prod_price  INT          NOT NULL DEFAULT 0 COMMENT '产出物售价',
+  satiety     INT          NOT NULL DEFAULT 0 COMMENT '作为宠物食物时的饱食增加值',
+  energy      INT          NOT NULL DEFAULT 0 COMMENT '作为宠物食物时的体力增加值',
+  color       VARCHAR(16)  NOT NULL DEFAULT '#FFFFFF' COMMENT '主题色（16进制）',
+  icon_svg    TEXT         DEFAULT NULL COMMENT '可选：SVG 图标（不设则用 code 默认样式）',
+  status      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1 启用 / 0 停用',
+  sort_order  INT          NOT NULL DEFAULT 0 COMMENT '排序值（越小越靠前）',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   KEY idx_cat_type (type, status, sort_order)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='统一类目表（种植植物/养殖鱼/养殖动物/家具，全在一张表）';
 
 -- ★ 幂等保护：重新执行本脚本时，先清空类目种子表（不删 users/players/logs 业务数据）
 DELETE FROM categories;
@@ -90,23 +90,23 @@ ON DUPLICATE KEY UPDATE name=VALUES(name);
 -- q_type  区分题型：choice 单选 | match 配对 | fill 填空 | qa 问答
 -- ============================================================
 CREATE TABLE IF NOT EXISTS questions (
-  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
-  subject     VARCHAR(16)  NOT NULL,              -- 科目：english|hanzi|chengyu|math|thinking
-  education   VARCHAR(16)  NOT NULL DEFAULT 'PRIMARY_1', -- 学历：PRIMARY_1..6 / JUNIOR_1..3 / SENIOR_1..3 / UNIVERSITY_1..4
-  q_type      VARCHAR(16)  NOT NULL DEFAULT 'choice',
-  group_id    VARCHAR(32)  DEFAULT NULL,          -- 分组标识（animals / 加法 / 反义词...）
-  group_name  VARCHAR(32)  DEFAULT NULL,
-  prompt      TEXT         NOT NULL,              -- 题干（支持 JSON：图片/富文本）
-  options     JSON         DEFAULT NULL,          -- 选择题选项 [{text, correct, icon}]
-  answer      TEXT         DEFAULT NULL,          -- 正确答案（match 存映射 JSON / fill 存文本 / qa 存参考）
-  level       INT          NOT NULL DEFAULT 1,    -- 难度 1-5
-  points      INT          NOT NULL DEFAULT 1,    -- 答对金币
-  status      TINYINT      NOT NULL DEFAULT 1,
-  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  subject     VARCHAR(16)  NOT NULL COMMENT '科目：english 英语 / math 数学 / hanzi 汉字 / chengyu 成语 / thinking 思维 / yuwen 语文',
+  education   VARCHAR(16)  NOT NULL DEFAULT 'PRIMARY_1' COMMENT '学历：PRIMARY_1..6 / JUNIOR_1..3 / SENIOR_1..3 / UNIVERSITY_1..4',
+  q_type      VARCHAR(16)  NOT NULL DEFAULT 'choice' COMMENT '题型：choice 单选 / match 配对 / fill 填空 / qa 问答 / card 卡片',
+  group_id    VARCHAR(32)  DEFAULT NULL COMMENT '分组标识（animals/加法/反义词...）',
+  group_name  VARCHAR(32)  DEFAULT NULL COMMENT '分组名称（展示用）',
+  prompt      TEXT         NOT NULL COMMENT '题干（支持 JSON：图片/富文本）',
+  options     JSON         DEFAULT NULL COMMENT '选择题选项 [{text, correct, icon}]',
+  answer      TEXT         DEFAULT NULL COMMENT '正确答案（match 存映射 JSON / fill 存文本 / qa 存参考）',
+  level       INT          NOT NULL DEFAULT 1 COMMENT '难度等级 1-5',
+  points      INT          NOT NULL DEFAULT 1 COMMENT '答对所得金币',
+  status      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1 启用 / 0 停用',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   KEY idx_ques_subject (subject, status, level),
   -- ★ 唯一索引：防止重复执行初始化时题库翻倍（配合下方 ON DUPLICATE KEY UPDATE）
   UNIQUE KEY uk_ques_subject_group_prompt (subject, group_id, prompt(200))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='学习题库表（兼容多科目 + 多题型 + 多学历）';
 
 -- ★ 幂等保护：重新执行本脚本时，先清空题库种子表（不删 users/players/logs 业务数据）
 DELETE FROM questions;

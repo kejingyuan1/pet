@@ -298,3 +298,67 @@ SET @sqe = IF(@qe = 0,
   'ALTER TABLE questions ADD COLUMN education VARCHAR(16) NOT NULL DEFAULT ''PRIMARY_1'' AFTER subject',
   'SELECT 1');
 PREPARE ste2 FROM @sqe; EXECUTE ste2; DEALLOCATE PREPARE ste2;
+
+-- ============================================================
+-- ★ v48 补全：全部表字段添加 COMMENT（含表级注释），幂等可重复执行
+-- ============================================================
+
+-- users 表
+ALTER TABLE users COMMENT='用户表（账号 + 积分 + 游戏存档，一用户一行）',
+  MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  MODIFY COLUMN username VARCHAR(32) NOT NULL COMMENT '用户名（登录账号，唯一）',
+  MODIFY COLUMN password VARCHAR(100) NOT NULL COMMENT '密码（BCrypt 哈希）',
+  MODIFY COLUMN nickname VARCHAR(32) NULL COMMENT '昵称',
+  MODIFY COLUMN education VARCHAR(16) NOT NULL DEFAULT 'PRIMARY_1' COMMENT '学历：PRIMARY_1..6 小学 / JUNIOR_1..3 初中 / SENIOR_1..3 高中 / UNIVERSITY_1..4 大学',
+  MODIFY COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user' COMMENT '角色：user 普通 / admin 管理员',
+  MODIFY COLUMN coins INT NOT NULL DEFAULT 0 COMMENT '积分（独立字段，可查询/统计）',
+  MODIFY COLUMN state_json JSON NULL COMMENT '游戏存档 JSON（菜地/宠物等动态状态）',
+  MODIFY COLUMN version INT NOT NULL DEFAULT 7 COMMENT '存档版本号（对应前端）',
+  MODIFY COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间（自动）';
+
+-- logs 表
+ALTER TABLE logs COMMENT='事件日志表（学习/喂食/收获等流水）',
+  MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  MODIFY COLUMN user_id BIGINT NOT NULL COMMENT '用户ID（关联 users.id）',
+  MODIFY COLUMN type VARCHAR(16) NOT NULL COMMENT '日志类型：feed/play/harvest/watch/study/level...',
+  MODIFY COLUMN text VARCHAR(255) NOT NULL COMMENT '日志内容',
+  MODIFY COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间';
+
+-- categories 表
+ALTER TABLE categories COMMENT='统一类目表（种植植物/养殖鱼/养殖动物/家具，全在一张表）',
+  MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  MODIFY COLUMN code VARCHAR(32) NOT NULL COMMENT '唯一标识：carrot/goldfish/chicken/bed',
+  MODIFY COLUMN name VARCHAR(32) NOT NULL COMMENT '中文名',
+  MODIFY COLUMN type VARCHAR(16) NOT NULL COMMENT '大类：crop 植物 / fish 鱼 / animal 动物 / furniture 家具',
+  MODIFY COLUMN price INT NOT NULL DEFAULT 0 COMMENT '购买价（金币）',
+  MODIFY COLUMN sell_price INT NOT NULL DEFAULT 0 COMMENT '成熟/产出后售价（金币）',
+  MODIFY COLUMN grow_days DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '成长所需天数',
+  MODIFY COLUMN feed_days DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '浇水/喂养间隔（天）',
+  MODIFY COLUMN exp INT NOT NULL DEFAULT 0 COMMENT '收获/售卖所得经验',
+  MODIFY COLUMN level_req INT NOT NULL DEFAULT 1 COMMENT '解锁所需等级',
+  MODIFY COLUMN product VARCHAR(32) NULL COMMENT '产出物名称（动物：鸡蛋/鸭蛋/牛奶）',
+  MODIFY COLUMN prod_price INT NOT NULL DEFAULT 0 COMMENT '产出物售价',
+  MODIFY COLUMN satiety INT NOT NULL DEFAULT 0 COMMENT '作为宠物食物时的饱食增加值',
+  MODIFY COLUMN energy INT NOT NULL DEFAULT 0 COMMENT '作为宠物食物时的体力增加值',
+  MODIFY COLUMN color VARCHAR(16) NOT NULL DEFAULT '#FFFFFF' COMMENT '主题色（16进制）',
+  MODIFY COLUMN icon_svg TEXT NULL COMMENT '可选：SVG 图标（不设则用 code 默认样式）',
+  MODIFY COLUMN status TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1 启用 / 0 停用',
+  MODIFY COLUMN sort_order INT NOT NULL DEFAULT 0 COMMENT '排序值（越小越靠前）',
+  MODIFY COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间';
+
+-- questions 表
+ALTER TABLE questions COMMENT='学习题库表（兼容多科目 + 多题型 + 多学历）',
+  MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  MODIFY COLUMN subject VARCHAR(16) NOT NULL COMMENT '科目：english 英语 / math 数学 / hanzi 汉字 / chengyu 成语 / thinking 思维 / yuwen 语文',
+  MODIFY COLUMN education VARCHAR(16) NOT NULL DEFAULT 'PRIMARY_1' COMMENT '学历：PRIMARY_1..6 / JUNIOR_1..3 / SENIOR_1..3 / UNIVERSITY_1..4',
+  MODIFY COLUMN q_type VARCHAR(16) NOT NULL DEFAULT 'choice' COMMENT '题型：choice 单选 / match 配对 / fill 填空 / qa 问答 / card 卡片',
+  MODIFY COLUMN group_id VARCHAR(32) NULL COMMENT '分组标识（animals/加法/反义词...）',
+  MODIFY COLUMN group_name VARCHAR(32) NULL COMMENT '分组名称（展示用）',
+  MODIFY COLUMN prompt TEXT NOT NULL COMMENT '题干（支持 JSON：图片/富文本）',
+  MODIFY COLUMN options JSON NULL COMMENT '选择题选项 [{text, correct, icon}]',
+  MODIFY COLUMN answer TEXT NULL COMMENT '正确答案（match 存映射 JSON / fill 存文本 / qa 存参考）',
+  MODIFY COLUMN level INT NOT NULL DEFAULT 1 COMMENT '难度等级 1-5',
+  MODIFY COLUMN points INT NOT NULL DEFAULT 1 COMMENT '答对所得金币',
+  MODIFY COLUMN status TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1 启用 / 0 停用',
+  MODIFY COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间';
