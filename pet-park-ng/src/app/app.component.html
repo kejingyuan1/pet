@@ -277,8 +277,8 @@
     </div>
   </section>
 
-  <!-- 管理员：用户管理 -->
-  <section class="module" *ngIf="isAdmin && showUserAdmin">
+  <!-- 管理员：用户管理（全屏覆盖，独立 class 不用 .module 避免 display:none 隐藏） -->
+  <section class="admin-page" *ngIf="isAdmin && showUserAdmin">
     <div class="card">
       <h3>👥 用户管理</h3>
       <p class="admin-msg" *ngIf="adminMsg">{{ adminMsg }}</p>
