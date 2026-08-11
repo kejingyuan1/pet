@@ -11,4 +11,8 @@ public class LoginResp {
     private Long userId;
     private String username;
     private String nickname;
+    /** 积分（users.coins） */
+    private Integer coins;
+    /** 角色：user 普通 / admin 管理员 */
+    private String role;
 }

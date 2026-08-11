@@ -2,7 +2,7 @@ package com.petpark.controller;
 
 import com.petpark.common.Result;
 import com.petpark.dto.StateReq;
-import com.petpark.entity.Player;
+import com.petpark.entity.User;
 import com.petpark.service.StateService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +13,7 @@ import java.util.Map;
 
 /**
  * 玩家存档接口：GET 拉取 / PUT 保存（前端 save() 节流调用）
+ * 存档直接读写 users.state_json（不再有独立 players 表）
  */
 @RestController
 @RequestMapping("/api/state")
@@ -24,15 +25,15 @@ public class StateController {
     /** 读取当前用户存档（无档返回 { version:0, stateJson:null }） */
     @GetMapping
     public Result<Map<String, Object>> get(@RequestAttribute("petpark.userId") Long userId) {
-        Player p = stateService.get(userId);
+        User u = stateService.get(userId);
         Map<String, Object> data = new HashMap<>();
-        if (p == null) {
+        if (u == null || u.getStateJson() == null) {
             data.put("version", 0);
             data.put("stateJson", null);
         } else {
-            data.put("version", p.getVersion());
-            data.put("stateJson", p.getStateJson());
-            data.put("updatedAt", p.getUpdatedAt());
+            data.put("version", u.getVersion());
+            data.put("stateJson", u.getStateJson());
+            data.put("updatedAt", u.getUpdatedAt());
         }
         return Result.ok(data);
     }

@@ -42,6 +42,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()    // 登录注册开放
                 .requestMatchers("/api/categories", "/api/questions").permitAll()        // 只读数据开放
                 .requestMatchers("/api/auth/me", "/api/auth/profile", "/api/auth/password").authenticated()  // 资料管理需登录
+                .requestMatchers("/api/admin/**").authenticated()     // 管理员接口：需登录（角色在 Service 校验）
                 .anyRequest().authenticated())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

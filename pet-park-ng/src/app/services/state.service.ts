@@ -49,7 +49,7 @@ export class StateService {
     const stalls = [];
     for (let k = 0; k < 4; k++) stalls.push({ id: k + 1, type: null, stockedDay: 0, lastFeedDay: 0, grownDays: 0, productReady: false, lastProductDay: 0 });
     return {
-      gameDays: 0.3, weather: 'sunny', coins: 50,
+      gameDays: 0.3, weather: 'sunny', coins: 0,
       pet: { name: '小黄', stage: 0, level: 1, exp: 0, satiety: 100, mood: 100, energy: 80, sick: false, out: false,
         pos: 'home', outSince: 0, targetOverride: null, lastTick: Date.now(), lastPlayed: 0, lastWatched: 0, lastHelp: 0,
         foods: { carrot: 3, tomato: 2, strawberry: 1 },
@@ -68,7 +68,7 @@ export class StateService {
   private sampleState(): GameState {
     const now = Date.now();
     const s = this.defaultState();
-    s.gameDays = 6.5; s.weather = 'sunny'; s.coins = 40;
+    s.gameDays = 6.5; s.weather = 'sunny'; s.coins = 0;
     s.pet.name = '小黄'; s.pet.stage = 1; s.pet.level = 2; s.pet.exp = 6; s.pet.energy = 85;
     s.pet.out = false; s.pet.pos = 'home'; s.pet.outSince = 0;
     s.pet.satiety = 22; s.pet.mood = 55; s.pet.lastTick = now;
@@ -122,7 +122,7 @@ export class StateService {
 
   migrate(): void {
     const s = this.state;
-    if (typeof s.coins !== 'number') s.coins = 50;
+    if (typeof s.coins !== 'number') s.coins = 0;   // 无记录默认 0，避免继承旧默认值
     if (typeof s.gameDays !== 'number') s.gameDays = 0.3;
     if (!s.weather) s.weather = 'sunny';
     if (typeof s.pet.energy !== 'number') s.pet.energy = 80;
@@ -596,35 +596,5 @@ export class StateService {
     if (!this.state.house.furniture.includes(id)) this.state.house.furniture.push(id);
     this.addLog('level', '买了' + c.name);
     this.save();
-  }
-
-  // ================= 导出/导入/清档 =================
-  exportData(): void {
-    const blob = new Blob([JSON.stringify(this.state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '宠物乐园存档_' + this.todayKey() + '.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-  importData(file: File): void {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const o = JSON.parse(String(reader.result));
-        if (o && o.pet && o.farm) { this.state = o; this.migrate(); this.save(); }
-      } catch (e) { /* ignore */ }
-    };
-    reader.readAsText(file);
-  }
-  loadSampleData(): void {
-    this.state = this.sampleState();
-    this.save();
-  }
-  confirmClear(): boolean {
-    this.state = this.sampleState();
-    this.save();
-    return true;
   }
 }

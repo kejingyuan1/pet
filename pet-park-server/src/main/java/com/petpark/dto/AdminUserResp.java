@@ -5,16 +5,14 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 用户详情（/api/auth/me 返回）
+ * 管理员用户列表项
  */
 @Data
-public class UserDetailResp {
+public class AdminUserResp {
     private Long userId;
     private String username;
     private String nickname;
-    /** 积分（users.coins 独立字段） */
-    private Integer coins;
-    /** 角色：user 普通 / admin 管理员 */
     private String role;
+    private Integer coins;
     private LocalDateTime createdAt;
 }

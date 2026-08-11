@@ -215,3 +215,63 @@ INSERT INTO questions (subject,q_type,group_id,group_name,prompt,options,answer,
 ('english','fill','grade1','练习 8：综合句型（填空题）','I like（ ）.(香蕉)','[]','bananas',1,1)
 ON DUPLICATE KEY UPDATE prompt=VALUES(prompt);
 
+
+-- ============================================================
+-- ★ v39 表结构迁移：合并 players 表进 users（删除冗余表）
+-- 背景：原 players 表（user_id + state_json）与 users 表 1:1 冗余，
+--       且积分存在 JSON 里无法查询。现改为 users 直接持有
+--       coins（积分独立字段）+ state_json（存档）——一张表搞定。
+--
+-- 幂等性：重复执行安全（加列用 information_schema 判断）
+-- ============================================================
+
+-- 1. users 加 coins 列（积分独立字段）
+SET @c = (SELECT COUNT(*) FROM information_schema.COLUMNS
+          WHERE table_schema='pet_park' AND table_name='users' AND column_name='coins');
+SET @s = IF(@c = 0, 'ALTER TABLE users ADD COLUMN coins INT NOT NULL DEFAULT 0', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- 2. users 加 state_json / version / updated_at（存档相关列）
+SET @c2 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE table_schema='pet_park' AND table_name='users' AND column_name='state_json');
+SET @s2 = IF(@c2 = 0,
+  'ALTER TABLE users ADD COLUMN state_json JSON NULL,
+                     ADD COLUMN version INT NOT NULL DEFAULT 7,
+                     ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+  'SELECT 1');
+PREPARE st2 FROM @s2; EXECUTE st2; DEALLOCATE PREPARE st2;
+
+-- 3. 若仍存在 players 表：把存档搬进 users，再删表
+SET @p = (SELECT COUNT(*) FROM information_schema.TABLES
+          WHERE table_schema='pet_park' AND table_name='players');
+SET @s3 = IF(@p > 0,
+  'UPDATE users u JOIN players p ON u.id = p.user_id
+     SET u.state_json = p.state_json, u.version = p.version,
+         u.updated_at = p.updated_at, u.coins = 0',
+  'SELECT 1');
+PREPARE st3 FROM @s3; EXECUTE st3; DEALLOCATE PREPARE st3;
+
+-- 3.2 搬完删掉 players 表
+SET @s4 = IF(@p > 0, 'DROP TABLE players', 'SELECT 1');
+PREPARE st4 FROM @s4; EXECUTE st4; DEALLOCATE PREPARE st4;
+
+-- 4. 从已存 state_json 反写 coins（老用户积分迁移；无存档的保持 0）
+UPDATE users
+   SET coins = IF(state_json IS NOT NULL
+                   AND JSON_VALID(state_json) = 1
+                   AND JSON_EXTRACT(state_json, '$.coins') IS NOT NULL
+                   AND JSON_EXTRACT(state_json, '$.coins') > 0,
+                  CAST(JSON_EXTRACT(state_json, '$.coins') AS SIGNED), 0)
+ WHERE coins = 0;
+
+-- ============================================================
+-- ★ v40 新增：users 表加 role 字段（用户角色，管理员管理用）
+-- 幂等：列不存在才加
+-- ============================================================
+SET @r = (SELECT COUNT(*) FROM information_schema.COLUMNS
+          WHERE table_schema='pet_park' AND table_name='users' AND column_name='role');
+SET @sr = IF(@r = 0, 'ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT ''user''', 'SELECT 1');
+PREPARE str FROM @sr; EXECUTE str; DEALLOCATE PREPARE str;
+
+-- 把指定账号设为管理员（把 admin 改成你要的管理员用户名，重复执行幂等）
+-- UPDATE users SET role='admin' WHERE username='admin';

@@ -42,17 +42,10 @@
     <span>{{ coins }}</span>
   </div>
   <div class="top-actions">
-    <button class="icon-btn" (click)="exportData()" title="导出备份">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
-    </button>
-    <button class="icon-btn" (click)="fileInput.click()" title="导入恢复">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
-    </button>
     <button class="icon-btn user-btn" (click)="openProfile()" title="账号设置">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
       <span class="user-name">{{ auth.user ? auth.user.nickname : '我的' }}</span>
     </button>
-    <input #fileInput type="file" accept=".json,application/json" style="display:none" (change)="onImportFile($event)">
   </div>
 </header>
 
@@ -284,17 +277,30 @@
     </div>
   </section>
 
-  <section class="module" [class.on]="mod==='data'">
-    <div class="card"><h3>📊 数据与备份</h3>
-      <div class="data-row">游戏天数：第 {{ (state.state.gameDays|number:'1.0-0') }} 天 · 天气：{{ state.state.weather==='rain' ? '🌧️ 雨' : '☀️ 晴' }}</div>
-      <div class="data-row">数据大小：约 {{ stateSize() }} KB</div>
-      <div class="data-btns">
-        <button (click)="state.exportData()">导出 JSON 备份</button>
-        <button (click)="fileInput2.click()">导入恢复</button>
-        <button (click)="state.loadSampleData()">重置示例数据</button>
-        <input #fileInput2 type="file" accept=".json" style="display:none" (change)="onImportFile($event)">
+  <!-- 管理员：用户管理 -->
+  <section class="module" *ngIf="isAdmin && showUserAdmin">
+    <div class="card">
+      <h3>👥 用户管理</h3>
+      <p class="admin-msg" *ngIf="adminMsg">{{ adminMsg }}</p>
+      <div class="user-table-wrap">
+        <table class="user-table">
+          <thead><tr><th>ID</th><th>用户名</th><th>昵称</th><th>角色</th><th>积分</th><th>注册时间</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let u of adminUsers">
+              <td>{{ u.userId }}</td>
+              <td>{{ u.username }}</td>
+              <td>{{ u.nickname }}</td>
+              <td><span class="role-tag" [class.admin]="u.role==='admin'">{{ u.role==='admin' ? '管理员' : '用户' }}</span></td>
+              <td>{{ u.coins }}</td>
+              <td>{{ (u.createdAt || '').toString().slice(0,10) }}</td>
+              <td class="op">
+                <button class="mini-btn" (click)="openEditUser(u)">编辑</button>
+                <button class="mini-btn danger" (click)="deleteUser(u)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <p class="note">数据只保存在本机浏览器 + 云端账号存档（登录后自动同步）</p>
     </div>
   </section>
 </main>
@@ -306,7 +312,7 @@
   <button [class.on]="mod==='pond'" (click)="switchMod('pond')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="9" ry="7"/><path d="M3 12h18M12 5c-1.5 2-1.5 9 0 14M12 5c1.5 2 1.5 9 0 14"/></svg>鱼塘</button>
   <button [class.on]="mod==='ranch'" (click)="switchMod('ranch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2m-8 0l1 14h8l1-14M10 11v6M14 11v6"/></svg>牧场</button>
   <button [class.on]="mod==='study'" (click)="switchMod('study')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>学习</button>
-  <button [class.on]="mod==='data'" (click)="switchMod('data')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2m-8 0l1 14h8l1-14M10 11v6M14 11v6"/></svg>数据</button>
+  <button *ngIf="isAdmin" [class.on]="showUserAdmin" (click)="showUserAdmin ? closeUserAdmin() : openUserAdmin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>用户管理</button>
 </nav>
 
 <!-- 账号设置（用户管理）弹层 -->
@@ -336,6 +342,28 @@
     <button class="btn-login" (click)="doUpdatePassword()">修改密码</button>
 
     <button class="btn-ghost logout-btn" (click)="logout()">退出登录</button>
+  </div>
+</div>
+
+<!-- 管理员：编辑用户弹窗 -->
+<div class="modal-mask" [class.show]="editUser" (click)="closeEditUser()">
+  <div class="modal admin-edit-box" (click)="$event.stopPropagation()">
+    <h3>编辑用户</h3>
+    <label>用户名</label>
+    <input [(ngModel)]="editForm.username" placeholder="用户名">
+    <label>昵称</label>
+    <input [(ngModel)]="editForm.nickname" placeholder="昵称">
+    <label>角色</label>
+    <select [(ngModel)]="editForm.role">
+      <option value="user">普通用户</option>
+      <option value="admin">管理员</option>
+    </select>
+    <label>积分</label>
+    <input [(ngModel)]="editForm.coins" type="number" placeholder="积分">
+    <label>密码（留空不修改）</label>
+    <input [(ngModel)]="editForm.password" type="password" placeholder="新密码">
+    <button class="btn-login" (click)="saveEditUser()">保存</button>
+    <button class="btn-ghost" (click)="closeEditUser()">取消</button>
   </div>
 </div>
 

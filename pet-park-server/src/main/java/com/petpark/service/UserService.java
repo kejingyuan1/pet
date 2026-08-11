@@ -52,6 +52,9 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(req.getPassword()));
         user.setNickname(req.getNickname() == null || req.getNickname().isBlank()
                 ? req.getUsername() : req.getNickname());
+        user.setRole("user");                   // 注册一律普通用户（管理员手动指定）
+        user.setCoins(0);                       // 新用户积分独立：初始 0，不继承任何值
+        user.setVersion(7);
         user.setCreatedAt(LocalDateTime.now());
         userMapper.insert(user);
 
@@ -73,6 +76,8 @@ public class UserService {
         resp.setUserId(user.getId());
         resp.setUsername(user.getUsername());
         resp.setNickname(user.getNickname());
+        resp.setRole(user.getRole() == null ? "user" : user.getRole());
+        resp.setCoins(user.getCoins() == null ? 0 : user.getCoins());
         return resp;
     }
 
@@ -83,6 +88,8 @@ public class UserService {
         resp.setUserId(user.getId());
         resp.setUsername(user.getUsername());
         resp.setNickname(user.getNickname());
+        resp.setRole(user.getRole() == null ? "user" : user.getRole());
+        resp.setCoins(user.getCoins() == null ? 0 : user.getCoins());
         resp.setCreatedAt(user.getCreatedAt());
         return resp;
     }

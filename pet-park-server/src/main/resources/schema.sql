@@ -5,22 +5,18 @@
 CREATE DATABASE IF NOT EXISTS pet_park DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE pet_park;
 
--- 用户表
+-- 用户表（账号 + 积分 + 游戏存档，一用户一行）
 CREATE TABLE IF NOT EXISTS users (
   id          BIGINT PRIMARY KEY AUTO_INCREMENT,
   username    VARCHAR(32)  NOT NULL UNIQUE,
   password    VARCHAR(100) NOT NULL,              -- BCrypt 哈希
   nickname    VARCHAR(32)  DEFAULT NULL,
-  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 玩家档案（一用户一档；state JSON 直存，前端结构无感）
-CREATE TABLE IF NOT EXISTS players (
-  user_id     BIGINT PRIMARY KEY,
-  state_json  JSON         NOT NULL,              -- 完整 state 对象（前端结构）
-  version     INT          NOT NULL DEFAULT 7,    -- 对应前端 LS_KEY 版本号
-  updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_players_user FOREIGN KEY (user_id) REFERENCES users(id)
+  role        VARCHAR(16)  NOT NULL DEFAULT 'user', -- 角色：user 普通 / admin 管理员
+  coins       INT          NOT NULL DEFAULT 0,    -- 积分（独立字段，可查询/统计）
+  state_json  JSON         NULL,                  -- 游戏存档（菜地/宠物等动态状态）
+  version     INT          NOT NULL DEFAULT 7,    -- 对应前端存档版本号
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 事件日志（可选：把 state.logs 抽成行，便于统计/排行）

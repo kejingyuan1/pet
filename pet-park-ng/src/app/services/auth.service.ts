@@ -38,7 +38,7 @@ export class AuthService {
     try {
       localStorage.setItem(this.TOKEN_KEY, this.token);
       localStorage.setItem(this.USER_KEY, JSON.stringify({
-        userId: data.userId, username: data.username, nickname: data.nickname
+        userId: data.userId, username: data.username, nickname: data.nickname, role: data.role ?? 'user', coins: data.coins ?? 0
       }));
     } catch (e) { /* ignore */ }
   }
@@ -74,5 +74,22 @@ export class AuthService {
   updatePassword(oldPassword: string, newPassword: string): Observable<{ code: number; msg: string; data: any }> {
     return this.http.put<{ code: number; msg: string; data: any }>('/api/auth/password',
       { oldPassword, newPassword }, { headers: this.authHeaders() });
+  }
+
+  // ================= 管理员：用户管理 =================
+
+  /** 用户列表（仅管理员） */
+  adminListUsers(): Observable<{ code: number; msg: string; data: any[] }> {
+    return this.http.get<{ code: number; msg: string; data: any[] }>('/api/admin/users', { headers: this.authHeaders() });
+  }
+
+  /** 编辑用户（仅管理员） */
+  adminUpdateUser(id: number, body: any): Observable<{ code: number; msg: string; data: any }> {
+    return this.http.put<{ code: number; msg: string; data: any }>('/api/admin/users/' + id, body, { headers: this.authHeaders() });
+  }
+
+  /** 删除用户（仅管理员） */
+  adminDeleteUser(id: number): Observable<{ code: number; msg: string; data: any }> {
+    return this.http.delete<{ code: number; msg: string; data: any }>('/api/admin/users/' + id, { headers: this.authHeaders() });
   }
 }

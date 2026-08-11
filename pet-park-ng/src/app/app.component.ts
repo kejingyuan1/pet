@@ -13,7 +13,7 @@ import { Scene3dComponent } from './components/scene3d/scene3d.component';
 })
 export class AppComponent implements OnInit, OnDestroy {
   mod = 'home';
-  mods = ['home', 'farm', 'pond', 'ranch', 'study', 'data'];
+  mods = ['home', 'farm', 'pond', 'ranch', 'study'];  // 联网版：删掉 data（云端存档，不再需要本地导入导出 Tab）
 
   // 登录表单
   loginUser = '';
@@ -36,12 +36,20 @@ export class AppComponent implements OnInit, OnDestroy {
   oldPass = '';
   newPass = '';
 
+  // 管理员：用户管理
+  adminUsers: any[] = [];
+  showUserAdmin = false;
+  adminMsg = '';
+  editUser: any = null;
+  editForm = { username: '', nickname: '', role: 'user', coins: 0, password: '' };
+
   // 今日待办
   todayList: Array<{ icon: string; text: string; btn: string; action: () => void }> = [];
 
   constructor(public state: StateService, public auth: AuthService) {}
 
-  get coins(): number { return this.state.state.coins; }
+  /** 积分：读游戏实时值（登录成功时已用后端权威 users.coins 初始化） */
+  get coins(): number { return this.state.state.coins ?? 0; }
   get pet(): any { return this.state.state.pet; }
   get isNight(): boolean { return this.state.isNight(); }
 
@@ -54,13 +62,46 @@ export class AppComponent implements OnInit, OnDestroy {
   // ================= 模块切换 =================
   switchMod(m: string): void { this.mod = m; this.renderToday(); }
 
-  // ================= 时钟 =================
+  // ================= 时钟 + 日期 + 天气 =================
+  /** 顶栏时钟：年月日 + 星期 + 实时天气（联网缓存 30 分钟） */
+  weather = '晴';                        // 当前天气（默认"晴"）
+  private weatherTimer: any = null;
+
   clockText(): string {
-    const d = this.state.state.gameDays;
-    const h = Math.floor(this.state.gameHour());
-    const mm = Math.floor((this.state.gameHour() % 1) * 60);
-    return '第' + (Math.floor(d) + 1) + '天 ' + (h < 10 ? '0' : '') + h + ':' + (mm < 10 ? '0' : '') + mm + (this.isNight ? ' 夜晚' : ' 白天');
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const weeks = ['日', '一', '二', '三', '四', '五', '六'];
+    return `${yyyy}-${mm}-${dd} 周${weeks[d.getDay()]} ${this.weather}`;
   }
+
+  /** 拉取实时天气（武汉坐标），缓存 30 分钟；失败兜底保留上次值 */
+  fetchWeather(): void {
+    const cached = localStorage.getItem('pp_weather_cache');
+    if (cached) {
+      try {
+        const obj = JSON.parse(cached);
+        if (Date.now() - obj.t < 30 * 60 * 1000) { this.weather = obj.w; return; }
+      } catch (e) { /* ignore */ }
+    }
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=30.59&longitude=114.31&current_weather=true')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => {
+        const code = d?.current_weather?.weathercode ?? 0;
+        const map: Record<number, string> = {
+          0: '晴', 1: '晴', 2: '多云', 3: '阴', 45: '雾', 48: '雾',
+          51: '小雨', 53: '小雨', 55: '小雨', 61: '雨', 63: '雨', 65: '大雨',
+          71: '雪', 73: '雪', 75: '大雪',
+          80: '阵雨', 81: '阵雨', 82: '阵雨',
+          95: '雷雨', 96: '雷雨', 99: '雷雨'
+        };
+        this.weather = map[code] || '晴';
+        try { localStorage.setItem('pp_weather_cache', JSON.stringify({ t: Date.now(), w: this.weather })); } catch (e) { /* ignore */ }
+      })
+      .catch(() => { /* 失败保留上次缓存或默认'晴' */ });
+  }
+
   renderClock(): void {
     const el = document.getElementById('clockNum');
     if (el) el.textContent = this.clockText();
@@ -139,6 +180,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.state.init();
+    this.fetchWeather();                                   // 拉取实时天气
+    this.weatherTimer = setInterval(() => { this.fetchWeather(); }, 30 * 60 * 1000);  // 每 30 分钟刷一次
     setInterval(() => { this.renderClock(); this.renderToday(); }, 2000);
     this.renderClock();
     this.renderToday();
@@ -148,6 +191,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.state.destroy();
+    if (this.weatherTimer) { clearInterval(this.weatherTimer); this.weatherTimer = null; }
     document.removeEventListener('fullscreenchange', this.fsHandler);
     document.removeEventListener('webkitfullscreenchange', this.fsHandler);
   }
@@ -162,7 +206,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.auth.login(this.loginUser, this.loginPass).subscribe({
       next: res => {
         this.loginBusy = false;
-        if (res.code === 0) { this.auth.onAuthSuccess(res.data); this.showLogin = false; this.state.syncFromServer(); }
+        if (res.code === 0) { this.auth.onAuthSuccess(res.data); this.showLogin = false; this.applyBackendCoins(res.data.coins); this.state.syncFromServer(); }
         else this.loginMsg = res.msg || '登录失败';
       },
       error: () => { this.loginBusy = false; this.loginMsg = '无法连接服务器'; }
@@ -180,7 +224,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.auth.register(this.loginUser, this.loginPass, this.regNickname.trim(), this.regPass2, this.regInvite.trim()).subscribe({
       next: res => {
         this.loginBusy = false;
-        if (res.code === 0) { this.auth.onAuthSuccess(res.data); this.showLogin = false; this.state.syncFromServer(); }
+        if (res.code === 0) { this.auth.onAuthSuccess(res.data); this.showLogin = false; this.applyBackendCoins(res.data.coins); this.state.syncFromServer(); }
         else this.loginMsg = res.msg || '注册失败';
       },
       error: () => { this.loginBusy = false; this.loginMsg = '无法连接服务器'; }
@@ -202,11 +246,12 @@ export class AppComponent implements OnInit, OnDestroy {
       next: res => {
         if (res.code === 0 && res.data) {
           this.auth.user = res.data;
+          this.applyBackendCoins(res.data.coins);   // 同步后端权威积分
           this.newNickname = res.data.nickname || '';
           this.newUsername = res.data.username || '';
           try {
             localStorage.setItem(this.auth['USER_KEY'], JSON.stringify({
-              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname
+              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname, coins: res.data.coins ?? 0
             }));
           } catch (e) { /* ignore */ }
         }
@@ -271,6 +316,83 @@ export class AppComponent implements OnInit, OnDestroy {
     this.auth.logout();
     this.showProfile = false;
     this.showLogin = false;
+    this.showUserAdmin = false;
+  }
+
+  /** 用后端权威积分（users.coins）初始化游戏内积分，防止继承前端默认值 */
+  applyBackendCoins(coins: number | undefined): void {
+    this.state.state.coins = coins ?? 0;
+  }
+
+  // ================= 管理员：用户管理 =================
+  get isAdmin(): boolean { return this.auth.user?.role === 'admin'; }
+
+  /** 打开用户管理页并拉取列表 */
+  openUserAdmin(): void {
+    this.showUserAdmin = true;
+    this.adminMsg = '';
+    this.loadUsers();
+  }
+  closeUserAdmin(): void { this.showUserAdmin = false; }
+
+  loadUsers(): void {
+    this.auth.adminListUsers().subscribe({
+      next: res => { if (res.code === 0) { this.adminUsers = res.data || []; } else { this.adminMsg = res.msg || '加载失败'; } },
+      error: () => { this.adminMsg = '无法连接服务器'; }
+    });
+  }
+
+  /** 打开编辑弹窗 */
+  openEditUser(u: any): void {
+    this.editUser = u;
+    this.editForm = { username: u.username || '', nickname: u.nickname || '', role: u.role || 'user', coins: u.coins ?? 0, password: '' };
+  }
+  closeEditUser(): void { this.editUser = null; }
+
+  /** 保存编辑 */
+  saveEditUser(): void {
+    if (!this.editUser) return;
+    const body: any = {};
+    if (this.editForm.username !== this.editUser.username) body.username = this.editForm.username.trim();
+    if (this.editForm.nickname !== (this.editUser.nickname || '')) body.nickname = this.editForm.nickname.trim();
+    if (this.editForm.role !== this.editUser.role) body.role = this.editForm.role;
+    if (this.editForm.coins !== (this.editUser.coins ?? 0)) body.coins = this.editForm.coins;
+    if (this.editForm.password) body.password = this.editForm.password;
+    if (!Object.keys(body).length) { this.editUser = null; return; }
+    this.auth.adminUpdateUser(this.editUser.userId, body).subscribe({
+      next: res => {
+        if (res.code === 0) {
+          this.editUser = null;
+          this.loadUsers();
+          // 若改的是自己，同步本地用户信息
+          if (this.auth.user && this.auth.user.userId === res.data.userId) {
+            this.auth.user.username = res.data.username;
+            this.auth.user.nickname = res.data.nickname;
+            this.auth.user.role = res.data.role;
+            this.auth.user.coins = res.data.coins;
+            try {
+              localStorage.setItem(this.auth['USER_KEY'], JSON.stringify({
+                userId: res.data.userId, username: res.data.username, nickname: res.data.nickname,
+                role: res.data.role, coins: res.data.coins
+              }));
+            } catch (e) { /* ignore */ }
+          }
+        } else this.adminMsg = res.msg || '保存失败';
+      },
+      error: () => { this.adminMsg = '无法连接服务器'; }
+    });
+  }
+
+  /** 删除用户 */
+  deleteUser(u: any): void {
+    if (!confirm('确定删除用户「' + (u.nickname || u.username) + '」？其游戏存档将一并删除，不可恢复！')) return;
+    this.auth.adminDeleteUser(u.userId).subscribe({
+      next: res => {
+        if (res.code === 0) { this.loadUsers(); }
+        else this.adminMsg = res.msg || '删除失败';
+      },
+      error: () => { this.adminMsg = '无法连接服务器'; }
+    });
   }
 
   // ================= 学习（委托给 StateService） =================
@@ -326,12 +448,5 @@ export class AppComponent implements OnInit, OnDestroy {
       wordFive: '<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="22" fill="#9B5DE5"/><text x="32" y="40" font-size="22" font-weight="900" text-anchor="middle" fill="#fff">5</text></svg>'
     };
     return svgs[name] || '';
-  }
-
-  // ================= 备份 =================
-  exportData(): void { this.state.exportData(); }
-  onImportFile(ev: Event): void {
-    const input = ev.target as HTMLInputElement;
-    if (input.files && input.files[0]) this.state.importData(input.files[0]);
   }
 }

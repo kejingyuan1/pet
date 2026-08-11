@@ -85,6 +85,10 @@ export interface UserInfo {
   userId: number;
   username: string;
   nickname: string;
+  /** 角色：user 普通 / admin 管理员 */
+  role?: string;
+  /** 积分（users.coins 独立字段，后端权威） */
+  coins?: number;
   token?: string;
 }
 
