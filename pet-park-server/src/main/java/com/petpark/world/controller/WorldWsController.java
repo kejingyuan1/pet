@@ -5,10 +5,12 @@ import com.petpark.entity.User;
 import com.petpark.mapper.UserMapper;
 import com.petpark.world.dto.WorldObjectResp;
 import com.petpark.world.dto.WsBuildMsg;
+import com.petpark.world.dto.WsInputMsg;
 import com.petpark.world.dto.WsJoinMsg;
 import com.petpark.world.dto.WsPositionMsg;
 import com.petpark.world.geo.CellType;
 import com.petpark.world.geo.ChunkKey;
+import com.petpark.world.service.PhysicsGatewayService;
 import com.petpark.world.service.RegionBroker;
 import com.petpark.world.service.TerrainService;
 import com.petpark.world.service.WorldConfigService;
@@ -22,14 +24,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 世界 WS 控制器（STOMP，ADR-W2）
+ * 世界 WS 控制器（STOMP，ADR-W2 / ADR-W7 候选②）
  *
  * 上行：
- *  - /app/ws.join    接入/重连接入握手 → 回 POSITION_SNAPSHOT（含 y）+ 区域对象全量 + version
- *  - /app/ws.position 位置心跳（服务端廉价校验 + 节流广播）
+ *  - /app/ws.join    接入/重连接入握手 → 回 POSITION_SNAPSHOT（含 y）+ 区域对象全量 + version；
+ *                    同时把玩家注册进 physics-service（物理权威移动）
+ *  - /app/ws.input   物理输入上行：客户端按键/摇杆意图 → Spring Boot 预检 → 转发 physics-service 按 tick 消费
+ *  - /app/ws.position 轻量位置心跳（保留：UI/调试/兜底；权威位置以 POSITION_SNAPSHOT 为准）
  *  - /app/ws.build    放置请求（与 REST 同一 service，服务端权威）
  * 下行：
- *  - /topic/world     世界事件（OBJECT_ADD / PLAYER_JOIN / PLAYER_LEAVE ...）
+ *  - /topic/world     世界事件（OBJECT_ADD / PLAYER_JOIN / PLAYER_LEAVE / POSITION_SNAPSHOT / PHYS_RESTART）
  *  - /topic/players   玩家位置（POSITION，含 y）
  *  - /user/queue/reply 个人回复（join 快照 / build 结果）
  */
@@ -44,17 +48,20 @@ public class WorldWsController {
     private final WorldConfigService world;
     private final WorldObjectService objectService;
     private final UserMapper userMapper;
+    private final PhysicsGatewayService physicsGateway;
 
     public WorldWsController(RegionBroker broker,
                              TerrainService terrain,
                              WorldConfigService world,
                              WorldObjectService objectService,
-                             UserMapper userMapper) {
+                             UserMapper userMapper,
+                             PhysicsGatewayService physicsGateway) {
         this.broker = broker;
         this.terrain = terrain;
         this.world = world;
         this.objectService = objectService;
         this.userMapper = userMapper;
+        this.physicsGateway = physicsGateway;
     }
 
     /** 接入握手：加区域 → 回快照（含 y）+ 广播 PLAYER_JOIN */
@@ -93,6 +100,9 @@ public class WorldWsController {
         broker.join(sid, chunkKey, new RegionBroker.PlayerInfo(uid, nick, gx, gz, y, rot));
         broker.touch(sid);
 
+        // 物理权威：把玩家注册进 physics-service（capsule 贴地，随快照下行）
+        physicsGateway.onPlayerJoin(uid, gx, gz, y);
+
         // 回快照：区域内全部玩家（含 y）+ 区域对象全量 + version
         List<WorldObjectResp> objects = objectService.listByChunkKey(chunkKey);
         broker.sendToUser(sid, broker.snapshot(sid, world.version(), objects));
@@ -105,6 +115,28 @@ public class WorldWsController {
                 "gx", gx, "gz", gz,
                 "y", y, "rot", rot));
         log.info("[world] WS join sid={} uid={} region={} @({},{})", sid, uid, chunkKey, gx, gz);
+    }
+
+    /** 物理输入上行：/app/ws.input {seq, move:{dx,dz,run}} → 预检 → 转发 physics-service（ADR-W7 候选②） */
+    @MessageMapping("/ws.input")
+    public void input(WsInputMsg msg, SimpMessageHeaderAccessor headers) {
+        Long uid = uid(headers);
+        if (uid == null || msg == null || msg.getMove() == null) {
+            return;
+        }
+        // 输入预检：方向向量界内（客户端可作弊的值域钳制；物理结果由 physics-service 权威求解）
+        double dx = clampUnit(msg.getMove().getDx());
+        double dz = clampUnit(msg.getMove().getDz());
+        boolean run = Boolean.TRUE.equals(msg.getMove().getRun());
+        if (dx == 0 && dz == 0 && !run) {
+            // 仍转发（表示松键停止），保证 physics-service 消费到"停止"意图
+        }
+        physicsGateway.sendInput(uid, dx, dz, run);
+    }
+
+    private static double clampUnit(Double v) {
+        if (v == null || v.isNaN() || v.isInfinite()) return 0;
+        return Math.max(-1.0, Math.min(1.0, v));
     }
 
     /** 位置心跳：廉价校验（边界 + 非水/障碍）→ 节流广播 */

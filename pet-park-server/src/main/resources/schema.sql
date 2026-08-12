@@ -545,3 +545,20 @@ INSERT INTO categories (code,name,type,price,sell_price,grow_days,feed_days,exp,
  ('small_pond','小池塘','pond',50,0,0,0,0,1,NULL,0,0,0,'#2F7FD6',60)
 ON DUPLICATE KEY UPDATE name=VALUES(name);
 
+-- ------------------------------------------------------------
+-- ★★★ M2 追加：世界物理快照表（ADR-W7 候选②：服务端权威物理 · 崩溃续跑）
+-- physics-service（Node Rapier WASM）world.takeSnapshot() 二进制 → 本表 BLOB
+-- 低频覆盖写（5s / 事件），保留最近快照即可；启动/重启 restoreSnapshot() 续跑（tick 号对齐）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS world_physics_snapshot (
+  id          BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  chunk_key   VARCHAR(24)  NOT NULL COMMENT '世界分片标识（当前单服恒为 global；预留分片扩容）',
+  tick        BIGINT       NOT NULL COMMENT '物理 tick 号（固定步进计数，恢复时对齐）',
+  snapshot    LONGBLOB     NOT NULL COMMENT 'Rapier takeSnapshot() 二进制（Uint8Array）',
+  body_count  INT          NOT NULL DEFAULT 0 COMMENT '快照内刚体数（诊断/校验）',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  UNIQUE KEY uk_phys_snapshot (chunk_key, tick),
+  KEY idx_phys_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='世界物理快照表（physics-service 崩溃恢复，ADR-W7 候选②）';
+
+

@@ -49,6 +49,7 @@ public class WorldObjectService {
     private final CategoryMapper categoryMapper;
     private final TerrainService terrain;
     private final RegionBroker broker;
+    private final PhysicsGatewayService physicsGateway;
     private final ObjectMapper json;
 
     public WorldObjectService(WorldObjectMapper objectMapper,
@@ -56,12 +57,14 @@ public class WorldObjectService {
                               CategoryMapper categoryMapper,
                               TerrainService terrain,
                               RegionBroker broker,
+                              PhysicsGatewayService physicsGateway,
                               ObjectMapper json) {
         this.objectMapper = objectMapper;
         this.userMapper = userMapper;
         this.categoryMapper = categoryMapper;
         this.terrain = terrain;
         this.broker = broker;
+        this.physicsGateway = physicsGateway;
         this.json = json;
     }
 
@@ -151,18 +154,27 @@ public class WorldObjectService {
      * 广播世界事件（OBJECT_ADD 等）：事务提交后发送。
      *  - 事务生效：注册 afterCommit 回调，接收方永远读到已提交对象；
      *  - 事务未生效（O1 复核的异常路径）：直接广播并告警，让"绕过事务"可见可查。
+     *  - 同时通知 physics-service 增加静态碰撞体（ADR-W7：放置成功 → add_collider）。
      */
     private void broadcastAfterCommit(String chunkKey, Object payload) {
+        Runnable publish = () -> {
+            broker.broadcast(chunkKey, payload);
+            // 提取对象信息通知物理服务（collider 只应在事务提交后出现）
+            if (payload instanceof Map<?, ?> m && m.get("object") instanceof WorldObjectResp o) {
+                physicsGateway.notifyObjectPlaced(o.getId(), o.getGx(), o.getGz(), o.getType(),
+                        terrain.heightAt(o.getGx(), o.getGz()));
+            }
+        };
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    broker.broadcast(chunkKey, payload);
+                    publish.run();
                 }
             });
         } else {
             log.warn("[world] 非事务调用（broadcast 无 afterCommit 保护），原子性依赖事务，请检查调用链 chunkKey={}", chunkKey);
-            broker.broadcast(chunkKey, payload);
+            publish.run();
         }
     }
 

@@ -5,19 +5,21 @@ import { AuthService } from '../../services/auth.service';
 import { StateService } from '../../services/state.service';
 import { WorldApiService, WorldConfigResp, ChunkResp, WorldObjectResp } from '../../services/world-api.service';
 import { WorldSocketService } from '../../services/world-socket.service';
+import { WorldPhysicsService } from '../../services/world-physics.service';
 
 /**
- * 大世界 3D 组件（M1 原型，双场景分离，见 01 §9.3 —— 与 home 的 scene3d 互不干扰）
+ * 大世界 3D 组件（M1 → M2：服务端权威物理改造，ADR-W7 候选②）
  *
  * 能力：
  *  - REST 拉取玩家周围 chunk（默认视距半径 2，强机放开 3），Chunk 流式加载/卸载
  *  - 地形网格用顶点色 + 语义着色（water/sand/grass/mountain/tree/rock/ore，无烘焙贴图）
- *  - 玩家连续移动 + 高度场双线性插值贴地（ADR-W1 / B1，无物理、无 Rapier）
+ *  - 移动 = 输入上行（/app/ws.input，无本地物理）→ physics-service 权威模拟 → POSITION_SNAPSHOT
+ *    10Hz → WorldPhysicsService 100-200ms 插值缓冲渲染（M2，取代 M1 本地运动学移动）
  *  - 默认第三人称跟随相机；建造/交互模式切 OrbitControls（three 0.128.0）
- *  - WS（STOMP 极简客户端）接收区域广播：他人放置 / 在线状态 / 位置
+ *  - WS（STOMP 极简客户端）接收区域广播：他人放置 / 在线状态 / 权威快照
  *
  * 交互：
- *  - WASD 移动；鼠标左键拖拽环绕视角；滚轮缩放
+ *  - WASD 移动（输入上行）；鼠标左键拖拽环绕视角；滚轮缩放
  *  - 「建造」进入建造模式（OrbitControls 俯视选格，点击放置木屋）
  *  - 「养鱼」进入养鱼模式（点击水面放置鱼塘）
  *  - 「跟随」退出建造/养鱼，回到第三人称跟随
@@ -25,7 +27,6 @@ import { WorldSocketService } from '../../services/world-socket.service';
 
 const CHUNK = 64;
 const N = 65;             // 65×65 顶点
-const FOOT_OFFSET = 0.7;  // 玩家脚底贴地偏移
 
 /** 语义着色（01 §4.3 + 矿脉颜色） */
 const CELL_COLORS: Record<number, number> = {
@@ -116,10 +117,13 @@ export class World3dComponent implements OnInit, OnDestroy {
   private disposed = false;
   private lastPosSend = 0;
   private lastStream = 0;
+  private lastInputSend = 0;
+  private inputSentKeyState = '';
 
   constructor(
     private api: WorldApiService,
     private ws: WorldSocketService,
+    private physics: WorldPhysicsService,
     private auth: AuthService,
     private state: StateService
   ) {}
@@ -233,10 +237,12 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.ws.subscribe('/topic/world', f => this.onWorldEvent(f));
       this.ws.subscribe('/topic/players', f => this.onPlayerEvent(f));
       this.ws.subscribe('/user/queue/reply', f => this.onReply(f));
+      // 物理快照客户端（POSITION_SNAPSHOT / PHYS_RESTART）
+      this.physics.init();
       const cx = Math.floor(this.px / CHUNK);
       const cz = Math.floor(this.pz / CHUNK);
       this.ws.send('/app/ws.join', { chunkKey: `${cx}_${cz}`, gx: Math.floor(this.px), gz: Math.floor(this.pz) });
-      this.hint = '已接入大世界，按 WASD 移动探索';
+      this.hint = '已接入大世界（服务端物理权威），按 WASD 移动探索';
     }).catch(() => {
       this.hint = 'WebSocket 连接失败（世界事件将不可见）';
     });
@@ -306,24 +312,28 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.rafId = requestAnimationFrame(() => this.animate());
 
     const now = performance.now();
-    // 移动（每帧）
+    // 输入上行（非建造/养鱼模式）：本地不移动，只发输入意图；~30Hz + 按键状态变化立即发
     if (!this.buildMode && !this.fishMode) {
-      this.movePlayer(1 / 60);
+      this.sendInputIfNeeded(now);
     }
-    // 贴地
-    const y = this.heightAt(this.px, this.pz);
-    if (y !== undefined) {
-      this.py = y + FOOT_OFFSET;
+
+    // 权威姿态：physics-service 快照插值；快照未到前停留出生点
+    const st = this.physics.getState(this.uid);
+    if (st) {
+      this.px = st.gx; this.py = st.y; this.pz = st.gz; this.prot = st.rot;
     }
     this.playerMesh.position.set(this.px, this.py, this.pz);
     this.playerMesh.rotation.y = this.prot;
+
+    // 远端玩家：以物理快照刚体为准
+    this.updateRemotePlayersFromPhysics();
 
     // chunk 流式（节流 ~250ms）
     if (now - this.lastStream > 250) {
       this.lastStream = now;
       this.streamChunks();
     }
-    // 位置心跳（节流 1s）
+    // 轻量位置心跳（保留：UI/调试/兜底；权威位置以 POSITION_SNAPSHOT 为准）
     if (now - this.lastPosSend > 1000 && this.ws.isConnected) {
       this.lastPosSend = now;
       this.ws.send('/app/ws.position', {
@@ -354,91 +364,70 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.camera.lookAt(this.px, this.py + 1.2, this.pz);
   }
 
-  // ================= 移动（无物理，语义阻挡 + 高度场贴地，ADR-W1） =================
+  // ================= 移动（M2：输入上行 + 服务端物理权威，ADR-W7 候选②） =================
 
-  private movePlayer(dt: number): void {
-    const speed = 9;
+  /**
+   * 计算当前按键 → 世界空间方向 (dx,dz,run)，上行 /app/ws.input。
+   * 客户端不做任何本地物理求解；physics-service 按 tick 排队消费输入，权威姿态由 POSITION_SNAPSHOT 下发。
+   * 节流：按键状态变化立即发；持续按键 ~30Hz；未按任何键 → 发一次 (0,0) 表示停止。
+   */
+  private sendInputIfNeeded(now: number): void {
     let ix = 0, iz = 0;
     if (this.keys['KeyW'] || this.keys['ArrowUp']) iz += 1;
     if (this.keys['KeyS'] || this.keys['ArrowDown']) iz -= 1;
     if (this.keys['KeyA'] || this.keys['ArrowLeft']) ix -= 1;
     if (this.keys['KeyD'] || this.keys['ArrowRight']) ix += 1;
-    if (ix === 0 && iz === 0) return;
+    const run = !!(this.keys['ShiftLeft'] || this.keys['ShiftRight']);
 
+    // 世界空间方向（相对相机 yaw：W=相机前方、D=相机右方）
     const yaw = this.follow.yaw;
     const forward = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
     const right = { x: Math.cos(yaw), z: -Math.sin(yaw) };
-    const mvx = (right.x * ix + forward.x * iz) * speed * dt;
-    const mvz = (right.z * ix + forward.z * iz) * speed * dt;
+    const len = Math.hypot(ix, iz);
+    const dx = len > 0 ? (right.x * ix + forward.x * iz) / len : 0;
+    const dz = len > 0 ? (right.z * ix + forward.z * iz) / len : 0;
 
-    // 沿轴滑步：先 X 后 Z（无物理推挤）
-    const nx = this.px + mvx;
-    if (this.canMove(nx, this.pz)) {
-      this.px = nx;
-    } else {
-      this.px += this.slideAlongX(mvx);
+    const keyState = `${ix}_${iz}_${run ? 1 : 0}`;
+    const idle = len === 0;
+    if (!idle && keyState === this.inputSentKeyState && now - this.lastInputSend < 33) {
+      return; // 持续按键节流 ~30Hz
     }
-    const nz = this.pz + mvz;
-    if (this.canMove(this.px, nz)) {
-      this.pz = nz;
-    } else {
-      this.pz += this.slideAlongZ(mvz);
+    if (idle && this.inputSentKeyState === 'idle') {
+      return; // 已发过停止
     }
-    if (mvx !== 0 || mvz !== 0) {
-      this.prot = Math.atan2(mvx, mvz);
+    this.inputSentKeyState = idle ? 'idle' : keyState;
+    this.lastInputSend = now;
+    if (this.ws.isConnected) {
+      this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx, dz, run } });
     }
   }
 
-  private slideAlongX(mvx: number): number {
-    // 沿 X 滑步：逐小步尝试，直到被阻挡
-    const step = Math.sign(mvx) * 0.1;
-    let moved = 0;
-    while (Math.abs(moved) < Math.abs(mvx)) {
-      const next = this.px + step;
-      if (!this.canMove(next, this.pz)) break;
-      this.px = next;
-      moved += step;
+  /** 远端玩家：以物理快照刚体为准（创建/更新/删除） */
+  private updateRemotePlayersFromPhysics(): void {
+    const uids = this.physics.knownUids();
+    const seen = new Set<number>();
+    for (const uid of uids) {
+      if (uid === this.uid) continue;
+      seen.add(uid);
+      if (!this.remotePlayers.has(uid)) {
+        this.addRemotePlayer({ uid, gx: 0, gz: 0, y: 0 });
+      }
+      const st = this.physics.getState(uid);
+      const g = this.remotePlayers.get(uid);
+      if (g && st) {
+        g.position.set(st.gx, st.y, st.gz);
+        g.rotation.y = st.rot;
+      }
     }
-    return 0;
-  }
-
-  private slideAlongZ(mvz: number): number {
-    const step = Math.sign(mvz) * 0.1;
-    let moved = 0;
-    while (Math.abs(moved) < Math.abs(mvz)) {
-      const next = this.pz + step;
-      if (!this.canMove(this.px, next)) break;
-      this.pz = next;
-      moved += step;
+    for (const [uid, g] of Array.from(this.remotePlayers.entries())) {
+      if (!seen.has(uid)) {
+        this.scene.remove(g);
+        this.remotePlayers.delete(uid);
+      }
     }
-    return 0;
   }
 
-  private canMove(gx: number, gz: number): boolean {
-    const cell = this.cellSemantic(Math.floor(gx), Math.floor(gz));
-    if (cell === undefined) return true;   // 未加载 chunk：放行（边界钳制）
-    const walkable = cell === 1 || cell === 2; // sand/grass
-    if (!walkable) return false;
-    // 建筑/鱼塘占用阻挡
-    const cx = Math.floor(gx), cz = Math.floor(gz);
-    for (const o of this.worldObjects.values()) {
-      if (o.gx === cx && o.gz === cz) return false;
-    }
-    return true;
-  }
-
-  // ================= 地形工具（高度场双线性插值 / 语义查询） =================
-
-  private cellSemantic(gx: number, gz: number): number | undefined {
-    const cx = Math.floor(gx / CHUNK);
-    const cz = Math.floor(gz / CHUNK);
-    const grid = this.gridCache.get(`${cx}_${cz}`);
-    if (!grid) return undefined;
-    const lx = gx - cx * CHUNK;
-    const lz = gz - cz * CHUNK;
-    if (lx < 0 || lx >= CHUNK || lz < 0 || lz >= CHUNK) return undefined;
-    return grid.semantic[lz * CHUNK + lx];
-  }
+  // ================= 地形工具（高度场双线性插值，快照间隙/物体贴地用） =================
 
   private heightAt(gx: number, gz: number): number | undefined {
     const cx = Math.floor(gx / CHUNK);
