@@ -47,6 +47,7 @@ petpark:
       - http://localhost:8899
       - http://127.0.0.1:8899
       - http://localhost:4200
+      - http://127.0.0.1:4200
       - http://localhost:8081
   # ============ 大世界 WS（ADR-W2；地形参数以 world_config 表为准，不在此配置） ============
   ws:
@@ -55,7 +56,7 @@ petpark:
     single-room: true           # ≤20 单房间全量订阅（R 覆盖全世界特例，ADR-W2）
   # ============ 大世界物理（ADR-W7 候选②：physics-service = Node Rapier WASM 独立服务） ============
   physics:
-    node-bin: ${PHYSICS_NODE_BIN:C:/Users/WIN11/.workbuddy/binaries/node/versions/22.22.2/node.exe}
+    node-bin: ${PHYSICS_NODE_BIN:C:/Users/ken/.workbuddy/binaries/node/versions/22.22.2/node.exe}
     service-dir: ${PHYSICS_SERVICE_DIR:../physics-service}
     control-url: ${PHYSICS_CONTROL_URL:http://127.0.0.1:18080}
     data-url: ${PHYSICS_DATA_URL:ws://127.0.0.1:18081}
