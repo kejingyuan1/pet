@@ -59,6 +59,9 @@ public class RegionBroker {
     private final ConcurrentHashMap<String, String> sessionChunk = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, PlayerInfo> players = new ConcurrentHashMap<>();
 
+    /** 给 PhysicsGatewayService 反查 uid→sessionId（写回位置状态） */
+    public java.util.Map<String, PlayerInfo> getPlayers() { return players; }
+
     private final SimpMessagingTemplate messaging;
 
     @Value("${petpark.ws.single-room:true}")

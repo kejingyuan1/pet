@@ -37,7 +37,7 @@ public class TerrainService {
      * 整体 +8 后输出约 [-7,23]，大部分陆地高于水线，水域退到低洼山谷（这才是"岛屿世界"）。
      * 变更参数须 world_config.version +1（WorldConfigService 缓存失效依据，见 reseed/缓存键）。
      */
-    private static final double SEA_LEVEL_BIAS = 8.0;
+    private static final double SEA_LEVEL_BIAS = 14.0;
 
     private final WorldConfigService world;
 

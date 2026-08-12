@@ -114,8 +114,8 @@ public class WorldConfigService {
         w.setVersion(1);
         w.setChunkSize(64);
         w.setWorldRadius(1024);
-        w.setWaterLevel(new BigDecimal("-2.00"));
-        w.setTreeDensity(new BigDecimal("0.02"));
+        w.setWaterLevel(new BigDecimal("-5.00"));
+        w.setTreeDensity(new BigDecimal("0.005"));
         w.setScale(new BigDecimal("0.00400"));
         w.setOctaves(4);
         w.setLacunarity(new BigDecimal("2.000"));
