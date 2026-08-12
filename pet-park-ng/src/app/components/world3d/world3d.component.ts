@@ -577,11 +577,11 @@ export class World3dComponent implements OnInit, OnDestroy {
       for (let lx = 0; lx < N; lx++) {
         const i = lz * N + lx;
         const h1 = h[i];
-        // 简化色板：h<1.2 沙 (米黄)，1.2-7 草 (绿)，>=7 山 (灰)
+        // 简化色板：h<14 草 (绿)，14-18 草坡 (深绿)，>=18 山 (灰) — 拉宽 grass 区间让大片陆地
         let c: number;
-        if (h1 < 1.2) c = 0xd2b27a;       // sand
-        else if (h1 < 7) c = 0x6abf4b;     // grass
-        else c = 0x8a8a7a;                // mountain
+        if (h1 < 14) c = 0x6abf4b;          // grass (亮绿) — 覆盖 fbm*15+14 的 [-1,28] 大部分
+        else if (h1 < 18) c = 0x3a7d3a;     // grass hill (深绿)
+        else c = 0x8a8a7a;                // mountain (灰)
         colors[i * 3] = ((c >> 16) & 255) / 255;
         colors[i * 3 + 1] = ((c >> 8) & 255) / 255;
         colors[i * 3 + 2] = (c & 255) / 255;
