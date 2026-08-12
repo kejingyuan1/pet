@@ -54,18 +54,19 @@ petpark:
     heartbeat-ms: 5000          # 客户端心跳间隔（前端按此发送）
     idle-timeout-ms: 30000      # 服务端空闲剔除（RegionBroker Scheduled 扫描）
     single-room: true           # ≤20 单房间全量订阅（R 覆盖全世界特例，ADR-W2）
-  # ============ 大世界物理（ADR-W7 候选②：physics-service = Node Rapier WASM 独立服务） ============
+  # ============ 大世界物理（ADR-W7 候选② 内嵌版：Spring Boot 进程内 @Scheduled 60Hz 物理引擎） ============
+  # M2 合并后不再依赖 Node Rapier WASM 独立服务（physics-service 已并入 WorldPhysicsService）。
+  # 以下字段保留用于兼容旧配置（不再 spawn Node、不开 HTTP 控制面/WS 数据面）。
   physics:
-    node-bin: ${PHYSICS_NODE_BIN:C:/Users/ken/.workbuddy/binaries/node/versions/22.22.2/node.exe}
     service-dir: ${PHYSICS_SERVICE_DIR:../physics-service}
     control-url: ${PHYSICS_CONTROL_URL:http://127.0.0.1:18080}
     data-url: ${PHYSICS_DATA_URL:ws://127.0.0.1:18081}
     control-port: ${PHYSICS_CONTROL_PORT:18080}
     data-port: ${PHYSICS_DATA_PORT:18081}
-    heartbeat-ms: 1000          # Spring Boot↔physics-service 心跳间隔
-    heartbeat-fail-threshold: 3 # 连续失败次数 → 重启 + restoreSnapshot
-    snapshot-db-ms: 5000        # 快照持久化周期（takeSnapshot → MySQL BLOB）
-    spawn-terrain-radius: 2     # 启动时加载出生点周边 chunk 半径
+    heartbeat-ms: 1000
+    heartbeat-fail-threshold: 3
+    snapshot-db-ms: 5000
+    spawn-terrain-radius: 2
     player-radius: 0.4          # 玩家 capsule 半径（世界单位）
     player-height: 1.8          # 玩家 capsule 高
     walk-speed: 4.0             # 步行速度（m/s）
