@@ -69,27 +69,38 @@ class PhysicsWorld {
     if (!this.world) throw new Error('world 未初始化，先 /load_world');
     if (this.terrainChunks.has(chunkKey)) this.removeTerrainChunk(chunkKey);
 
-    const vertices = new Float32Array(nrows * ncols * 3);
-    for (let row = 0; row < nrows; row++) {
-      for (let col = 0; col < ncols; col++) {
-        const i = row * ncols + col;
+    // M2 修复（2026-08-12）：chunk 边界防穿模
+    // 原版 vertices 用 nrows×ncols，相邻 chunk 边界无 vertex 共享，物理引擎视为两个独立 mesh，
+    // 跨边界时胶囊可能穿透缝隙。扩展为 (nrows+1)×(ncols+1)，外圈复制相邻顶点（无新数据依赖服务端），
+    // 让 chunk collider 在边界处有 1 格重叠（相邻 chunk 区域都有覆盖）。
+    const vrows = nrows + 1;
+    const vcols = ncols + 1;
+    const vertices = new Float32Array(vrows * vcols * 3);
+    for (let row = 0; row < vrows; row++) {
+      for (let col = 0; col < vcols; col++) {
+        const i = row * vcols + col;
+        // 索引回原 heights（边界时复制相邻行/列顶点高度，保证 mesh 连续）
+        const srow = Math.min(row, nrows - 1);
+        const scol = Math.min(col, ncols - 1);
         vertices[i * 3] = col;
-        vertices[i * 3 + 1] = heights[i];
+        vertices[i * 3 + 1] = heights[srow * ncols + scol];
         vertices[i * 3 + 2] = row;
       }
     }
-    const indices = new Uint32Array((nrows - 1) * (ncols - 1) * 6);
+    const indices = new Uint32Array((vrows - 1) * (vcols - 1) * 6);
     let k = 0;
-    for (let row = 0; row < nrows - 1; row++) {
-      for (let col = 0; col < ncols - 1; col++) {
-        const a = row * ncols + col;
+    for (let row = 0; row < vrows - 1; row++) {
+      for (let col = 0; col < vcols - 1; col++) {
+        const a = row * vcols + col;
         const b = a + 1;
-        const c = (row + 1) * ncols + col;
+        const c = (row + 1) * vcols + col;
         const d = c + 1;
         indices[k++] = a; indices[k++] = b; indices[k++] = c;
         indices[k++] = b; indices[k++] = d; indices[k++] = c;
       }
     }
+    // collider 位置：vertices 用 col/row 局部坐标 → 世界坐标 = (cx*64 + col, height, cz*64 + row)
+    // 扩展后 col/row ∈ [0, vcols-1]，collider 覆盖 [cx*64, cx*64+vcols-1]
     const desc = RAPIER.ColliderDesc.trimesh(vertices, indices)
       .setTranslation(cx * (ncols - 1), 0, cz * (nrows - 1))
       .setFriction(1.0);

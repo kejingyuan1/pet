@@ -29,13 +29,28 @@ export class WorldSocketService {
 
   get isConnected(): boolean { return this.connected; }
 
-  /** 连接：ws://<host>/ws?token=<jwt>（经 dev proxy ws:true 转发到后端） */
+  /** 连接 WS 端点
+   *  - M2 修复（2026-08-12）：URL 路由兼容
+   *    · Angular dev server 4200/proxy：保留原行为用 location.host（Angular proxy ws:true 转发到 8080）
+   *    · Python http.server / 其它简易服务器在 4200 上无 proxy：自动降级直连 localhost:8080
+   *    · 生产环境：location.host 由反代（nginx/spring cloud gateway）兜底
+   *  - 服务端 SecurityConfig 已 setAllowedOriginPatterns("*")，CORS/WS 握手不受限
+   */
   connect(): Promise<void> {
     if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
       return Promise.resolve();
     }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws?token=${encodeURIComponent(this.auth.token)}`;
+    // 自动检测：Angular dev server 默认可信端口（含 4200/4201 等常用 dev proxy 端口）
+    const knownProxyPorts = new Set(['4200', '4201', '4202', '5173', '3000']);
+    let wsHost = location.host;
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      if (!knownProxyPorts.has(location.port)) {
+        // 非已知 proxy 端口（Python http.server / nginx 直服 dist 等）→ 直连后端 8080
+        wsHost = `${location.hostname}:8080`;
+      }
+    }
+    const url = `${proto}://${wsHost}/ws?token=${encodeURIComponent(this.auth.token || '')}`;
     return new Promise<void>((resolve, reject) => {
       this.connectResolve = resolve;
       this.connectReject = reject;
