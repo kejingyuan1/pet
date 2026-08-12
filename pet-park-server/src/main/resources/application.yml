@@ -35,15 +35,13 @@ petpark:
   ai:
     # AI 答疑（OpenAI 兼容接口，兼容 CodeBuddy CLI / DashScope / DeepSeek 等网关）
     # API Key 环境变量：AI_API_KEY 或 CODEBUDDY_API_KEY / CODEBUDDY_AUTH_TOKEN / DASHSCOPE_API_KEY
-    api-key: ${AI_API_KEY:${CODEBUDDY_API_KEY:${CODEBUDDY_AUTH_TOKEN:${DASHSCOPE_API_KEY:}}}}
-    # 模型：AI_MODEL 或 CODEBUDDY_MODEL 覆盖（如 deepseek-v4-flash）
-    model: ${AI_MODEL:${CODEBUDDY_MODEL:deepseek-v4-flash}}
-    # OpenAI 兼容网关地址：AI_BASE_URL 或 CODEBUDDY_BASE_URL 覆盖
-    base-url: ${AI_BASE_URL:${CODEBUDDY_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}}
-    # 是否使用 response_format=json_object（部分网关不支持，可设 AI_JSON_MODE=false）
+    api-key: ${AI_API_KEY:${DASHSCOPE_API_KEY:}}
+    # 多模型 fallback 链（逗号分隔，按顺序逐个尝试，前一个额度耗尽/失败自动降级下一个）
+    models: ${AI_MODELS:qwen3.7-plus,qwen3.5-plus,qwen3.6-flash}
+    # OpenAI 兼容网关地址（默认百炼，理论上无需改）
+    base-url: ${AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    # 是否使用 response_format=json_object（百炼支持）
     json-mode: ${AI_JSON_MODE:true}
-    # 认证方式：x-api-key（CodeBuddy/DashScope sk-）/ bearer（OpenAI/DeepSeek 官方）
-    auth-mode: ${AI_AUTH_MODE:x-api-key}
   cors:
     allowed-origins:
       - http://localhost:8899
