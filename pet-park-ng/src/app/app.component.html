@@ -307,6 +307,14 @@
         </ng-container>
       </div>
 
+      <!-- 最近完成一组：查看错题 -->
+      <div *ngIf="!studySession && state.lastGroupDone" class="group-done">
+        <span>✅ 完成「{{ state.lastGroupDone.name }}」</span>
+        <span *ngIf="state.lastGroupDone.wrongCount > 0" class="gd-wrong">答错 {{ state.lastGroupDone.wrongCount }} 题</span>
+        <span *ngIf="state.lastGroupDone.wrongCount === 0" class="gd-perfect">全部答对 🎉</span>
+        <button *ngIf="state.lastGroupDone.wrongCount > 0" class="gd-btn" (click)="openFailBook()">📕 查看错题</button>
+      </div>
+
       <!-- 组列表 -->
       <div *ngIf="!studySession" class="study-groups">
         <button class="study-grp" *ngFor="let g of studyCurrentSubj().groups; let gi = index"

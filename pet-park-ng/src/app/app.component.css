@@ -575,6 +575,26 @@ p { line-height: 1.55; }
 .mastered-mark { font-size: .8rem; font-weight: 800; color: #1E8449; }
 .fail-empty { text-align: center; padding: 24px 0; color: #9C7E5A; font-weight: 700; }
 
+/* ===== 完成本组：查看错题 ===== */
+.group-done {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; margin: 12px 0;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(232, 248, 234, .95), rgba(220, 244, 225, .85));
+  border: 1px solid rgba(91, 201, 125, .3);
+  font-size: .86rem; font-weight: 800; color: #1E6B3E;
+}
+.gd-wrong { color: #C0392B; }
+.gd-perfect { color: #1E8449; }
+.gd-btn {
+  margin-left: auto; padding: 7px 14px; border: none; border-radius: 12px;
+  background: linear-gradient(135deg, #FF9B8E, #E8503A); color: #fff;
+  font-size: .8rem; font-weight: 800; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(232, 80, 58, .35);
+  transition: all .2s var(--ease);
+}
+.gd-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(232, 80, 58, .5); }
+
 /* ===== 模块通用顶部图标 ===== */
 .card h3 svg, .card h3 .icon { font-size: 1.3rem; }
 

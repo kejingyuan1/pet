@@ -548,14 +548,19 @@ export class StateService {
   startStudyGroup(subjIdx: number, groupIdx: number): void {
     if (this.studyTodayEarned() >= STUDY_DAILY_LIMIT) return;
     this.studySession = { subjIdx, groupIdx, itemIdx: 0, answered: false, picked: null };
+    this.groupWrongCount = 0;
   }
+  /** 本组答错题数（完成组时统计用） */
+  groupWrongCount = 0;
+  /** 最近完成的一组（展示"查看错题"入口） */
+  lastGroupDone: { name: string; wrongCount: number } | null = null;
   pickStudyOpt(i: number): void {
     const s = this.studySession;
     if (!s || s.answered) return;
     const it = this.remoteSubjects[s.subjIdx].groups[s.groupIdx].items[s.itemIdx];
     s.answered = true; s.picked = it.opts ? it.opts[i] : null;
     // 答错 → 异步调后端 AI 答疑 + 记错题本
-    if (s.picked !== it.a) this.requestExplain(it.id, String(s.picked));
+    if (s.picked !== it.a) { this.groupWrongCount++; this.requestExplain(it.id, String(s.picked)); }
   }
   checkStudyFill(v: string): void {
     const s = this.studySession;
@@ -564,7 +569,7 @@ export class StateService {
     s.answered = true;
     s.fillOk = (v.trim().replace(/[，。\s]/g, '') === String(it.a).trim());
     // 答错 → AI 答疑
-    if (!s.fillOk) this.requestExplain(it.id, v.trim());
+    if (!s.fillOk) { this.groupWrongCount++; this.requestExplain(it.id, v.trim()); }
   }
   revealQa(): void { const s = this.studySession; if (s && !s.answered) s.answered = true; }
   backStudy(): void { this.studySession = null; this.aiResult = null; }
@@ -601,6 +606,8 @@ export class StateService {
     if (!s) return;
     const subj = this.remoteSubjects[s.subjIdx];
     const g = subj.groups[s.groupIdx];
+    // 记录本组完成结果（供"查看错题"入口）
+    this.lastGroupDone = { name: subj.name + '·' + g.name, wrongCount: this.groupWrongCount };
     if (this.state.study.learned.indexOf(g.id) < 0) this.state.study.learned.push(g.id);
     this.resetStudyDaily();
     if (this.state.study.earned < STUDY_DAILY_LIMIT) {

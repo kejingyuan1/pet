@@ -29,11 +29,14 @@ public class AiService {
     @Value("${petpark.ai.api-key:}")
     private String apiKey;
 
-    @Value("${petpark.ai.model:qwen-turbo}")
+    @Value("${petpark.ai.model:deepseek-v4-flash}")
     private String model;
 
     @Value("${petpark.ai.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
     private String baseUrl;
+
+    @Value("${petpark.ai.json-mode:true}")
+    private boolean jsonMode;
 
     /** 是否已配置 API Key */
     public boolean isConfigured() {
@@ -55,9 +58,12 @@ public class AiService {
             messages.add(Map.of("role", "system", "content", systemPrompt));
             messages.add(Map.of("role", "user", "content", userContent));
             body.put("messages", messages);
-            Map<String, Object> respFormat = new HashMap<>();
-            respFormat.put("type", "json_object");
-            body.put("response_format", respFormat);
+            // 仅当网关支持 JSON 模式才传 response_format（部分网关忽略/报错可关）
+            if (jsonMode) {
+                Map<String, Object> respFormat = new HashMap<>();
+                respFormat.put("type", "json_object");
+                body.put("response_format", respFormat);
+            }
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
