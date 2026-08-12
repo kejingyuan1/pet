@@ -429,11 +429,11 @@ export class AppComponent implements OnInit, OnDestroy {
   get studyEducationDisplay(): string {
     return this.studyEducation || (this.auth.user?.education ?? 'PRIMARY_1');
   }
-  /** 下拉可选范围：用户学历及以下 */
+  /** 下拉可选范围：admin 可看全部；普通用户仅 ≤ 自己学历 */
   get studyEduOptions() {
-    const all = this.educationOptions;
-    const myRank = all.findIndex(x => x.v === (this.auth.user?.education ?? 'PRIMARY_1'));
-    return myRank < 0 ? all : all.slice(0, myRank + 1);
+    if (this.isAdmin) return this.educationOptions;
+    const myRank = this.educationOptions.findIndex(x => x.v === (this.auth.user?.education ?? 'PRIMARY_1'));
+    return myRank < 0 ? this.educationOptions : this.educationOptions.slice(0, myRank + 1);
   }
   /** 切换学历：重新拉题库（后端按 education <= 给值 过滤） */
   onStudyEduChange(edu: string): void {

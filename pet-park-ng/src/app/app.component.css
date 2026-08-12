@@ -206,8 +206,8 @@ p { line-height: 1.55; }
 .modal input:focus { border-color: var(--orange); background: rgba(255, 255, 255, .95); box-shadow: 0 0 0 4px rgba(255, 139, 61, .12); }
 
 /* ★ 学历下拉选择器：与 input 一致风格 + 自定义三角箭头（破浏览器默认丑陋外观） */
-.modal ::ng-deep .reg-edu-select,
-.modal ::ng-deep .study-edu-select {
+.reg-edu-select,
+.study-edu-select {
   width: 100%; box-sizing: border-box;
   padding: 13px 36px 13px 14px;       /* 右边留 36px 给自定义三角 */
   border-radius: var(--radius-sm);
@@ -220,12 +220,12 @@ p { line-height: 1.55; }
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 6 5-6' fill='none' stroke='%23FF8B3D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat: no-repeat; background-position: right 14px center; background-size: 14px 10px;
   outline: none; cursor: pointer; transition: all .25s var(--ease);
-  color: var(--ink);
+  color: #5A3E1E;
   -webkit-tap-highlight-color: transparent;
 }
-.modal ::ng-deep .reg-edu-select:focus,
-.modal ::ng-deep .study-edu-select:focus {
-  border-color: var(--orange); background-color: rgba(255, 255, 255, .95);
+.reg-edu-select:focus,
+.study-edu-select:focus {
+  border-color: #FF8B3D; background-color: rgba(255, 255, 255, .95);
   box-shadow: 0 0 0 4px rgba(255, 139, 61, .12);
 }
 .login-msg { color: var(--red); font-size: .8rem; margin-bottom: 8px; text-align: center; }
