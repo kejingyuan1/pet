@@ -570,6 +570,23 @@ export class World3dComponent implements OnInit, OnDestroy {
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, fog: false });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
+    // M2 修复 v2（2026-08-13）：colors 全写 mountain 错位 bug — 改用 heightAt 决定颜色（避开 sem 数组填错问题）
+    const hMin = Math.min(...h);
+    const hMax = Math.max(...h);
+    for (let lz = 0; lz < N; lz++) {
+      for (let lx = 0; lx < N; lx++) {
+        const i = lz * N + lx;
+        const h1 = h[i];
+        // 简化色板：h<1.2 沙 (米黄)，1.2-7 草 (绿)，>=7 山 (灰)
+        let c: number;
+        if (h1 < 1.2) c = 0xd2b27a;       // sand
+        else if (h1 < 7) c = 0x6abf4b;     // grass
+        else c = 0x8a8a7a;                // mountain
+        colors[i * 3] = ((c >> 16) & 255) / 255;
+        colors[i * 3 + 1] = ((c >> 8) & 255) / 255;
+        colors[i * 3 + 2] = (c & 255) / 255;
+      }
+    }
     mesh.frustumCulled = false;
     return mesh;
   }
