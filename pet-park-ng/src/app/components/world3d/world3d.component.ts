@@ -138,10 +138,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.api.config().subscribe({
       next: cfg => {
         if (this.disposed) return;
-        // M2 修复（2026-08-12）：config version 变化时清空旧 chunk 缓存（防 SEA_LEVEL_BIAS/waterLevel 等参数变化后渲染旧数据）
-        if (this.config && this.config.version !== cfg.version) {
-          this.gridCache.clear();
-        }
+        // M2 修复（2026-08-12）：总是清空 chunk 缓存（首次 config 时 this.config=undefined 也清，防首次 gridCache 旧数据）
+        this.gridCache.clear();
         this.config = cfg;
         this.viewRadius = cfg.viewRadius || this.viewRadius;
         this.px = cfg.spawnGx;
@@ -567,9 +565,12 @@ export class World3dComponent implements OnInit, OnDestroy {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.setIndex(indices);
     geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, fog: false });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
+    mesh.frustumCulled = false;
     return mesh;
   }
 
