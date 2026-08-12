@@ -176,7 +176,7 @@ export class World3dComponent implements OnInit, OnDestroy {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8FC8F5);
-    this.scene.fog = new THREE.Fog(0x8FC8F5, 160, 260);
+    this.scene.fog = new THREE.Fog(0x9ec9e2, 220, 400);
 
     this.camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 600);
     this.camera.position.set(this.px, this.py + 20, this.pz + 20);
