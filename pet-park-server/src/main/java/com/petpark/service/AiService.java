@@ -38,6 +38,10 @@ public class AiService {
     @Value("${petpark.ai.json-mode:true}")
     private boolean jsonMode;
 
+    /** 认证方式：x-api-key（CodeBuddy/DashScope）/ bearer（OpenAI/DeepSeek 官方） */
+    @Value("${petpark.ai.auth-mode:x-api-key}")
+    private String authMode;
+
     /** 是否已配置 API Key */
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
@@ -67,7 +71,12 @@ public class AiService {
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey);
+            // 认证方式：CodeBuddy/DashScope 用 X-Api-Key；OpenAI/DeepSeek 官方用 Bearer
+            if ("bearer".equalsIgnoreCase(authMode)) {
+                headers.setBearerAuth(apiKey);
+            } else {
+                headers.set("X-Api-Key", apiKey);
+            }
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
             ResponseEntity<String> resp = restTemplate.exchange(
