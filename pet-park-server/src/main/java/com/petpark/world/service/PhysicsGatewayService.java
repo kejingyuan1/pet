@@ -33,7 +33,13 @@ public class PhysicsGatewayService {
     }
 
     public void sendInput(long uid, double dx, double dz, boolean run) {
-        worldPhysics.enqueueInput(uid, dx, dz, run);
+        worldPhysics.enqueueInput(uid, dx, dz, run, false);
+    }
+
+    /** 带动作的输入（jump 跳跃） */
+    public void sendInput(long uid, double dx, double dz, boolean run, String action) {
+        boolean jump = "jump".equals(action);
+        worldPhysics.enqueueInput(uid, dx, dz, run, jump);
     }
 
     public void onPlayerJoin(long uid, double gx, double gz, double y) {

@@ -128,10 +128,10 @@ public class WorldWsController {
         double dx = clampUnit(msg.getMove().getDx());
         double dz = clampUnit(msg.getMove().getDz());
         boolean run = Boolean.TRUE.equals(msg.getMove().getRun());
-        if (dx == 0 && dz == 0 && !run) {
+        if (dx == 0 && dz == 0 && !run && !"jump".equals(msg.getAction())) {
             // 仍转发（表示松键停止），保证 physics-service 消费到"停止"意图
         }
-        physicsGateway.sendInput(uid, dx, dz, run);
+        physicsGateway.sendInput(uid, dx, dz, run, msg.getAction());
     }
 
     private static double clampUnit(Double v) {

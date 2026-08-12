@@ -20,6 +20,8 @@ export interface WorldConfigResp {
   spawnGx: number;
   spawnGz: number;
   spawnY: number;
+  /** 海平面高度 */
+  waterLevel: number;
   viewRadius: number;
   singleRoom: boolean;
 }
