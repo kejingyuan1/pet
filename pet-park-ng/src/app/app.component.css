@@ -13,8 +13,10 @@
 /* 全局背景（动态渐变 + 漂浮色块） */
 body {
   margin: 0;
-  background: var(--bg-grad);
-  background-color: #FFE5D0;
+  /* ★ v58 根除版：var(--bg-grad) 在 esbuild 打包后变量解析失败，
+     且 background 简写属性会把 background-color 重置为 transparent → 整个 body 背景透明
+     改用具体颜色 linear-gradient（不再用 var()）*/
+  background: linear-gradient(135deg, #FFE3C9 0%, #FFC8DD 50%, #D6B5FF 100%) !important;
   background-attachment: fixed;
   background-size: 100% 100%;
   min-height: 100vh;

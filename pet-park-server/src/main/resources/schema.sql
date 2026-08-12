@@ -376,3 +376,172 @@ CREATE TABLE IF NOT EXISTS question_failures (
   KEY idx_fail_user (user_id, status, created_at),
   KEY idx_fail_ques (question_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- ★★★ 大世界模块表（M1 追加，设计 03-db-schema.md）
+-- 兼容 MySQL 5.7/8，幂等可重复执行；不使用 Flyway（项目约定 schema.sql 初始化）
+-- 注意：users 扩展字段用 information_schema 守卫的 ALTER（5.7 无 ADD COLUMN IF NOT EXISTS）
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 世界配置表（全局一行：种子/版本/边界/生成参数，ADR-W3 数据驱动）
+-- 任意生成参数/种子变更必须 version+1，否则新旧 chunk 视觉接缝
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS world_config (
+  id            BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID（恒为1）',
+  seed          VARCHAR(32)  NOT NULL DEFAULT 'dudu2019' COMMENT '世界种子（改种子=新世界）',
+  version       INT          NOT NULL DEFAULT 1 COMMENT '世界版本（改种子/地形参数时+1，客户端重载依据；ADR-W3 不变量）',
+  chunk_size    INT          NOT NULL DEFAULT 64 COMMENT 'chunk 边长（世界格）',
+  world_radius  INT          NOT NULL DEFAULT 1024 COMMENT '世界半径（chunk 数，0=无限）',
+  water_level   DECIMAL(6,2) NOT NULL DEFAULT -2.00 COMMENT '水位线（h<此值=水；M1 落地调参：噪声幅值 ~±1.9，默认0.00 会全海）',
+  tree_density  DECIMAL(4,2) NOT NULL DEFAULT 0.02 COMMENT '草地区树木密度（0-1）',
+  scale         DECIMAL(8,5) NOT NULL DEFAULT 0.00400 COMMENT 'fbm 基础频率',
+  octaves       INT          NOT NULL DEFAULT 4 COMMENT 'fbm 倍频',
+  lacunarity    DECIMAL(6,3) NOT NULL DEFAULT 2.000 COMMENT 'fbm 频率倍增',
+  gain          DECIMAL(6,3) NOT NULL DEFAULT 0.500 COMMENT 'fbm 振幅衰减',
+  slope_walk    DECIMAL(5,2) NOT NULL DEFAULT 35.00 COMMENT 'walkable 坡度阈值（°）',
+  slope_build   DECIMAL(5,2) NOT NULL DEFAULT 15.00 COMMENT 'buildable 坡度阈值（°）',
+  ore_density   DECIMAL(4,2) NOT NULL DEFAULT 0.03 COMMENT 'mountain 区矿脉密度（0-1）',
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='世界配置表（种子/版本/边界/生成参数，全局一行）';
+
+-- 幂等保护：仅当表空时插入默认行
+INSERT INTO world_config (id, seed) VALUES (1, 'dudu2019')
+ON DUPLICATE KEY UPDATE id = id;
+
+-- ------------------------------------------------------------
+-- 世界 chunk 缓存表（可选：首次生成后落库，重启免重算）
+-- M1 仅预留表结构；height 65×65 float32 / semantic 64×64 byte 原始字节
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS world_chunks (
+  id            BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  chunk_key     VARCHAR(24)  NOT NULL COMMENT 'chunk 标识：cx_cz（如 12_8）',
+  cx            INT          NOT NULL COMMENT 'chunk X 坐标',
+  cz            INT          NOT NULL COMMENT 'chunk Z 坐标',
+  height_blob   LONGBLOB     NOT NULL COMMENT '65×65 高度 float32 原始字节（4225×4B）',
+  semantic_blob LONGBLOB     NOT NULL COMMENT '64×64 语义 byte 原始字节（4096B）',
+  version       INT          NOT NULL DEFAULT 1 COMMENT '世界版本（缓存失效依据）',
+  gen_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '生成时间',
+  UNIQUE KEY uk_chunk_key (chunk_key, version),
+  KEY idx_chunk_xy (cx, cz)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='世界 chunk 缓存表（地形生成结果缓存，可清理）';
+
+-- ------------------------------------------------------------
+-- 世界对象表（核心：玩家建筑/鱼塘/资源点；只存玩家改动）
+-- uk_chunk_cell 唯一键支撑条件 INSERT 防双置（ADR-W4）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS world_objects (
+  id          BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  chunk_key   VARCHAR(24)  NOT NULL COMMENT 'chunk 标识：cx_cz（查询索引）',
+  gx          INT          NOT NULL COMMENT '世界格 X（1格=1单位）',
+  gz          INT          NOT NULL COMMENT '世界格 Z',
+  type        VARCHAR(32)  NOT NULL COMMENT '对象类型：wood_house/stone_house/fish_pond...（关联 categories.code）',
+  owner_id    BIGINT       NOT NULL COMMENT '所有者用户ID（关联 users.id）',
+  rot         DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '朝向（弧度）',
+  ext_json    JSON         DEFAULT NULL COMMENT '附加状态：{fishType, fishCount, level, growDays...}',
+  state       TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1 正常 / 0 拆除（软删，保留记录）',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_chunk_cell (chunk_key, gx, gz, state),
+  KEY idx_chunk_owner (chunk_key, owner_id),
+  KEY idx_owner (owner_id, created_at),
+  CONSTRAINT fk_wobj_owner FOREIGN KEY (owner_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='世界对象表（玩家建筑/鱼塘/资源点，只存玩家改动）';
+
+-- ------------------------------------------------------------
+-- 地形修改表（挖/填/伐木/挖矿等玩家对地形的改动；M1 预留表结构）
+-- 挖矿（M4）：old_type='ore_*', new_type='empty'；定时任务删记录 → 矿脉再生
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS terrain_mods (
+  id          BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  chunk_key   VARCHAR(24)  NOT NULL COMMENT 'chunk 标识：cx_cz',
+  gx          INT          NOT NULL COMMENT '世界格 X',
+  gz          INT          NOT NULL COMMENT '世界格 Z',
+  old_type    VARCHAR(16)  NOT NULL COMMENT '原语义类型',
+  new_type    VARCHAR(16)  NOT NULL COMMENT '新语义类型',
+  by_player   BIGINT       NOT NULL COMMENT '操作玩家（关联 users.id）',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  UNIQUE KEY uk_cell (chunk_key, gx, gz),
+  KEY idx_mod_owner (by_player, created_at),
+  KEY idx_regen (new_type, created_at),
+  KEY idx_regen2 (old_type, new_type, created_at),
+  CONSTRAINT fk_tmod_player FOREIGN KEY (by_player) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='地形修改表（玩家对地形的改动，与生成地形叠加）';
+
+-- ------------------------------------------------------------
+-- 世界背包表（M1 预留空表：玩家世界采集物，M4 采矿使用）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS world_inventory (
+  id          BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  uid         BIGINT       NOT NULL COMMENT '玩家（关联 users.id）',
+  item_type   VARCHAR(32)  NOT NULL COMMENT '物品类型（=categories.code，如 coal_ore/iron_ore/gold_ore）',
+  qty         INT          NOT NULL DEFAULT 0 COMMENT '数量',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_owner_item (uid, item_type),
+  KEY idx_owner (uid, created_at),
+  CONSTRAINT fk_winv_owner FOREIGN KEY (uid) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='世界背包表（玩家世界采集物，M4 出售换积分）';
+
+-- ------------------------------------------------------------
+-- 世界宠物表（M1 预留空表：玩家成熟动物牵入世界的跟随宠物，B3 桥接）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS world_pets (
+  id          BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  uid         BIGINT       NOT NULL COMMENT '主人（关联 users.id）',
+  species     VARCHAR(32)  NOT NULL COMMENT '物种（cat/dog/cow/chicken/duck/sheep/fish…）',
+  chunk_key   VARCHAR(24)  NOT NULL COMMENT '所在 chunk（查询索引）',
+  gx          INT          NOT NULL COMMENT '世界格 X',
+  gz          INT          NOT NULL COMMENT '世界格 Z',
+  rot         DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '朝向（弧度）',
+  state       TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1 跟随/游荡 / 0 收回 home',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  KEY idx_chunk (chunk_key),
+  KEY idx_owner (uid, created_at),
+  CONSTRAINT fk_wpet_owner FOREIGN KEY (uid) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='世界宠物表（玩家成熟动物牵入世界的跟随宠物，无物理）';
+
+-- ------------------------------------------------------------
+-- users 表追加：大世界位置 + 采矿三系统（B2 预留；03 §4.1）
+-- 5.7 兼容：information_schema 守卫，重复执行不报错
+-- ------------------------------------------------------------
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='pos_x');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN pos_x INT DEFAULT NULL COMMENT ''玩家当前位置 X（世界格）'' AFTER version', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='pos_z');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN pos_z INT DEFAULT NULL COMMENT ''玩家当前位置 Z（世界格）'' AFTER pos_x', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='pos_y');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN pos_y DECIMAL(6,2) DEFAULT NULL COMMENT ''玩家当前高度 Y'' AFTER pos_z', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='last_chunk');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN last_chunk VARCHAR(24) DEFAULT NULL COMMENT ''玩家所在 chunk_key（区域订阅）'' AFTER pos_y', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='energy');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN energy INT NOT NULL DEFAULT 100 COMMENT ''采矿能量（当前值；与 categories.energy 动物饲料能量互不相干）'' AFTER last_chunk', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='level');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN level INT NOT NULL DEFAULT 1 COMMENT ''世界等级（B2 采矿）'' AFTER energy', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='experience');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN experience BIGINT NOT NULL DEFAULT 0 COMMENT ''世界经验（累积，B2 采矿）'' AFTER level', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- ------------------------------------------------------------
+-- categories 追加：大世界建筑/鱼塘设施种子（03 §4.2；type 已为 VARCHAR，无需 ALTER）
+-- 矿石 resource 类（coal_ore/iron_ore/gold_ore）属 M4 采矿，本期不插入
+-- ------------------------------------------------------------
+INSERT INTO categories (code,name,type,price,sell_price,grow_days,feed_days,exp,level_req,product,prod_price,satiety,energy,color,sort_order) VALUES
+ ('wood_house','木屋','building',100,0,0,0,0,1,NULL,0,0,0,'#C98A4B',50),
+ ('stone_house','石屋','building',300,0,0,0,0,2,NULL,0,0,0,'#8A8A7A',51),
+ ('small_pond','小池塘','pond',50,0,0,0,0,1,NULL,0,0,0,'#2F7FD6',60)
+ON DUPLICATE KEY UPDATE name=VALUES(name);
+

@@ -39,6 +39,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!-- WebSocket（STOMP 区域广播，ADR-W2） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
         <!-- MyBatis-Plus（Spring Boot 3 专用 starter） -->
         <dependency>
             <groupId>com.baomidou</groupId>

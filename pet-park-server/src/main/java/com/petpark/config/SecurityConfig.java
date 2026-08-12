@@ -10,6 +10,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -47,6 +48,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()    // 登录注册开放
                 .requestMatchers("/api/categories", "/api/questions").permitAll()        // 只读数据开放
+                .requestMatchers("/ws/**").permitAll()       // WebSocket 握手：鉴权在 STOMP ChannelInterceptor（JwtChannelInterceptor）完成
+                .requestMatchers(HttpMethod.GET, "/api/world/**").permitAll()   // 世界只读（config/chunk/objects：多人共享地图数据，无需登录）
                 .requestMatchers("/api/auth/me", "/api/auth/profile", "/api/auth/password").authenticated()  // 资料管理需登录
                 .requestMatchers("/api/admin/**").authenticated()     // 管理员接口：需登录（角色在 Service 校验）
                 .anyRequest().authenticated())

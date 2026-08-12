@@ -33,17 +33,18 @@
 }
 
 /* ============================================================
-   全局背景（温馨渐变 + 漂浮色块）—— 必须在 styles.css
+   全局背景（温馨渐变 + 漂浮色块）—— 必须在 styles.css（不在组件 css）
+   ★ v58 根除版：CSS 变量 var(--bg-grad) 经 esbuild 打包后解析失效 → background: none
+     改用具体颜色 linear-gradient（不再用 var()）
    ============================================================ */
 html, body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg-grad);
-  background-color: var(--bg-grad-solid);
+  background: linear-gradient(135deg, #FFE5D0 0%, #FFCBA8 40%, #FFD6E8 75%, #D9C7FF 100%) !important;
   background-attachment: fixed;
   background-size: 100% 100%;
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: var(--ink);
+  color: #5A3E1E;
   overflow-x: hidden;
 }
 

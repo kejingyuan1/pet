@@ -116,6 +116,14 @@
     </div>
   </section>
 
+  <!-- 大世界（M1 原型：程序化地形 + Chunk 流式 + 放置/养鱼 + WS 广播；双场景分离见 01 §9.3） -->
+  <section class="module" [class.on]="mod==='world'">
+    <div class="scene3d-wrap">
+      <app-world3d></app-world3d>
+    </div>
+    <div class="tips" *ngIf="!auth.isLoggedIn">🔒 大世界需要登录后游玩（多人共享、服务端权威）</div>
+  </section>
+
   <section class="module" [class.on]="mod==='farm'">
     <div class="card"><h3>🥕 小菜地 <small>Lv.{{ state.state.farm.level }}</small></h3>
       <div class="grid">
@@ -359,6 +367,7 @@
 <!-- 底部导航 -->
 <nav class="nav">
   <button [class.on]="mod==='home'" (click)="switchMod('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>家园</button>
+  <button [class.on]="mod==='world'" (click)="switchMod('world')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.6 3.8 9S14.5 18.5 12 21c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3z"/></svg>大世界</button>
   <button [class.on]="mod==='farm'" (click)="switchMod('farm')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6m0 0c-3 0-5 2-5 5h2c0-2 1-3 3-3s3 1 3 3h2c0-3-2-5-5-5zM12 14v7M3 21h18"/></svg>菜地</button>
   <button [class.on]="mod==='pond'" (click)="switchMod('pond')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="9" ry="7"/><path d="M3 12h18M12 5c-1.5 2-1.5 9 0 14M12 5c1.5 2 1.5 9 0 14"/></svg>鱼塘</button>
   <button [class.on]="mod==='ranch'" (click)="switchMod('ranch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2m-8 0l1 14h8l1-14M10 11v6M14 11v6"/></svg>牧场</button>

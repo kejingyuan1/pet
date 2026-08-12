@@ -48,6 +48,11 @@ petpark:
       - http://127.0.0.1:8899
       - http://localhost:4200
       - http://localhost:8081
+  # ============ 大世界 WS（ADR-W2；地形参数以 world_config 表为准，不在此配置） ============
+  ws:
+    heartbeat-ms: 5000          # 客户端心跳间隔（前端按此发送）
+    idle-timeout-ms: 30000      # 服务端空闲剔除（RegionBroker Scheduled 扫描）
+    single-room: true           # ≤20 单房间全量订阅（R 覆盖全世界特例，ADR-W2）
 
 logging:
   level:

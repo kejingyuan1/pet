@@ -1,19 +1,24 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, ViewEncapsulation } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { StateService } from './services/state.service';
 import { AuthService } from './services/auth.service';
 import { Scene3dComponent } from './components/scene3d/scene3d.component';
+import { World3dComponent } from './components/world3d/world3d.component';
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, Scene3dComponent],
+  imports: [CommonModule, FormsModule, Scene3dComponent, World3dComponent],
   templateUrl: './app.component.html',
-  styleUrl: './app.component.css'
+  styleUrl: './app.component.css',
+  /* ★ v58 根除版：默认 Emulated 封装会把 body {} 改写成 body[_ngcontent-xxx]
+     → body 元素没这个属性，全局背景样式永远失效（渐变背景丢失）
+     改为 None：组件 CSS 全局生效（这个 AppComponent 是 root，本来就管整个 app 的样式）*/
+  encapsulation: ViewEncapsulation.None
 })
 export class AppComponent implements OnInit, OnDestroy {
   mod = 'home';
-  mods = ['home', 'farm', 'pond', 'ranch', 'study'];  // 联网版：删掉 data（云端存档，不再需要本地导入导出 Tab）
+  mods = ['home', 'world', 'farm', 'pond', 'ranch', 'study'];  // 联网版：删掉 data（云端存档，不再需要本地导入导出 Tab）
 
   // 登录表单
   loginUser = '';

@@ -20,6 +20,13 @@ public class GlobalExceptionHandler {
         return Result.fail(e.getCode(), e.getMessage());
     }
 
+    /** 唯一键冲突（ADR-W4 兜底）：同 cell 双置建筑 → WORLD_CELL_OCCUPIED */
+    @ExceptionHandler(org.springframework.dao.DuplicateKeyException.class)
+    public Result<Void> handleDupKey(org.springframework.dao.DuplicateKeyException e) {
+        log.warn("唯一键冲突（世界对象并发兜底）: {}", e.getMessage());
+        return Result.fail(2003, "该格子已被占用");
+    }
+
     /** 参数校验异常 */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public Result<Void> handleValid(MethodArgumentNotValidException e) {
