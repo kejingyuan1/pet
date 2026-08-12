@@ -357,3 +357,22 @@ INSERT INTO questions (subject,q_type,group_id,group_name,prompt,options,answer,
 ('english','fill','grade1','练习 8：综合句型（填空题）','This is my（ ）.(妈妈)','[]','mother',1,1),
 ('english','fill','grade1','练习 8：综合句型（填空题）','I like（ ）.(香蕉)','[]','bananas',1,1)
 ON DUPLICATE KEY UPDATE prompt=VALUES(prompt);
+
+-- ============================================================
+-- 错题本（AI 答疑 + 查缺补漏）
+-- 答题错误时前端调 /api/study/explain → 后端调 AI 解答并判定缺失知识点
+-- ============================================================
+CREATE TABLE IF NOT EXISTS question_failures (
+  id           BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  user_id      BIGINT       NOT NULL COMMENT '用户ID',
+  question_id  BIGINT       NOT NULL COMMENT '题目ID（questions.id）',
+  prompt       TEXT         NOT NULL COMMENT '题目题干快照',
+  user_answer  TEXT         NULL COMMENT '用户答错的答案',
+  ai_explain   TEXT         NULL COMMENT 'AI 答疑内容',
+  weak_points  VARCHAR(255) NULL COMMENT '缺失知识点（逗号分隔）',
+  status       TINYINT      NOT NULL DEFAULT 0 COMMENT '状态：0 待学习 / 1 已掌握',
+  created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  KEY idx_fail_user (user_id, status, created_at),
+  KEY idx_fail_ques (question_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

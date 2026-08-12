@@ -110,6 +110,7 @@ export const RANCH_UP_COST: Record<number, number> = { 2: 150, 3: 350 };
 export type StudyQType = 'card' | 'choice' | 'fill' | 'qa';
 
 export interface StudyItem {
+  id?: number;           // 题目 ID（questions.id，答疑用）
   q?: string;            // 题目（choice/fill/qa）
   a?: string;            // 答案（card 类型无）
   opts?: string[];       // 选项（choice）

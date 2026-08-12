@@ -93,4 +93,21 @@ export class AuthService {
   adminDeleteUser(id: number): Observable<{ code: number; msg: string; data: any }> {
     return this.http.delete<{ code: number; msg: string; data: any }>('/api/admin/users/' + id, { headers: this.authHeaders() });
   }
+
+  // ================= 学习：错题本 =================
+
+  /** 错题列表 */
+  studyFailures(): Observable<{ code: number; msg: string; data: any[] }> {
+    return this.http.get<{ code: number; msg: string; data: any[] }>('/api/study/failures', { headers: this.authHeaders() });
+  }
+
+  /** 标记已掌握 */
+  studyMarkMastered(failureId: number): Observable<{ code: number; msg: string; data: any }> {
+    return this.http.post<{ code: number; msg: string; data: any }>('/api/study/failures/' + failureId + '/mastered', {}, { headers: this.authHeaders() });
+  }
+
+  /** 删除错题 */
+  studyDeleteFailure(failureId: number): Observable<{ code: number; msg: string; data: any }> {
+    return this.http.delete<{ code: number; msg: string; data: any }>('/api/study/failures/' + failureId, { headers: this.authHeaders() });
+  }
 }

@@ -46,6 +46,13 @@ export class AppComponent implements OnInit, OnDestroy {
   editUser: any = null;
   editForm = { username: '', nickname: '', role: 'user', coins: 0, password: '', education: 'PRIMARY_1' };
 
+  // 学习：错题本
+  showFailBook = false;
+  failures: any[] = [];
+  failMsg = '';
+  /** AI 答疑结果（答错后由 state 异步回填） */
+  get aiResult() { return this.state.aiResult; }
+
   // 今日待办
   todayList: Array<{ icon: string; text: string; btn: string; action: () => void }> = [];
 
@@ -407,6 +414,42 @@ export class AppComponent implements OnInit, OnDestroy {
         else this.adminMsg = res.msg || '删除失败';
       },
       error: () => { this.adminMsg = '无法连接服务器'; }
+    });
+  }
+
+  // ================= 学习：错题本 =================
+
+  /** 打开错题本 */
+  openFailBook(): void {
+    this.showFailBook = true;
+    this.failMsg = '';
+    this.loadFailures();
+  }
+  closeFailBook(): void { this.showFailBook = false; }
+
+  loadFailures(): void {
+    this.auth.studyFailures().subscribe({
+      next: res => {
+        if (res.code === 0) { this.failures = res.data || []; }
+        else { this.failMsg = res.msg || '加载失败'; }
+      },
+      error: () => { this.failMsg = '无法连接服务器'; }
+    });
+  }
+
+  /** 标记已掌握 */
+  markMastered(f: any): void {
+    this.auth.studyMarkMastered(f.failureId).subscribe({
+      next: res => { if (res.code === 0) this.loadFailures(); else this.failMsg = res.msg || '操作失败'; },
+      error: () => { this.failMsg = '无法连接服务器'; }
+    });
+  }
+
+  /** 删除错题 */
+  deleteFailure(f: any): void {
+    this.auth.studyDeleteFailure(f.failureId).subscribe({
+      next: res => { if (res.code === 0) this.loadFailures(); else this.failMsg = res.msg || '删除失败'; },
+      error: () => { this.failMsg = '无法连接服务器'; }
     });
   }
 

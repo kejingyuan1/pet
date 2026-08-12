@@ -212,6 +212,7 @@
             <option *ngFor="let e of studyEduOptions" [value]="e.v">{{ e.l }}</option>
           </select>
         </label>
+        <button class="failbook-btn" (click)="openFailBook()">📕 错题本</button>
       </div>
       <div class="study-daily">今日已赚金币：{{ studyEarned }} / {{ studyLimit }}（学完一组 +10 金币）</div>
 
@@ -250,6 +251,15 @@
           <div *ngIf="studySession.answered" class="study-answer" [class.bad]="studySession.picked!==studyCurrentItem().a">
             {{ studySession.picked===studyCurrentItem().a ? '答对啦！' : '答案是：' + studyCurrentItem().a }}
           </div>
+          <!-- AI 答疑（答错后异步加载） -->
+          <div *ngIf="studySession.answered && studySession.picked!==studyCurrentItem().a && aiResult" class="ai-explain">
+            <div class="ai-title">🤖 AI 老师解答</div>
+            <div *ngIf="aiResult.loading" class="ai-loading">AI 老师思考中…</div>
+            <ng-container *ngIf="!aiResult.loading">
+              <div class="ai-text">{{ aiResult.explain }}</div>
+              <div *ngIf="aiResult.weak" class="ai-weak"><b>缺失知识点：</b>{{ aiResult.weak }}</div>
+            </ng-container>
+          </div>
           <div *ngIf="studySession.answered" class="study-btns">
             <button class="s-back" (click)="state.backStudy()">退出</button>
             <button class="s-next" (click)="state.nextStudyItem()">{{ studySession.itemIdx+1 < studyCurrentGroup().items.length ? '下一题' : '完成本组' }}</button>
@@ -266,6 +276,15 @@
           </div>
           <div *ngIf="studySession.answered" class="study-answer" [class.bad]="!studySession.fillOk">
             {{ studySession.fillOk ? '答对啦！' : '答案是：' + studyCurrentItem().a }}
+          </div>
+          <!-- AI 答疑（填错后异步加载） -->
+          <div *ngIf="studySession.answered && !studySession.fillOk && aiResult" class="ai-explain">
+            <div class="ai-title">🤖 AI 老师解答</div>
+            <div *ngIf="aiResult.loading" class="ai-loading">AI 老师思考中…</div>
+            <ng-container *ngIf="!aiResult.loading">
+              <div class="ai-text">{{ aiResult.explain }}</div>
+              <div *ngIf="aiResult.weak" class="ai-weak"><b>缺失知识点：</b>{{ aiResult.weak }}</div>
+            </ng-container>
           </div>
           <div *ngIf="studySession.answered" class="study-btns">
             <button class="s-back" (click)="state.backStudy()">退出</button>
@@ -392,6 +411,31 @@
     <input [(ngModel)]="editForm.password" type="password" placeholder="新密码">
     <button class="btn-login" (click)="saveEditUser()">保存</button>
     <button class="btn-ghost" (click)="closeEditUser()">取消</button>
+  </div>
+</div>
+
+<!-- 错题本弹层 -->
+<div class="modal-mask" [class.show]="showFailBook" (click)="closeFailBook()">
+  <div class="modal failbook-box" (click)="$event.stopPropagation()">
+    <h3>📕 错题本</h3>
+    <p class="fail-msg" *ngIf="failMsg">{{ failMsg }}</p>
+    <div class="fail-list">
+      <div *ngFor="let f of failures" class="fail-item" [class.mastered]="f.status===1">
+        <div class="fail-q">{{ f.prompt }}</div>
+        <div class="fail-meta">
+          <span class="fail-tag">你的答案：{{ f.userAnswer || '-' }}</span>
+          <span class="fail-tag ok">正确答案：{{ f.correctAnswer }}</span>
+        </div>
+        <div class="fail-ai" *ngIf="f.aiExplain">💡 {{ f.aiExplain }}</div>
+        <div class="fail-weak" *ngIf="f.weakPoints"><b>缺失知识点：</b>{{ f.weakPoints }}</div>
+        <div class="fail-ops">
+          <button *ngIf="f.status===0" class="mini-btn" (click)="markMastered(f)">已掌握</button>
+          <span *ngIf="f.status===1" class="mastered-mark">✅ 已掌握</span>
+          <button class="mini-btn danger" (click)="deleteFailure(f)">删除</button>
+        </div>
+      </div>
+      <div *ngIf="!failures.length" class="fail-empty">暂无错题记录，继续加油！🎉</div>
+    </div>
   </div>
 </div>
 

@@ -531,9 +531,9 @@ export class StateService {
         opts.push(String(o.text));
         if (o.correct) ans = String(o.text);
       }
-      return { q: q.prompt, opts, a: ans || String(q.answer) };
+      return { id: q.id, q: q.prompt, opts, a: ans || String(q.answer) };
     }
-    return { q: q.prompt, a: String(q.answer) };
+    return { id: q.id, q: q.prompt, a: String(q.answer) };
   }
 
   studySubjects(): StudySubject[] { return this.remoteSubjects; }
@@ -554,6 +554,8 @@ export class StateService {
     if (!s || s.answered) return;
     const it = this.remoteSubjects[s.subjIdx].groups[s.groupIdx].items[s.itemIdx];
     s.answered = true; s.picked = it.opts ? it.opts[i] : null;
+    // 答错 → 异步调后端 AI 答疑 + 记错题本
+    if (s.picked !== it.a) this.requestExplain(it.id, String(s.picked));
   }
   checkStudyFill(v: string): void {
     const s = this.studySession;
@@ -561,14 +563,37 @@ export class StateService {
     const it = this.remoteSubjects[s.subjIdx].groups[s.groupIdx].items[s.itemIdx];
     s.answered = true;
     s.fillOk = (v.trim().replace(/[，。\s]/g, '') === String(it.a).trim());
+    // 答错 → AI 答疑
+    if (!s.fillOk) this.requestExplain(it.id, v.trim());
   }
   revealQa(): void { const s = this.studySession; if (s && !s.answered) s.answered = true; }
-  backStudy(): void { this.studySession = null; }
+  backStudy(): void { this.studySession = null; this.aiResult = null; }
+
+  // ================= AI 答疑（错题） =================
+  /** AI 答疑结果（答错后异步回填） */
+  aiResult: { explain: string; weak: string; loading: boolean } | null = null;
+
+  /** 调后端 /api/study/explain：AI 解答 + 缺失知识点（记录进错题本） */
+  requestExplain(questionId: number | undefined, userAnswer: string): void {
+    if (questionId == null) { this.aiResult = { explain: '', weak: '', loading: false }; return; }
+    this.aiResult = { explain: '', weak: '', loading: true };
+    this.http.post<{ code: number; msg: string; data: any }>('/api/study/explain',
+      { questionId, userAnswer }, { headers: this.auth.authHeaders() }).subscribe({
+      next: res => {
+        if (res.code === 0 && res.data) {
+          this.aiResult = { explain: res.data.aiExplain || '', weak: res.data.weakPoints || '', loading: false };
+        } else {
+          this.aiResult = { explain: '答疑失败：' + (res.msg || '未知错误'), weak: '', loading: false };
+        }
+      },
+      error: () => { this.aiResult = { explain: '无法连接答疑服务，请稍后再试', weak: '', loading: false }; }
+    });
+  }
   nextStudyItem(): void {
     const s = this.studySession;
     if (!s) return;
     const g = this.remoteSubjects[s.subjIdx].groups[s.groupIdx];
-    if (s.itemIdx + 1 < g.items.length) { s.itemIdx++; s.answered = false; s.picked = null; }
+    if (s.itemIdx + 1 < g.items.length) { s.itemIdx++; s.answered = false; s.picked = null; this.aiResult = null; }
     else this.finishStudyGroup();
   }
   finishStudyGroup(): void {
