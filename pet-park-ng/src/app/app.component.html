@@ -207,8 +207,8 @@
         </button>
       </div>
       <div class="study-edu">
-        <label>考试学历：
-          <select [ngModel]="studyEducationDisplay" (ngModelChange)="onStudyEduChange($event)" class="study-edu-select" aria-label="考试学历">
+        <label>题目等级：
+          <select [ngModel]="studyEducationDisplay" (ngModelChange)="onStudyEduChange($event)" class="study-edu-select" aria-label="题目等级">
             <option *ngFor="let e of studyEduOptions" [value]="e.v">{{ e.l }}</option>
           </select>
         </label>
