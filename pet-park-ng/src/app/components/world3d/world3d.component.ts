@@ -570,18 +570,22 @@ export class World3dComponent implements OnInit, OnDestroy {
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, fog: false });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
-    // M2 修复 v2（2026-08-13）：colors 全写 mountain 错位 bug — 改用 heightAt 决定颜色（避开 sem 数组填错问题）
-    const hMin = Math.min(...h);
-    const hMax = Math.max(...h);
+    // M2 修复 v3（2026-08-13）：用户要"大片草地"——颜色全部草地绿系（不用 h 区分山/草，避免灰+雾=蓝穿模感）
+    // 高度起伏由 3D mesh 几何体现；颜色只按 h 轻微变化（绿→深绿）保留地形质感
     for (let lz = 0; lz < N; lz++) {
       for (let lx = 0; lx < N; lx++) {
         const i = lz * N + lx;
         const h1 = h[i];
-        // 简化色板：h<14 草 (绿)，14-18 草坡 (深绿)，>=18 山 (灰) — 拉宽 grass 区间让大片陆地
-        let c: number;
-        if (h1 < 14) c = 0x6abf4b;          // grass (亮绿) — 覆盖 fbm*15+14 的 [-1,28] 大部分
-        else if (h1 < 18) c = 0x3a7d3a;     // grass hill (深绿)
-        else c = 0x8a8a7a;                // mountain (灰)
+        // h 越高绿越深（0x7acf5b 亮绿 → 0x3f7d3a 深绿），始终是草地绿系，无灰/无蓝
+        const t = Math.min(1, Math.max(0, (h1 - 0) / 24));
+        const r = Math.round(122 + (63 - 122) * t);
+        const g = Math.round(207 + (125 - 207) * t);
+        const b = Math.round(91 + (58 - 91) * t);
+        colors[i * 3] = r / 255;
+        colors[i * 3 + 1] = g / 255;
+        colors[i * 3 + 2] = b / 255;
+      }
+    }
         colors[i * 3] = ((c >> 16) & 255) / 255;
         colors[i * 3 + 1] = ((c >> 8) & 255) / 255;
         colors[i * 3 + 2] = (c & 255) / 255;
