@@ -138,6 +138,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.api.config().subscribe({
       next: cfg => {
         if (this.disposed) return;
+        // M2 修复（2026-08-12）：config version 变化时清空旧 chunk 缓存（防 SEA_LEVEL_BIAS/waterLevel 等参数变化后渲染旧数据）
+        if (this.config && this.config.version !== cfg.version) {
+          this.gridCache.clear();
+        }
         this.config = cfg;
         this.viewRadius = cfg.viewRadius || this.viewRadius;
         this.px = cfg.spawnGx;
