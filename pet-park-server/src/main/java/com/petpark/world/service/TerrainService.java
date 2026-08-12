@@ -31,6 +31,14 @@ public class TerrainService {
     /** 高度振幅：把归一化噪声（~±1）放大到设计阈值（0/1.2/8）可覆盖的区间 */
     private static final double HEIGHT_AMPLITUDE = 15.0;
 
+    /**
+     * 海平面抬升偏移（M2 修复，2026-08-12）：
+     * fbm 输出约 [-15,15]，waterLevel=-2 时一半区域在水下 → 画面全是"蓝色水下地形 + 一条窄草地带"。
+     * 整体 +8 后输出约 [-7,23]，大部分陆地高于水线，水域退到低洼山谷（这才是"岛屿世界"）。
+     * 变更参数须 world_config.version +1（WorldConfigService 缓存失效依据，见 reseed/缓存键）。
+     */
+    private static final double SEA_LEVEL_BIAS = 8.0;
+
     private final WorldConfigService world;
 
     /** 主地形噪声场 */
@@ -71,8 +79,8 @@ public class TerrainService {
             freq *= lac;
             amp *= gain;
         }
-        // 振幅映射 + 单次 cast（ADR-W3：仅此处一次 float）
-        return (float) (h * HEIGHT_AMPLITUDE);
+        // 振幅映射 + 海平面抬升 + 单次 cast（ADR-W3：仅此处一次 float）
+        return (float) (h * HEIGHT_AMPLITUDE + SEA_LEVEL_BIAS);
     }
 
     /** 树木散点：确定性哈希（见 scatterHash 说明） */
@@ -213,6 +221,7 @@ public class TerrainService {
     /**
      * 挑选出生点：从原点向外螺旋搜索，优先草地的平坦格，回退沙地。
      * 保证玩家初始落在可站立、语义丰富的地貌上。
+     * M2 修复：fallback 不再死回 (0,0)（可能在水下），改为找"最近的非水可站格"。
      */
     public int[] findSpawn() {
         for (int radius = 0; radius <= 4000; radius += 4) {
@@ -228,7 +237,20 @@ public class TerrainService {
                 }
             }
         }
-        // 回退：任意可站立格
+        // 回退：最近的非水可站格（SAND/GRASS 且非障碍，坡度不限；仍无则 (0,0)）
+        for (int radius = 0; radius <= 4000; radius += 8) {
+            for (int gx = -radius; gx <= radius; gx += 8) {
+                for (int gz = -radius; gz <= radius; gz += 8) {
+                    if (Math.max(Math.abs(gx), Math.abs(gz)) != radius) {
+                        continue;
+                    }
+                    CellType t = semanticAt(gx, gz);
+                    if ((t == CellType.SAND || t == CellType.GRASS) && !t.isObstacle()) {
+                        return new int[]{gx, gz};
+                    }
+                }
+            }
+        }
         return new int[]{0, 0};
     }
 }
