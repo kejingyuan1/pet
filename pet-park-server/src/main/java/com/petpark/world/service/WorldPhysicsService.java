@@ -1,6 +1,7 @@
 package com.petpark.world.service;
 
 import com.petpark.world.geo.CellType;
+import com.petpark.world.mapper.PhysicsSnapshotMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -31,8 +32,8 @@ public class WorldPhysicsService {
     private final WorldConfigService world;
     private final RegionBroker regionBroker;
     @Autowired private SimpMessagingTemplate messaging;
-    // 持久化暂时禁用（target/classes 被锁导致 javac 失败，简化 WorldPhysicsService 不依赖 PhysicsSnapshotMapper）
-    // 后续恢复：private final PhysicsSnapshotMapper snapshotMapper; + 注入 + persistSnapshot 写 MySQL
+    /** 物理快照持久化（崩溃恢复，M2 核心功能） */
+    private final PhysicsSnapshotMapper snapshotMapper;
 
     private static class Player {
         long uid;
@@ -50,8 +51,9 @@ public class WorldPhysicsService {
     private long lastSnapshotAt = System.currentTimeMillis();
 
     public WorldPhysicsService(TerrainService terrain, WorldConfigService world,
-                               RegionBroker regionBroker) {
+                               RegionBroker regionBroker, PhysicsSnapshotMapper snapshotMapper) {
         this.terrain = terrain; this.world = world; this.regionBroker = regionBroker;
+        this.snapshotMapper = snapshotMapper;
     }
 
     /** 注册玩家（join 时调） */
@@ -129,8 +131,7 @@ public class WorldPhysicsService {
         return terrain.slopeAt(gx, gz) < Math.tan(Math.toRadians(world.slopeWalkDeg()));
     }
 
-    /** 每 5s 写 MySQL 快照（崩溃恢复） — 暂未启用，依赖 PhysicsSnapshotMapper 暂未注入 */
-    /*
+    /** 每 5s 写 MySQL 快照（崩溃恢复，M2 核心功能） */
     @Scheduled(fixedRate = 5000)
     public void persistSnapshot() {
         if (players.isEmpty()) return;
@@ -151,7 +152,6 @@ public class WorldPhysicsService {
         snapshotMapper.insert(snap);
         snapshotMapper.deleteOlder("__all__");
     }
-    */
 
     public Map<Long, Player> getPlayers() { return players; }
     public long getTick() { return tick; }
