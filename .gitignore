@@ -1,0 +1,39 @@
+# ===== Node / Angular =====
+node_modules/
+pet-park-ng/node_modules/
+pet-park-ng/dist/
+pet-park-ng/dist-manual/
+pet-park-ng/out-tsc/
+pet-park-ng/tmp/
+*.tsbuildinfo
+
+# ===== Java / Maven =====
+pet-park-server/target/
+*.class
+*.jar
+mvn-out.txt
+
+# ===== 备份文件 =====
+*.bak_v*
+*.bak
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.iml
+
+# ===== 日志 =====
+*.log
+
+# ===== 本地杂项 / 重复工程 / 测试 scratch =====
+/index.html
+_wtest.txt
+pet-park-ng2/
+pet-park-ng/.playwright-cli/
+_qa/e2e/
+_qa/*.txt

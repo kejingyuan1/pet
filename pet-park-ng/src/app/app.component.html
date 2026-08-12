@@ -1,0 +1,459 @@
+<!-- 宠物乐园 Angular 版：外壳 + 导航 + 登录 + 模块容器 -->
+
+<!-- ===== 未登录：全屏登录页（强制登录，无法跳过） ===== -->
+<div class="login-full" *ngIf="!auth.isLoggedIn">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 17v4M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M17 7l1.4-1.4M5.6 18.4L7 17"/><circle cx="12" cy="10" r="4" fill="currentColor" stroke="none"/></svg>
+    </div>
+    <h2>我的宠物乐园</h2>
+    <p class="login-sub">登录后开始游戏 · 云端自动存档</p>
+    <div class="login-tabs">
+      <button [class.on]="loginMode==='login'" (click)="switchLoginMode('login')">登 录</button>
+      <button [class.on]="loginMode==='register'" (click)="switchLoginMode('register')">注 册</button>
+    </div>
+    <input [(ngModel)]="loginUser" placeholder="用户名" autocomplete="off" (keyup.enter)="loginMode==='login' ? doLogin() : doRegister()">
+    <input *ngIf="loginMode==='register'" [(ngModel)]="regNickname" placeholder="昵称" autocomplete="off">
+    <input [(ngModel)]="loginPass" type="password" placeholder="密码（至少 6 位，须含数字和字母）" (keyup.enter)="loginMode==='login' ? doLogin() : doRegister()">
+    <input *ngIf="loginMode==='register'" [(ngModel)]="regPass2" type="password" placeholder="确认密码" (keyup.enter)="doRegister()">
+    <input *ngIf="loginMode==='register'" [(ngModel)]="regInvite" placeholder="邀请码" autocomplete="off" (keyup.enter)="doRegister()">
+    <select *ngIf="loginMode==='register'" [(ngModel)]="regEducation" class="reg-edu-select" aria-label="学历">
+      <option value="PRIMARY_1">小学一年级</option><option value="PRIMARY_2">小学二年级</option>
+      <option value="PRIMARY_3">小学三年级</option><option value="PRIMARY_4">小学四年级</option>
+      <option value="PRIMARY_5">小学五年级</option><option value="PRIMARY_6">小学六年级</option>
+      <option value="JUNIOR_1">初中一年级</option><option value="JUNIOR_2">初中二年级</option><option value="JUNIOR_3">初中三年级</option>
+      <option value="SENIOR_1">高中一年级</option><option value="SENIOR_2">高中二年级</option><option value="SENIOR_3">高中三年级</option>
+      <option value="UNIVERSITY_1">大学一年级</option><option value="UNIVERSITY_2">大学二年级</option>
+      <option value="UNIVERSITY_3">大学三年级</option><option value="UNIVERSITY_4">大学四年级</option>
+    </select>
+    <p class="login-msg" *ngIf="loginMsg">{{ loginMsg }}</p>
+    <button class="btn-login" (click)="loginMode==='login' ? doLogin() : doRegister()" [disabled]="loginBusy">
+      {{ loginBusy ? '请稍候…' : (loginMode==='login' ? '登 录' : '注册并登录') }}
+    </button>
+  </div>
+</div>
+
+<!-- ===== 已登录：主应用 ===== -->
+<div class="app-shell" *ngIf="auth.isLoggedIn">
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <h1>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 17v4M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M17 7l1.4-1.4M5.6 18.4L7 17"/><circle cx="12" cy="10" r="4" fill="currentColor" stroke="none"/></svg>
+    我的宠物乐园
+  </h1>
+  <div class="clock-badge">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    <span id="clockNum">{{ clockText() }}</span>
+  </div>
+  <div class="coins-badge">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#FFD166" stroke="#D18F00" stroke-width="1.5"/><text x="12" y="16.2" font-size="10.5" font-weight="900" text-anchor="middle" fill="#9C6A00">¥</text></svg>
+    <span>{{ coins }}</span>
+  </div>
+  <div class="top-actions">
+    <button class="icon-btn user-btn" (click)="openProfile()" title="账号设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+      <span class="user-name">{{ auth.user ? auth.user.nickname : '我的' }}</span>
+    </button>
+  </div>
+</header>
+
+<!-- 今日待办（仅首页显示） -->
+<section class="today" *ngIf="mod==='home'">
+  <h2><span class="dot"></span>今天要处理</h2>
+  <div class="today-list">
+    <div class="task-item" *ngFor="let t of todayList">
+      <div class="txt"><span class="ti">{{ t.icon }}</span>{{ t.text }}</div>
+      <button *ngIf="t.btn" class="b" (click)="t.action()">{{ t.btn }}</button>
+    </div>
+  </div>
+</section>
+
+<!-- 模块容器 -->
+<main class="modules">
+  <section class="module" [class.on]="mod==='home'">
+    <div class="scene3d-wrap">
+      <app-scene3d></app-scene3d>
+      <div class="scene-meta">
+        <button class="weather-chip" (click)="weatherTip()" title="天气自动变化">
+          <span class="weather-emoji">{{ state.state.weather==='rain' ? '🌧️' : '☀️' }}</span>
+          <span>{{ state.state.weather==='rain' ? '下雨' : '晴天' }}</span>
+        </button>
+      </div>
+      <div class="scene-actions">
+        <button class="scene-btn primary" (click)="togglePetOut()" [disabled]="pet.sick" [title]="pet.out ? '叫宠物回家' : '让宠物出门玩'">
+          <span class="btn-emoji">{{ pet.out ? '🏠' : '🚪' }}</span>
+          <span>{{ pet.out ? '叫回家' : '出门玩' }}</span>
+        </button>
+        <button class="scene-btn" (click)="toggleFullscreen()" title="全屏 / 退出（ESC）" aria-label="全屏">
+          <span class="btn-emoji">{{ isFs ? '⤡' : '⤢' }}</span>
+          <span>{{ isFs ? '退出' : '全屏' }}</span>
+        </button>
+      </div>
+      <div class="scene-tip">拖动旋转 · 滚轮缩放 · 右键平移</div>
+    </div>
+    <div class="card">
+      <div class="pet-card">
+        <div class="pet-avatar" [style.background]="pet.sick ? '#E24B4A' : '#FFD166'">
+          <span class="pet-emoji">{{ pet.stage >= 3 ? '🦋' : '🐤' }}</span>
+        </div>
+        <div class="pet-info">
+          <h3>{{ pet.name }} <small>Lv.{{ pet.level }}</small></h3>
+          <div class="meter"><label>饱食</label><div class="bar"><i [style.width.%]="pet.satiety"></i></div><b>{{ pet.satiety }}</b></div>
+          <div class="meter"><label>心情</label><div class="bar"><i [style.width.%]="pet.mood"></i></div><b>{{ pet.mood }}</b></div>
+          <div class="meter"><label>体力</label><div class="bar"><i [style.width.%]="pet.energy"></i></div><b>{{ pet.energy }}</b></div>
+        </div>
+        <div class="pet-actions">
+          <button (click)="state.feed('carrot')" [disabled]="(pet.foods['carrot']||0)<=0">喂胡萝卜 {{ pet.foods['carrot']||0 }}</button>
+          <button (click)="state.feed('tomato')" [disabled]="(pet.foods['tomato']||0)<=0">喂番茄 {{ pet.foods['tomato']||0 }}</button>
+          <button (click)="state.playWithPet()">陪玩 +3</button>
+          <button (click)="state.watchFarm()">看护菜地 +2</button>
+          <button (click)="togglePetOut()" class="primary">{{ outBtnText }}</button>
+          <button *ngIf="pet.sick" (click)="state.buyMedicine()">喂药 20 金</button>
+        </div>
+      </div>
+      <div class="tips" *ngIf="isNight">🌙 天黑啦，注意体力消耗</div>
+    </div>
+  </section>
+
+  <!-- 大世界（M1 原型：程序化地形 + Chunk 流式 + 放置/养鱼 + WS 广播；双场景分离见 01 §9.3） -->
+  <section class="module" [class.on]="mod==='world'">
+    <div class="scene3d-wrap">
+      <app-world3d></app-world3d>
+    </div>
+    <div class="tips" *ngIf="!auth.isLoggedIn">🔒 大世界需要登录后游玩（多人共享、服务端权威）</div>
+  </section>
+
+  <section class="module" [class.on]="mod==='farm'">
+    <div class="card"><h3>🥕 小菜地 <small>Lv.{{ state.state.farm.level }}</small></h3>
+      <div class="grid">
+        <div class="plot" *ngFor="let f of state.state.farm.plots">
+          <div class="plot-crop" *ngIf="f.crop">
+            <b>{{ state.catByCode(f.crop)?.name }}</b>
+            <div class="bar"><i [style.width.%]="(f.grownDays/(state.catByCode(f.crop)?.grow_days||1)*100)"></i></div>
+            <span>{{ f.grownDays >= (state.catByCode(f.crop)?.grow_days ?? 0) ? '成熟啦！' : '成长中' }}</span>
+            <div class="plot-btns">
+              <button *ngIf="f.grownDays >= (state.catByCode(f.crop)?.grow_days ?? 0)" (click)="state.harvestPlot(f.id)">收获</button>
+              <button *ngIf="f.grownDays < (state.catByCode(f.crop)?.grow_days ?? 0)" (click)="state.waterPlot(f.id)">浇水</button>
+            </div>
+          </div>
+          <div class="plot-empty" *ngIf="!f.crop">
+            <span>空地</span>
+            <select #sel (change)="state.plant(f.id, sel.value); sel.value=''">
+              <option value="">种什么…</option>
+              <option *ngFor="let c of state.catsByType('crop')" [value]="c.code" [disabled]="c.level_req > state.state.farm.level">{{ c.name }}（{{ c.price }}金）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="upgrade" *ngIf="state.state.farm.level < 3" (click)="state.upgradeFarm()">升级菜地（{{ state.state.farm.level===1 ? '100' : '250' }}金）</button>
+    </div>
+  </section>
+
+  <section class="module" [class.on]="mod==='pond'">
+    <div class="card"><h3>🐟 小鱼塘 <small>Lv.{{ state.state.pond.level }}</small></h3>
+      <div class="grid">
+        <div class="plot" *ngFor="let f of state.state.pond.fish">
+          <div class="plot-crop" *ngIf="f.type">
+            <b>{{ state.catByCode(f.type)?.name }}</b>
+            <div class="bar"><i [style.width.%]="(f.grownDays/(state.catByCode(f.type)?.grow_days||1)*100)"></i></div>
+            <span>{{ f.grownDays >= (state.catByCode(f.type)?.grow_days ?? 0) ? '长大啦！' : '成长中' }}</span>
+            <div class="plot-btns">
+              <button *ngIf="f.grownDays >= (state.catByCode(f.type)?.grow_days ?? 0)" (click)="state.sellFish(f.id)">捞起卖钱</button>
+              <button *ngIf="f.grownDays < (state.catByCode(f.type)?.grow_days ?? 0)" (click)="state.feedFish(f.id)">喂食</button>
+            </div>
+          </div>
+          <div class="plot-empty" *ngIf="!f.type">
+            <span>空池</span>
+            <select #sel (change)="state.stockFish(f.id, sel.value); sel.value=''">
+              <option value="">买鱼苗…</option>
+              <option *ngFor="let c of state.catsByType('fish')" [value]="c.code" [disabled]="c.level_req > state.state.pond.level">{{ c.name }}（{{ c.price/2 }}金）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="upgrade" *ngIf="state.state.pond.level < 3" (click)="state.upgradePond()">升级鱼塘（{{ state.state.pond.level===1 ? '150' : '350' }}金）</button>
+    </div>
+  </section>
+
+  <section class="module" [class.on]="mod==='ranch'">
+    <div class="card"><h3>🐔 小牧场 <small>Lv.{{ state.state.ranch.level }}</small></h3>
+      <div class="grid">
+        <div class="plot" *ngFor="let a of state.state.ranch.stalls">
+          <div class="plot-crop" *ngIf="a.type">
+            <b>{{ state.catByCode(a.type)?.name }}</b>
+            <div class="bar"><i [style.width.%]="(a.grownDays/(state.catByCode(a.type)?.grow_days||1)*100)"></i></div>
+            <span>{{ a.productReady ? '有' + (state.catByCode(a.type)?.product ?? '产出') + '可收！' : (a.grownDays >= (state.catByCode(a.type)?.grow_days ?? 0) ? '成年啦' : '长大中') }}</span>
+            <div class="plot-btns">
+              <button *ngIf="a.productReady" (click)="state.collectProduct(a.id)">收{{ state.catByCode(a.type)?.product }}(+{{ state.catByCode(a.type)?.prod_price }})</button>
+              <button *ngIf="a.grownDays >= (state.catByCode(a.type)?.grow_days ?? 0) && !a.productReady" (click)="state.sellAnimal(a.id)">卖掉({{ state.catByCode(a.type)?.sell_price }}金)</button>
+              <button *ngIf="a.grownDays < (state.catByCode(a.type)?.grow_days ?? 0)" (click)="state.feedAnimal(a.id)">喂食</button>
+            </div>
+          </div>
+          <div class="plot-empty" *ngIf="!a.type">
+            <span>空栏</span>
+            <select #sel (change)="state.stockAnimal(a.id, sel.value); sel.value=''">
+              <option value="">买幼崽…</option>
+              <option *ngFor="let c of state.catsByType('animal')" [value]="c.code" [disabled]="c.level_req > state.state.ranch.level">{{ c.name }}（{{ c.price/2 }}金）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="upgrade" *ngIf="state.state.ranch.level < 3" (click)="state.upgradeRanch()">升级牧场（{{ state.state.ranch.level===1 ? '150' : '350' }}金）</button>
+    </div>
+  </section>
+
+  <section class="module" [class.on]="mod==='study'">
+    <div class="card">
+      <h3>📚 学习小课堂</h3>
+      <!-- 科目 Tab -->
+      <div class="study-subjects">
+        <button class="study-sub-tab" *ngFor="let subj of studySubjects; let si = index"
+                [class.on]="studySubjectIdx===si" (click)="state.switchStudySubject(si)">
+          {{ studySubjIcon(subj) }} <span>{{ subj.name }}</span>
+          <span *ngIf="state.studySubjectAllDone(subj)" class="done-mark">✓</span>
+        </button>
+      </div>
+      <div class="study-edu">
+        <label>题目等级：
+          <select [ngModel]="studyEducationDisplay" (ngModelChange)="onStudyEduChange($event)" class="study-edu-select" aria-label="题目等级">
+            <option *ngFor="let e of studyEduOptions" [value]="e.v">{{ e.l }}</option>
+          </select>
+        </label>
+        <button class="failbook-btn" (click)="openFailBook()">📕 错题本</button>
+      </div>
+      <div class="study-daily">今日已赚金币：{{ studyEarned }} / {{ studyLimit }}（学完一组 +10 金币）</div>
+
+      <!-- 学习会话（答题卡） -->
+      <div *ngIf="studySession" class="study-card">
+        <div class="word-progress">{{ studyCurrentSubj().name }}·{{ studyCurrentGroup().name }}　第 {{ studySession.itemIdx+1 }} / {{ studyCurrentGroup().items.length }} 题</div>
+
+        <!-- 🔊 读题：朗读题干 + 选项（所有题型通用） -->
+        <div class="read-row">
+          <button class="read-btn" (click)="isSpeaking ? stopRead() : readAloud()">
+            <span class="btn-emoji">{{ isSpeaking ? '⏹' : '🔊' }}</span>
+            <span>{{ isSpeaking ? '停止' : '读题' }}</span>
+          </button>
+        </div>
+
+        <!-- 单词卡（英语） -->
+        <ng-container *ngIf="studyCurrentGroup().qType==='card'">
+          <div class="word-icon" [innerHTML]="wordIconSvg(studyCurrentItem().icon)"></div>
+          <div class="word-en">{{ studyCurrentItem().en }}</div>
+          <div class="word-cn">{{ studyCurrentItem().cn }}</div>
+          <div class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.nextStudyItem()">认识啦，下一个</button>
+          </div>
+        </ng-container>
+
+        <!-- 选择题 -->
+        <ng-container *ngIf="studyCurrentGroup().qType==='choice'">
+          <div class="study-q">{{ studyCurrentItem().q }}</div>
+          <div class="study-opts">
+            <button class="study-opt" *ngFor="let op of studyCurrentItem().opts; let oi = index"
+                    [class.correct]="studySession.answered && op===studyCurrentItem().a"
+                    [class.wrong]="studySession.answered && studySession.picked===op && op!==studyCurrentItem().a"
+                    [disabled]="studySession.answered" (click)="state.pickStudyOpt(oi)">{{ op }}</button>
+          </div>
+          <div *ngIf="studySession.answered" class="study-answer" [class.bad]="studySession.picked!==studyCurrentItem().a">
+            {{ studySession.picked===studyCurrentItem().a ? '答对啦！' : '答案是：' + studyCurrentItem().a }}
+          </div>
+          <!-- AI 答疑（答错后异步加载） -->
+          <div *ngIf="studySession.answered && studySession.picked!==studyCurrentItem().a && aiResult" class="ai-explain">
+            <div class="ai-title">🤖 AI 老师解答</div>
+            <div *ngIf="aiResult.loading" class="ai-loading">AI 老师思考中…</div>
+            <ng-container *ngIf="!aiResult.loading">
+              <div class="ai-text">{{ aiResult.explain }}</div>
+              <div *ngIf="aiResult.weak" class="ai-weak"><b>缺失知识点：</b>{{ aiResult.weak }}</div>
+            </ng-container>
+          </div>
+          <div *ngIf="studySession.answered" class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.nextStudyItem()">{{ studySession.itemIdx+1 < studyCurrentGroup().items.length ? '下一题' : '完成本组' }}</button>
+          </div>
+        </ng-container>
+
+        <!-- 填空 -->
+        <ng-container *ngIf="studyCurrentGroup().qType==='fill'">
+          <div class="study-q">{{ studyCurrentItem().q }}</div>
+          <div class="study-fill">
+            <input #fillInput type="text" inputmode="numeric" autocomplete="off" placeholder="填上答案" maxlength="12"
+                   (keydown.enter)="state.checkStudyFill(fillInput.value)">
+            <button (click)="state.checkStudyFill(fillInput.value)">确定</button>
+          </div>
+          <div *ngIf="studySession.answered" class="study-answer" [class.bad]="!studySession.fillOk">
+            {{ studySession.fillOk ? '答对啦！' : '答案是：' + studyCurrentItem().a }}
+          </div>
+          <!-- AI 答疑（填错后异步加载） -->
+          <div *ngIf="studySession.answered && !studySession.fillOk && aiResult" class="ai-explain">
+            <div class="ai-title">🤖 AI 老师解答</div>
+            <div *ngIf="aiResult.loading" class="ai-loading">AI 老师思考中…</div>
+            <ng-container *ngIf="!aiResult.loading">
+              <div class="ai-text">{{ aiResult.explain }}</div>
+              <div *ngIf="aiResult.weak" class="ai-weak"><b>缺失知识点：</b>{{ aiResult.weak }}</div>
+            </ng-container>
+          </div>
+          <div *ngIf="studySession.answered" class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.nextStudyItem()">{{ studySession.itemIdx+1 < studyCurrentGroup().items.length ? '下一题' : '完成本组' }}</button>
+          </div>
+        </ng-container>
+
+        <!-- 问答 -->
+        <ng-container *ngIf="studyCurrentGroup().qType==='qa'">
+          <div class="study-q">{{ studyCurrentItem().q }}</div>
+          <div *ngIf="!studySession.answered" class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.revealQa()">看答案</button>
+          </div>
+          <div *ngIf="studySession.answered" class="study-answer">{{ studyCurrentItem().a }}</div>
+          <div *ngIf="studySession.answered" class="study-btns">
+            <button class="s-back" (click)="state.backStudy()">退出</button>
+            <button class="s-next" (click)="state.nextStudyItem()">{{ studySession.itemIdx+1 < studyCurrentGroup().items.length ? '下一题' : '完成本组' }}</button>
+          </div>
+        </ng-container>
+      </div>
+
+      <!-- 最近完成一组：查看错题 -->
+      <div *ngIf="!studySession && state.lastGroupDone" class="group-done">
+        <span>✅ 完成「{{ state.lastGroupDone.name }}」</span>
+        <span *ngIf="state.lastGroupDone.wrongCount > 0" class="gd-wrong">答错 {{ state.lastGroupDone.wrongCount }} 题</span>
+        <span *ngIf="state.lastGroupDone.wrongCount === 0" class="gd-perfect">全部答对 🎉</span>
+        <button *ngIf="state.lastGroupDone.wrongCount > 0" class="gd-btn" (click)="openFailBook()">📕 查看错题</button>
+      </div>
+
+      <!-- 组列表 -->
+      <div *ngIf="!studySession" class="study-groups">
+        <button class="study-grp" *ngFor="let g of studyCurrentSubj().groups; let gi = index"
+                [class.done]="state.studyGroupDone(g.id)" (click)="state.startStudyGroup(studySubjectIdx, gi)">
+          <span class="grp-icon">{{ studyGroupIcon(g.id) }}</span>
+          <span>{{ studyCurrentSubj().name }}·{{ g.name }}</span>
+          <span *ngIf="state.studyGroupDone(g.id)" class="done-mark">✓</span>
+        </button>
+      </div>
+      <div *ngIf="!studySession" class="study-hint">选一组，答完就能赚 <b>10 金币</b>！每天最多赚 {{ studyLimit }} 金币，明天再来。</div>
+    </div>
+  </section>
+
+  <!-- 管理员：用户管理（全屏覆盖，独立 class 不用 .module 避免 display:none 隐藏） -->
+  <section class="admin-page" *ngIf="isAdmin && showUserAdmin">
+    <div class="card">
+      <h3>👥 用户管理</h3>
+      <p class="admin-msg" *ngIf="adminMsg">{{ adminMsg }}</p>
+      <div class="user-table-wrap">
+        <table class="user-table">
+          <thead><tr><th>ID</th><th>用户名</th><th>昵称</th><th>角色</th><th>积分</th><th>注册时间</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let u of adminUsers">
+              <td>{{ u.userId }}</td>
+              <td>{{ u.username }}</td>
+              <td>{{ u.nickname }}</td>
+              <td><span class="role-tag" [class.admin]="u.role==='admin'">{{ u.role==='admin' ? '管理员' : '用户' }}</span></td>
+              <td>{{ u.coins }}</td>
+              <td>{{ (u.createdAt || '').toString().slice(0,10) }}</td>
+              <td class="op">
+                <button class="mini-btn" (click)="openEditUser(u)">编辑</button>
+                <button class="mini-btn danger" (click)="deleteUser(u)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 底部导航 -->
+<nav class="nav">
+  <button [class.on]="mod==='home'" (click)="switchMod('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>家园</button>
+  <button [class.on]="mod==='world'" (click)="switchMod('world')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.6 3.8 9S14.5 18.5 12 21c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3z"/></svg>大世界</button>
+  <button [class.on]="mod==='farm'" (click)="switchMod('farm')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6m0 0c-3 0-5 2-5 5h2c0-2 1-3 3-3s3 1 3 3h2c0-3-2-5-5-5zM12 14v7M3 21h18"/></svg>菜地</button>
+  <button [class.on]="mod==='pond'" (click)="switchMod('pond')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="9" ry="7"/><path d="M3 12h18M12 5c-1.5 2-1.5 9 0 14M12 5c1.5 2 1.5 9 0 14"/></svg>鱼塘</button>
+  <button [class.on]="mod==='ranch'" (click)="switchMod('ranch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2m-8 0l1 14h8l1-14M10 11v6M14 11v6"/></svg>牧场</button>
+  <button [class.on]="mod==='study'" (click)="switchMod('study')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>学习</button>
+  <button *ngIf="isAdmin" [class.on]="showUserAdmin" (click)="showUserAdmin ? closeUserAdmin() : openUserAdmin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>用户管理</button>
+</nav>
+
+<!-- 账号设置（用户管理）弹层 -->
+<div class="modal-mask" [class.show]="showProfile" (click)="closeProfile()">
+  <div class="modal profile-box" (click)="$event.stopPropagation()">
+    <h3>账号设置</h3>
+    <p class="profile-id">当前账号：{{ auth.user?.username }}</p>
+
+    <label>昵称</label>
+    <div class="profile-row">
+      <input [(ngModel)]="newNickname" placeholder="新昵称">
+      <button (click)="doUpdateNickname()">保存</button>
+    </div>
+
+    <label>用户名</label>
+    <div class="profile-row">
+      <input [(ngModel)]="newUsername" placeholder="新用户名">
+      <button (click)="doUpdateUsername()">保存</button>
+    </div>
+    <p class="login-msg" *ngIf="profileMsg">{{ profileMsg }}</p>
+
+    <hr>
+    <label>修改密码</label>
+    <input [(ngModel)]="oldPass" type="password" placeholder="旧密码">
+    <input [(ngModel)]="newPass" type="password" placeholder="新密码（至少 6 位）">
+    <p class="login-msg" *ngIf="passMsg">{{ passMsg }}</p>
+    <button class="btn-login" (click)="doUpdatePassword()">修改密码</button>
+
+    <button class="btn-ghost logout-btn" (click)="logout()">退出登录</button>
+  </div>
+</div>
+
+<!-- 管理员：编辑用户弹窗 -->
+<div class="modal-mask" [class.show]="editUser" (click)="closeEditUser()">
+  <div class="modal admin-edit-box" (click)="$event.stopPropagation()">
+    <h3>编辑用户</h3>
+    <label>用户名</label>
+    <input [(ngModel)]="editForm.username" placeholder="用户名">
+    <label>昵称</label>
+    <input [(ngModel)]="editForm.nickname" placeholder="昵称">
+    <label>角色</label>
+    <select [(ngModel)]="editForm.role">
+      <option value="user">普通用户</option>
+      <option value="admin">管理员</option>
+    </select>
+    <label>积分</label>
+    <input [(ngModel)]="editForm.coins" type="number" placeholder="积分">
+    <label>学历</label>
+    <select [(ngModel)]="editForm.education" class="reg-edu-select" aria-label="学历">
+      <option *ngFor="let e of educationOptions" [value]="e.v">{{ e.l }}</option>
+    </select>
+    <label>密码（留空不修改）</label>
+    <input [(ngModel)]="editForm.password" type="password" placeholder="新密码">
+    <button class="btn-login" (click)="saveEditUser()">保存</button>
+    <button class="btn-ghost" (click)="closeEditUser()">取消</button>
+  </div>
+</div>
+
+<!-- 错题本弹层 -->
+<div class="modal-mask" [class.show]="showFailBook" (click)="closeFailBook()">
+  <div class="modal failbook-box" (click)="$event.stopPropagation()">
+    <h3>📕 错题本</h3>
+    <p class="fail-msg" *ngIf="failMsg">{{ failMsg }}</p>
+    <div class="fail-list">
+      <div *ngFor="let f of failures" class="fail-item" [class.mastered]="f.status===1">
+        <div class="fail-q">{{ f.prompt }}</div>
+        <div class="fail-meta">
+          <span class="fail-tag">你的答案：{{ f.userAnswer || '-' }}</span>
+          <span class="fail-tag ok">正确答案：{{ f.correctAnswer }}</span>
+        </div>
+        <div class="fail-ai" *ngIf="f.aiExplain">💡 {{ f.aiExplain }}</div>
+        <div class="fail-weak" *ngIf="f.weakPoints"><b>缺失知识点：</b>{{ f.weakPoints }}</div>
+        <div class="fail-ops">
+          <button *ngIf="f.status===0" class="mini-btn" (click)="markMastered(f)">已掌握</button>
+          <span *ngIf="f.status===1" class="mastered-mark">✅ 已掌握</span>
+          <button class="mini-btn danger" (click)="deleteFailure(f)">删除</button>
+        </div>
+      </div>
+      <div *ngIf="!failures.length" class="fail-empty">暂无错题记录，继续加油！🎉</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /.app-shell -->

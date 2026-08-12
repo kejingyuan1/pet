@@ -1,0 +1,59 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: pet-park-server
+  datasource:
+    # Docker 部署：DB_HOST=mysql（compose 服务名）/ DB_PORT=3306 / DB_USER / DB_PASSWORD / DB_NAME
+    # 本地开发：不设环境变量则用默认 localhost/root/123456
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:pet_park}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&connectionCollation=utf8mb4_unicode_ci
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: never            # 表结构由 MySQL 容器 /docker-entrypoint-initdb.d/schema.sql 初始化
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+# 自定义配置
+petpark:
+  jwt:
+    # 生产环境务必替换为强随机密钥（至少 32 字节），可用环境变量 JWT_SECRET 覆盖
+    secret: ${JWT_SECRET:pet-park-secret-key-please-change-me-0123456789abcdef}
+    expire-hours: 168          # token 有效期（小时），默认 7 天
+  register:
+    # 注册邀请码（用户须填对才能注册）
+    invite-code: dudu2019
+  ai:
+    # AI 答疑（OpenAI 兼容接口，兼容 CodeBuddy CLI / DashScope / DeepSeek 等网关）
+    # API Key 环境变量：AI_API_KEY 或 CODEBUDDY_API_KEY / CODEBUDDY_AUTH_TOKEN / DASHSCOPE_API_KEY
+    api-key: ${AI_API_KEY:${DASHSCOPE_API_KEY:}}
+    # 多模型 fallback 链（逗号分隔，按顺序逐个尝试，前一个额度耗尽/失败自动降级下一个）
+    models: ${AI_MODELS:qwen3.7-plus,qwen3.5-plus,qwen3.6-flash}
+    # OpenAI 兼容网关地址（默认百炼，理论上无需改）
+    base-url: ${AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    # 是否使用 response_format=json_object（百炼支持）
+    json-mode: ${AI_JSON_MODE:true}
+  cors:
+    allowed-origins:
+      - http://localhost:8899
+      - http://127.0.0.1:8899
+      - http://localhost:4200
+      - http://localhost:8081
+  # ============ 大世界 WS（ADR-W2；地形参数以 world_config 表为准，不在此配置） ============
+  ws:
+    heartbeat-ms: 5000          # 客户端心跳间隔（前端按此发送）
+    idle-timeout-ms: 30000      # 服务端空闲剔除（RegionBroker Scheduled 扫描）
+    single-room: true           # ≤20 单房间全量订阅（R 覆盖全世界特例，ADR-W2）
+
+logging:
+  level:
+    com.petpark: info
