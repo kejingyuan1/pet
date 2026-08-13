@@ -217,6 +217,16 @@ export class World3dComponent implements OnInit, OnDestroy {
   private girlModel: THREE.Group | null = null;
   private decorPlaced = false; // 男孩/女孩是否已放置（仅放一次）
 
+  // M5 角色程序化动作：模型无骨骼，用整体变换模拟 走/跑/弯腰/待机
+  private charAnims: { group: THREE.Group; cx: number; cz: number; baseY: number; phase: number; radius: number }[] = [];
+  private animClock = 0;
+  private lastTs = 0;
+  private animStateIdx = 0;
+  private animStateTimer = 0;
+  // 演示用状态循环（实际游戏可替换为真实移动状态：idle/walk/run/bend）
+  private static readonly ANIM_STATES = ['walk', 'run', 'bend', 'idle'] as const;
+  private static readonly ANIM_STATE_DUR = [3.2, 3.2, 3.0, 2.2]; // 各状态持续秒数
+
   // 玩家
   private px = 0; private pz = 0; private py = 0; private prot = 0;
   // 平滑显示位置（lerp 跟随物理权威位置，消除一跳一跳）
@@ -252,6 +262,11 @@ export class World3dComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.uid = this.auth.user?.userId ?? 0;
     this.nickname = this.auth.user?.nickname || '我';
+    // 调试钩子：首次带 ?debug=1 时启用，并写入 sessionStorage 以便在 SPA 路由/重登后依然生效（不影响正常游戏）
+    if ((typeof location !== 'undefined') && new URLSearchParams(location.search).has('debug')) {
+      (window as any).__charAnimDebugEnabled = true;
+      try { sessionStorage.setItem('__charAnimDebug', '1'); } catch {}
+    }
     this.coins = this.state.state.coins ?? 0;
     // 视距：保证能看到足够多的岛屿（22岛分布在±1300范围）
     // 强机放宽到5，窄屏至少4（原值2/3只能看到1-2座岛）
@@ -558,6 +573,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.rafId = requestAnimationFrame(() => this.animate());
 
     const now = performance.now();
+    const dt = this.lastTs ? Math.min((now - this.lastTs) / 1000, 0.05) : 0.016;
+    this.lastTs = now;
     // 输入上行（非建造/养鱼模式）：本地不移动，只发输入意图；~30Hz + 按键状态变化立即发
     if (!this.buildMode && !this.fishMode) {
       // 优先处理双击目标移动（有目标时自动走向目标）
@@ -603,6 +620,7 @@ export class World3dComponent implements OnInit, OnDestroy {
 
     // 远端玩家：以物理快照刚体为准
     this.updateRemotePlayersFromPhysics();
+    this.updateCharAnimations(dt);
 
     // chunk 流式（节流 ~250ms）
     if (now - this.lastStream > 250) {
@@ -1047,6 +1065,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       inst.rotation.y = (i * 1.7) % (Math.PI * 2);
       inst.userData['shared'] = true;
       this.scene.add(inst);
+      this.charAnims.push({ group: inst, cx: sp.gx, cz: sp.gz, baseY: y, phase: i * 1.3, radius: 4 + i * 1.6 });
     });
   }
 
@@ -1067,6 +1086,70 @@ export class World3dComponent implements OnInit, OnDestroy {
       }
     }
     return res;
+  }
+
+  /**
+   * M5 程序化角色动作：模型为单网格、无骨骼（已验证 skins:0/animations:0），
+   * 无法做四肢摆动式骨骼动画；改用整体变换模拟 走/跑/弯腰/待机，适合低多边形休闲风。
+   * 演示用：全局循环切换 idle→walk→run→bend，方便直观查看三种动作；
+   * 实际游戏可改为根据角色真实移动意图驱动 state。
+   */
+  private updateCharAnimations(dt: number): void {
+    this.animClock += dt;
+    // 演示状态循环
+    this.animStateTimer += dt;
+    const dur = World3dComponent.ANIM_STATE_DUR[this.animStateIdx];
+    if (this.animStateTimer >= dur) {
+      this.animStateTimer = 0;
+      this.animStateIdx = (this.animStateIdx + 1) % World3dComponent.ANIM_STATES.length;
+    }
+    const state = World3dComponent.ANIM_STATES[this.animStateIdx];
+    // 调试快照（仅 ?debug=1 时写入，供自动化验证读取角色动作状态与变换）
+    const dbgOn = (window as any).__charAnimDebugEnabled || (() => { try { return sessionStorage.getItem('__charAnimDebug') === '1'; } catch { return false; } })();
+    if (dbgOn) {
+      (window as any).__charAnimDebug = {
+        state, clock: +this.animClock.toFixed(2),
+        chars: this.charAnims.map(c => ({
+          x: +c.group.position.x.toFixed(3), y: +c.group.position.y.toFixed(3), z: +c.group.position.z.toFixed(3),
+          rx: +c.group.rotation.x.toFixed(3), ry: +c.group.rotation.y.toFixed(3), rz: +c.group.rotation.z.toFixed(3)
+        }))
+      };
+    }
+
+    for (const c of this.charAnims) {
+      const g = c.group;
+      const t = this.animClock + c.phase; // 角色间相位错开，避免完全同步
+      if (state === 'idle') {
+        // 待机：呼吸般轻微上下起伏 + 极缓左右摇
+        const bob = Math.sin(t * 1.6) * 0.04;
+        g.position.set(c.cx, c.baseY + bob, c.cz);
+        g.rotation.set(0, g.rotation.y, Math.sin(t * 0.8) * 0.02);
+      } else if (state === 'walk' || state === 'run') {
+        const isRun = state === 'run';
+        const speed = isRun ? 1.7 : 0.9;   // 巡逻角速度
+        const freq = isRun ? 3.0 : 2.0;    // 步频
+        const amp = isRun ? 0.16 : 0.09;   // 颠簸幅度
+        const lean = isRun ? 0.30 : 0.14;  // 前倾程度
+        const ang = t * speed;
+        const nx = c.cx + Math.cos(ang) * c.radius;
+        const nz = c.cz + Math.sin(ang) * c.radius;
+        const gy = this.heightAt(nx, nz) ?? c.baseY;
+        const bob = Math.sin(t * freq) * amp;          // 迈步上下
+        const sway = Math.sin(t * freq) * 0.06;        // 左右摆
+        g.position.set(nx, gy + bob, nz);
+        // 朝向运动切线方向
+        const dx = -Math.sin(ang) * c.radius;
+        const dz = Math.cos(ang) * c.radius;
+        g.rotation.set(-lean, Math.atan2(dx, dz), sway);
+      } else if (state === 'bend') {
+        // 弯腰：整体下沉（屈膝感）+ 向前俯身
+        const drop = 0.55;
+        const pitch = 1.0;
+        const bob = Math.sin(t * 1.4) * 0.03;
+        g.position.set(c.cx, c.baseY - drop + bob, c.cz);
+        g.rotation.set(-pitch, g.rotation.y, 0);
+      }
+    }
   }
 
   // ================= 矿石渲染（ORE_* 语义 → 3D 矿石模型） =================
