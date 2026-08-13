@@ -52,5 +52,6 @@ index.html.bak_v23
 healthz-after-restore.json
 m4-backend.log
 m4-ngbuild.log
+mvn-out.txt
 
 # 注意：m4_*.mjs 验证脚本与 m4_pw_verify.png 为 M4 里程碑交付物，保留不忽略
