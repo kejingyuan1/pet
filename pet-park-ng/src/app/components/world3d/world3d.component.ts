@@ -8,6 +8,7 @@ import { StateService } from '../../services/state.service';
 import { WorldApiService, WorldConfigResp, ChunkResp, WorldObjectResp, MiningProfile, InventoryItem, SellResult, MineResult } from '../../services/world-api.service';
 import { WorldSocketService } from '../../services/world-socket.service';
 import { WorldPhysicsService } from '../../services/world-physics.service';
+import { AssetService } from '../../services/asset.service';
 
 /**
  * 大世界 3D 组件（M1 → M2：服务端权威物理改造，ADR-W7 候选②）
@@ -210,6 +211,12 @@ export class World3dComponent implements OnInit, OnDestroy {
   /** 每 chunk 的矿石模型组（ORE_* 语义 → 3D 矿石），卸载时清理 */
   private oreMeshes = new Map<string, THREE.Group[]>();
 
+  // M5 角色/树 GLB 模型模板（HY3D 生成，低模几百 KB，归一化到统一高度后复用）
+  private treeModel: THREE.Group | null = null;
+  private boyModel: THREE.Group | null = null;
+  private girlModel: THREE.Group | null = null;
+  private decorPlaced = false; // 男孩/女孩是否已放置（仅放一次）
+
   // 玩家
   private px = 0; private pz = 0; private py = 0; private prot = 0;
   // 平滑显示位置（lerp 跟随物理权威位置，消除一跳一跳）
@@ -238,7 +245,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     private ws: WorldSocketService,
     private physics: WorldPhysicsService,
     private auth: AuthService,
-    private state: StateService
+    private state: StateService,
+    private assets: AssetService
   ) {}
 
   ngOnInit(): void {
@@ -266,6 +274,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         this.initPlayer();
         this.connectWs();
         this.loadMiningProfile();
+        this.preloadModels();   // M5：加载男孩/女孩/树 GLB 模板
         this.animate();
       },
       error: () => { this.hint = '世界配置加载失败：请确认后端已启动'; }
@@ -278,6 +287,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.ws.disconnect();
     this.renderer?.dispose();
     this.scene?.traverse(o => {
+      if (o.userData?.['shared']) return; // 共享 GLB 模板实例，几何复用不释放
       const mesh = o as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
       const mat = mesh.material as THREE.Material;
@@ -294,8 +304,9 @@ export class World3dComponent implements OnInit, OnDestroy {
 
     this.scene = new THREE.Scene();
     // 天空渐变：晴朗白昼天顶蓝 → 地平线淡青（M4 视觉增强）
-    this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(0xB8E0F0, 300, 1200);
+    this.scene.background = new THREE.Color(0x7EC8E8);
+    // 雾效优化：推远近裁面（减少近处泛白），暖化雾色
+    this.scene.fog = new THREE.Fog(0xA0C8D8, 450, 1400);
 
     // 海面（半透明蓝平面，精确对齐后端 waterLevel；覆盖全视图，渲染于地形之后）
     // v8: 高细分网格 + 顶点动画波浪（正弦波叠加，模拟海面起伏）
@@ -366,18 +377,21 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(W, H);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // ACES 色调映射：增强对比度与色彩饱和度，解决"白茫茫"问题
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
     mount.appendChild(this.renderer.domElement);
 
-    // 灯光（M4 增强：主阳光 + 补光 + 半球环境光）
-    const sun = new THREE.DirectionalLight(0xFFFAE6, 1.3); // 暖白日光
+    // 灯光（M5 地图视觉优化：降低总光量避免过曝 + ACES 色调映射）
+    const sun = new THREE.DirectionalLight(0xFFF4E0, 1.0); // 暖白日光（降低强度）
     sun.position.set(100, 150, 80);
     this.scene.add(sun);
-    // 补光（填充阴影区）
-    const fillLight = new THREE.DirectionalLight(0xB8D4E8, 0.35);
+    // 补光（填充阴影区，降低强度）
+    const fillLight = new THREE.DirectionalLight(0xB8D4E8, 0.2);
     fillLight.position.set(-60, 40, -50);
     this.scene.add(fillLight);
-    // 半球光：天蓝色 + 地面绿色
-    this.scene.add(new THREE.HemisphereLight(0x9ED4FF, 0x7ABF5A, 0.75));
+    // 半球光：天蓝色 + 地面绿色（降低环境光量，让顶点色更饱和）
+    this.scene.add(new THREE.HemisphereLight(0x9ED4FF, 0x7ABF5A, 0.45));
 
     // OrbitControls（默认禁用，跟随模式由自研 rig 控制；建造模式启用）
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -814,6 +828,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.scene.add(mesh);
     // 树木（TREE 语义 → 3D 树模型）
     this.spawnTrees(resp);
+    // M5：尝试在出生区块附近放置男孩/女孩（地形与模型均就绪后落位，仅一次）
+    this.tryPlaceCharacters();
     // 矿石（ORE_GOLD/ORE_IRON/ORE_COAL → 3D 矿石模型）
     this.spawnOres(resp);
     // 对象
@@ -836,6 +852,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (trees) {
       for (const t of trees) {
         this.scene.remove(t);
+        if (t.userData['shared']) continue; // 共享 GLB 模板几何/材质，仅移除不 dispose
         t.traverse(o => {
           const m = o as THREE.Mesh;
           if (m.geometry) m.geometry.dispose();
@@ -875,6 +892,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     const waterLevel = this.config?.waterLevel ?? -5;
     const positions = new Float32Array(N * N * 3);
     const colors = new Float32Array(N * N * 3);
+    // 计算本 chunk 高度范围，用于归一化高度变化着色
+    let hMin = Infinity, hMax = -Infinity;
+    for (let i = 0; i < h.length; i++) { if (h[i] < hMin) hMin = h[i]; if (h[i] > hMax) hMax = h[i]; }
+    const hRange = Math.max(hMax - hMin, 1); // 防除零
     for (let lz = 0; lz < N; lz++) {
       for (let lx = 0; lx < N; lx++) {
         const i = lz * N + lx;
@@ -884,9 +905,12 @@ export class World3dComponent implements OnInit, OnDestroy {
         positions[i * 3 + 1] = (cell === 0) ? waterLevel : h[i];
         positions[i * 3 + 2] = resp.cz * CHUNK + lz;
         const c = CELL_COLORS[cell] ?? CELL_COLORS[2];
-        colors[i * 3] = ((c >> 16) & 255) / 255;
-        colors[i * 3 + 1] = ((c >> 8) & 255) / 255;
-        colors[i * 3 + 2] = (c & 255) / 255;
+        // M5 高度变化着色：谷暗峰亮（±12% 亮度），增加地形层次感
+        const hNorm = (h[i] - hMin) / hRange;       // 0~1
+        const hBright = 0.88 + hNorm * 0.24;         // 0.88~1.12
+        colors[i * 3] = (((c >> 16) & 255) / 255) * hBright;
+        colors[i * 3 + 1] = (((c >> 8) & 255) / 255) * hBright;
+        colors[i * 3 + 2] = ((c & 255) / 255) * hBright;
       }
     }
     const indices: number[] = [];
@@ -906,7 +930,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     geo.computeVertexNormals();
     geo.computeBoundingBox();
     geo.computeBoundingSphere();
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, fog: false, side: THREE.DoubleSide });
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02, fog: false, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
     mesh.frustumCulled = false;
@@ -938,21 +962,111 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.treeMeshes.set(key, trees);
   }
 
-  /** 单棵低模树：棕色树干圆柱 + 深绿圆锥树冠 */
+  /** 单棵低模树（M5：优先用 HY3D 真实树 GLB，未加载完成回退到程序化树） */
   private makeTree(): THREE.Group {
+    if (this.treeModel) {
+      const t = this.treeModel.clone(true);
+      t.userData['shared'] = true; // 共享模板几何/材质，卸载时仅移除不 dispose
+      return t;
+    }
     const g = new THREE.Group();
+    // 树干（略粗，带锥度）
     const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.12, 0.18, 0.9, 6),
-      new THREE.MeshStandardMaterial({ color: 0x6B4226, roughness: 1 })
+      new THREE.CylinderGeometry(0.1, 0.2, 0.85, 7),
+      new THREE.MeshStandardMaterial({ color: 0x5D3A1A, roughness: 0.95 })
     );
-    trunk.position.y = 0.45;
-    const foliage = new THREE.Mesh(
-      new THREE.ConeGeometry(0.7, 1.8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.9 })
-    );
-    foliage.position.y = 1.7;
-    g.add(trunk, foliage);
+    trunk.position.y = 0.42;
+    // 三层递减圆锥树冠（松树风格），每层颜色略有变化
+    const layers = [
+      { r: 0.85, h: 1.4, y: 1.35, c: 0x2D8B2E },  // 底层大
+      { r: 0.65, h: 1.1, y: 2.05, c: 0x349A35 },  // 中层
+      { r: 0.45, h: 0.8,  y: 2.6, c: 0x3CAA3D },   // 顶层小
+    ];
+    for (const l of layers) {
+      const foliage = new THREE.Mesh(
+        new THREE.ConeGeometry(l.r, l.h, 8),
+        new THREE.MeshStandardMaterial({ color: l.c, roughness: 0.85 })
+      );
+      foliage.position.y = l.y;
+      g.add(foliage);
+    }
+    g.add(trunk);
     return g;
+  }
+
+  // ================= M5 角色/树 GLB 模板（HY3D 生成） =================
+
+  /** 预加载三个低模 GLB 模板（男孩/女孩/树），归一化到统一高度后缓存复用 */
+  private preloadModels(): void {
+    const base = 'assets/models/';
+    const norm = (g: THREE.Group | null, h: number) => (g ? this.normalizeModel(g, h) : null);
+    this.assets.loadModel(base + 'tree.glb').then(g => {
+      this.treeModel = norm(g, 3.2);
+      if (!this.treeModel) console.warn('[world3d] 树模型加载失败，使用程序化树回退');
+      else this.tryPlaceCharacters(); // 树就绪后尝试补放角色（若角色已就绪）
+    });
+    this.assets.loadModel(base + 'boy.glb').then(g => {
+      this.boyModel = norm(g, 2.0);
+      this.tryPlaceCharacters();
+    });
+    this.assets.loadModel(base + 'girl.glb').then(g => {
+      this.girlModel = norm(g, 2.0);
+      this.tryPlaceCharacters();
+    });
+  }
+
+  /** 归一化模型：缩放到目标高度，并把底部对齐到局部 y=0（外层 Group 包裹，便于按实例设置世界坐标） */
+  private normalizeModel(obj: THREE.Object3D, targetH: number): THREE.Group {
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const s = targetH / Math.max(size.y, 1e-3);
+    obj.scale.multiplyScalar(s);
+    const box2 = new THREE.Box3().setFromObject(obj);
+    obj.position.y -= box2.min.y; // 底部贴地（内层局部坐标）
+    const outer = new THREE.Group();
+    outer.add(obj);
+    return outer;
+  }
+
+  /** 在出生区块附近草地放置男孩/女孩（仅放一次；模型与地形均就绪后才落位） */
+  private tryPlaceCharacters(): void {
+    if (this.decorPlaced) return;
+    if (!this.boyModel || !this.girlModel) return;
+    // 需等出生 chunk 地形数据加载（heightAt 才有值）
+    if (!this.gridCache.has(`${Math.floor(this.px / CHUNK)}_${Math.floor(this.pz / CHUNK)}`)) return;
+    const spots = this.findGrassNear(this.px, this.pz, 2);
+    if (spots.length < 2) return; // 找不到两处草地则暂不放置
+    this.decorPlaced = true;
+    const models = [this.boyModel, this.girlModel];
+    spots.forEach((sp, i) => {
+      const y = this.heightAt(sp.gx, sp.gz);
+      if (y === undefined) return;
+      const inst = models[i].clone(true);
+      inst.position.set(sp.gx, y, sp.gz);
+      inst.rotation.y = (i * 1.7) % (Math.PI * 2);
+      inst.userData['shared'] = true;
+      this.scene.add(inst);
+    });
+  }
+
+  /** 以 (cx0,cz0) 为中心、半径 8 内扫描 semantic===2（草地）的格子，返回前 count 个 */
+  private findGrassNear(cx0: number, cz0: number, count: number): { gx: number; gz: number }[] {
+    const res: { gx: number; gz: number }[] = [];
+    const grid = this.gridCache.get(`${Math.floor(cx0 / CHUNK)}_${Math.floor(cz0 / CHUNK)}`);
+    if (!grid) return res;
+    const baseX = Math.floor(cx0), baseZ = Math.floor(cz0);
+    for (let r = 0; r <= 8 && res.length < count; r++) {
+      for (let dz = -r; dz <= r && res.length < count; dz++) {
+        for (let dx = -r; dx <= r && res.length < count; dx++) {
+          const gx = baseX + dx, gz = baseZ + dz;
+          const lx = gx - Math.floor(gx / CHUNK) * CHUNK;
+          const lz = gz - Math.floor(gz / CHUNK) * CHUNK;
+          if (grid.semantic[lz * CHUNK + lx] === 2) res.push({ gx, gz });
+        }
+      }
+    }
+    return res;
   }
 
   // ================= 矿石渲染（ORE_* 语义 → 3D 矿石模型） =================
