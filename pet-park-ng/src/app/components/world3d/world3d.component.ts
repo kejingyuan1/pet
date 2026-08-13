@@ -43,8 +43,8 @@ const CELL_COLORS: Record<number, number> = {
   6: 0x555555, // ore_coal
   7: 0xb0b0b0, // ore_iron
   8: 0xffd700, // ore_gold
-  9: 0x4aa3df, // river（浅河蓝，区别于深海）
-  10: 0x6abf4b  // empty（回落草地色）
+  9: 0x6abf4b,  // empty（回落草地色，与后端 EMPTY=9 对齐）
+  10: 0x4aa3df // river（浅河蓝，区别于深海；后端 RIVER=10）
 };
 
 interface GridData {
@@ -1536,8 +1536,8 @@ export class World3dComponent implements OnInit, OnDestroy {
       const [cx, cz] = chunkKey.split('_').map(Number);
       const lx = gx - cx * CHUNK;
       const lz = gz - cz * CHUNK;
-      const code = newType === 'empty' ? 10 : (Number(newType) || 10);
-      const col = new THREE.Color(CELL_COLORS[code] ?? CELL_COLORS[10]);
+      const code = newType === 'empty' ? 9 : (Number(newType) || 2);
+      const col = new THREE.Color(CELL_COLORS[code] ?? CELL_COLORS[2]);
       const geo = mesh.geometry as THREE.BufferGeometry;
       const colors = geo.getAttribute('color') as THREE.BufferAttribute;
       const xs = [lx, Math.min(lx + 1, N - 1)];

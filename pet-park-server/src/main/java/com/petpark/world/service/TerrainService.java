@@ -19,8 +19,10 @@ import java.util.List;
  *  - 海面上确定性撒布 ISLAND_COUNT 座**岛屿**（Voronoi 中心 + 径向平滑衰减）；
  *  - 每岛面积较大（半径 115~190 世界单位 ≈ 3.5~6 chunk），足够放置多栋房屋；
  *  - 岛内语义分层：海岸**沙滩**(SAND) → **草地**(GRASS) → **森林**(TREE 密集撒点)
- *    → **山丘/矿脉**(MOUNTAIN/ORE) → 低洼**淡水湖**(WATER)；
- *  - 海洋与湖泊均标记为 WATER，前端统一蓝色渲染（海面另加半透明平面）。
+ *    → **山丘/矿脉**(MOUNTAIN/ORE) → **蜿蜒河流**(RIVER) → 低洼**淡水湖**(WATER)；
+ *  - 河流为平滑下凹水道（smoothstep 过渡，无垂直水墙），河床高于沙滩带、低于山地；
+ *  - 海洋与湖泊均标记为 WATER，前端统一蓝色渲染（海面另加半透明平面）；
+ *  - 河流语义 RIVER 由前端按浅蓝顶点色 + 下凹地形呈现（不另加水面 mesh）。
  *
  * 确定性不变量（同种子任何 JVM/CPU 输出一致）保持不变：OpenSimplex2 double 精度 +
  * 仅 heightAt 末尾单次 cast float + 散点哈希确定性。
@@ -48,6 +50,16 @@ public class TerrainService {
     private static final double MOUNTAIN_THRESH = 9.0;
     /** 沙滩带宽（高于水线多少内算沙滩） */
     private static final double BEACH_BAND = 1.6;
+    /** 河流：河谷噪声频率（越小河越蜿蜒、越宽） */
+    private static final double RIVER_SCALE = 0.020;
+    /** 河流：成河阈值（|noise|<此值成河中心，smoothstep 过渡） */
+    private static final double RIVER_WIDTH = 0.20;
+    /** 河流：河床相对周围地形的最大下凹深度 */
+    private static final double RIVER_DEPTH = 3.0;
+    /** 河流：河床高于水线的高度（位于沙滩带之上、草地层内，避免与海面打架） */
+    private static final double RIVER_FLOOR_ABOVE = 2.5;
+    /** 河流：仅岛内（falloff 高于此值）才生成，避免海岸破碎河 */
+    private static final double RIVER_MIN_FALLOFF = 0.35;
 
     private final WorldConfigService world;
     private final TerrainModMapper terrainModMapper;
@@ -121,6 +133,33 @@ public class TerrainService {
     private double lakeNoise(int gx, int gz) {
         double n = noise.noise2(gx * 0.012 + 500, gz * 0.012 + 500);
         return (n + 1) / 2;
+    }
+
+    /** 河流 mask：返回 [0,1]，河中心 1、岸边 0，smoothstep 平滑过渡（无垂直水墙）。
+     *  两条相位不同的低频噪声叠脊线，形成主河道 + 支流分叉的自然水系。 */
+    private double riverMask(int gx, int gz) {
+        double n1 = noise.noise2(gx * RIVER_SCALE, gz * RIVER_SCALE);
+        double n2 = noise.noise2(gx * RIVER_SCALE * 1.7 + 311, gz * RIVER_SCALE * 1.7 + 117);
+        double ridge = 1.0 - Math.abs(n1);
+        double ridge2 = (1.0 - Math.abs(n2)) * 0.85;
+        double r = Math.max(ridge, ridge2);
+        double t = (r - (1.0 - RIVER_WIDTH)) / RIVER_WIDTH;
+        t = Math.max(0, Math.min(1, t));
+        return t * t * (3 - 2 * t); // smoothstep
+    }
+
+    /** 河流下凹：平滑压低河床（mask 已 smoothstep，过渡自然无悬崖）。
+     *  仅在中海拔（沙滩带之上、山地之下）且岛内才生效；河床不低于 RIVER_FLOOR_ABOVE。 */
+    private double applyRiver(int gx, int gz, double h, double falloff) {
+        double wl = world.waterLevel();
+        if (falloff <= RIVER_MIN_FALLOFF) return h;
+        if (h <= wl + BEACH_BAND + 0.5) return h;        // 河床需高于沙滩带
+        if (h >= wl + MOUNTAIN_THRESH - 1.0) return h;   // 山地以上不成河
+        double rm = riverMask(gx, gz);
+        if (rm <= 0.001) return h;
+        double riverFloor = wl + RIVER_FLOOR_ABOVE;
+        double targetH = Math.max(h - RIVER_DEPTH * rm, riverFloor);
+        return h * (1 - rm) + targetH * rm;
     }
 
     /** 岛屿径向衰减：最近岛心的平滑衰减（中心 1 → 边缘 0），岛外返回 0
@@ -210,6 +249,8 @@ public class TerrainService {
                 h = (float) (wl + 0.1); // 湖面略高于海线（高原湖），减少深度差
             }
         }
+        // 河流雕刻：平缓下凹河床（smoothstep 过渡，杜绝垂直水墙）
+        h = (float) applyRiver(gx, gz, h, falloff);
         return h;
     }
 
@@ -221,6 +262,7 @@ public class TerrainService {
      */
     private boolean isRealBasin(int gx, int gz) {
         double wl = world.waterLevel();
+        if (riverMask(gx, gz) > 0.3) return false; // 河流区域不成湖（防湖河重叠）
         double ln = lakeNoise(gx, gz);
         if (ln > 0.42) return false; // 噪声预筛选：只有 ~18% 候选进入邻域验证
         float centerH = heightAtNoLake(gx, gz);
@@ -245,7 +287,7 @@ public class TerrainService {
         return true;
     }
 
-    /** 不含湖泊影响的高度（供 isRealBasin 引用，避免循环依赖） */
+    /** 不含湖泊影响的高度（供 isRealBasin 引用，避免循环依赖）；含河流下凹 */
     private float heightAtNoLake(int gx, int gz) {
         double falloff = islandFalloff(gx, gz);
         double detail = detailNoise(gx, gz);
@@ -254,7 +296,9 @@ public class TerrainService {
             return (float) (wl - OCEAN_DEPTH + detail * 0.7);
         }
         double elevation = falloff * (ISLAND_ELEVATION + detail * LAND_AMP);
-        return (float) (wl + elevation);
+        float h = (float) (wl + elevation);
+        h = (float) applyRiver(gx, gz, h, falloff);
+        return h;
     }
 
     // ================= 语义分类 =================
@@ -298,6 +342,12 @@ public class TerrainService {
         // 内陆淡水湖：仅限真洼地（8邻域均高于中心，形成闭合盆地）
         if (isRealBasin(gx, gz)) {
             return CellType.WATER;
+        }
+        // 河流语义：河中心 mask 高 + 高度落在河床带内（区别于湖/草）
+        if (riverMask(gx, gz) > 0.55
+                && h > wl + RIVER_FLOOR_ABOVE - 0.6
+                && h < wl + MOUNTAIN_THRESH) {
+            return CellType.RIVER;
         }
         // 森林 / 草地
         if (treeScatter(gx, gz) < world.treeDensity()) {

@@ -227,7 +227,7 @@ export class AppComponent implements OnInit, OnDestroy {
         }
         else this.loginMsg = res.msg || '登录失败';
       },
-      error: () => { this.loginBusy = false; this.loginMsg = '无法连接服务器'; }
+      error: (err: any) => { this.loginBusy = false; this.loginMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '登录失败，请稍后重试'); }
     });
   }
   doRegister(): void {
@@ -249,7 +249,7 @@ export class AppComponent implements OnInit, OnDestroy {
         }
         else this.loginMsg = res.msg || '注册失败';
       },
-      error: () => { this.loginBusy = false; this.loginMsg = '无法连接服务器'; }
+      error: (err: any) => { this.loginBusy = false; this.loginMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '登录失败，请稍后重试'); }
     });
   }
 
@@ -298,7 +298,7 @@ export class AppComponent implements OnInit, OnDestroy {
           this.profileMsg = '✅ 昵称已更新';
         } else this.profileMsg = res.msg || '保存失败';
       },
-      error: () => { this.profileMsg = '无法连接服务器'; }
+      error: (err: any) => { this.profileMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '保存失败，请稍后重试'); }
     });
   }
 
@@ -317,7 +317,7 @@ export class AppComponent implements OnInit, OnDestroy {
           this.profileMsg = '✅ 用户名已更新';
         } else this.profileMsg = res.msg || '保存失败';
       },
-      error: () => { this.profileMsg = '无法连接服务器'; }
+      error: (err: any) => { this.profileMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '保存失败，请稍后重试'); }
     });
   }
 
@@ -330,7 +330,7 @@ export class AppComponent implements OnInit, OnDestroy {
         if (res.code === 0) { this.passMsg = '✅ 密码已修改'; this.oldPass = ''; this.newPass = ''; }
         else this.passMsg = res.msg || '修改失败';
       },
-      error: () => { this.passMsg = '无法连接服务器'; }
+      error: (err: any) => { this.passMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '修改失败，请稍后重试'); }
     });
   }
 
@@ -364,7 +364,7 @@ export class AppComponent implements OnInit, OnDestroy {
   loadUsers(): void {
     this.auth.adminListUsers().subscribe({
       next: res => { if (res.code === 0) { this.adminUsers = res.data || []; } else { this.adminMsg = res.msg || '加载失败'; } },
-      error: () => { this.adminMsg = '无法连接服务器'; }
+      error: (err: any) => { this.adminMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '加载失败，请稍后重试'); }
     });
   }
 
@@ -406,7 +406,7 @@ export class AppComponent implements OnInit, OnDestroy {
           }
         } else this.adminMsg = res.msg || '保存失败';
       },
-      error: () => { this.adminMsg = '无法连接服务器'; }
+      error: (err: any) => { this.adminMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '保存失败，请稍后重试'); }
     });
   }
 
@@ -418,7 +418,7 @@ export class AppComponent implements OnInit, OnDestroy {
         if (res.code === 0) { this.loadUsers(); }
         else this.adminMsg = res.msg || '删除失败';
       },
-      error: () => { this.adminMsg = '无法连接服务器'; }
+      error: (err: any) => { this.adminMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '删除失败，请稍后重试'); }
     });
   }
 
@@ -438,7 +438,7 @@ export class AppComponent implements OnInit, OnDestroy {
         if (res.code === 0) { this.failures = res.data || []; }
         else { this.failMsg = res.msg || '加载失败'; }
       },
-      error: () => { this.failMsg = '无法连接服务器'; }
+      error: (err: any) => { this.failMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '加载失败，请稍后重试'); }
     });
   }
 
@@ -446,7 +446,7 @@ export class AppComponent implements OnInit, OnDestroy {
   markMastered(f: any): void {
     this.auth.studyMarkMastered(f.failureId).subscribe({
       next: res => { if (res.code === 0) this.loadFailures(); else this.failMsg = res.msg || '操作失败'; },
-      error: () => { this.failMsg = '无法连接服务器'; }
+      error: (err: any) => { this.failMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '操作失败，请稍后重试'); }
     });
   }
 
@@ -454,7 +454,7 @@ export class AppComponent implements OnInit, OnDestroy {
   deleteFailure(f: any): void {
     this.auth.studyDeleteFailure(f.failureId).subscribe({
       next: res => { if (res.code === 0) this.loadFailures(); else this.failMsg = res.msg || '删除失败'; },
-      error: () => { this.failMsg = '无法连接服务器'; }
+      error: (err: any) => { this.failMsg = err?.error?.msg || (err?.status === 0 ? '无法连接服务器' : '删除失败，请稍后重试'); }
     });
   }
 
