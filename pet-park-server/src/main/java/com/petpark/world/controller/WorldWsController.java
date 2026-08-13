@@ -5,6 +5,7 @@ import com.petpark.entity.User;
 import com.petpark.mapper.UserMapper;
 import com.petpark.world.dto.WorldObjectResp;
 import com.petpark.world.dto.WsBuildMsg;
+import com.petpark.world.dto.WsChatMsg;
 import com.petpark.world.dto.WsInputMsg;
 import com.petpark.world.dto.WsJoinMsg;
 import com.petpark.world.dto.WsPositionMsg;
@@ -32,8 +33,9 @@ import java.util.Map;
  *  - /app/ws.input   物理输入上行：客户端按键/摇杆意图 → Spring Boot 预检 → 转发 physics-service 按 tick 消费
  *  - /app/ws.position 轻量位置心跳（保留：UI/调试/兜底；权威位置以 POSITION_SNAPSHOT 为准）
  *  - /app/ws.build    放置请求（与 REST 同一 service，服务端权威）
+ *  - /app/ws.chat     区域聊天（single-room，广播 CHAT 到 /topic/world）
  * 下行：
- *  - /topic/world     世界事件（OBJECT_ADD / PLAYER_JOIN / PLAYER_LEAVE / POSITION_SNAPSHOT / PHYS_RESTART）
+ *  - /topic/world     世界事件（OBJECT_ADD / PLAYER_JOIN / PLAYER_LEAVE / POSITION_SNAPSHOT / PHYS_RESTART / CHAT）
  *  - /topic/players   玩家位置（POSITION，含 y）
  *  - /user/queue/reply 个人回复（join 快照 / build 结果）
  */
@@ -179,6 +181,38 @@ public class WorldWsController {
         } catch (Exception e) {
             broker.sendToUser(sid, Map.of("t", "BUILD_RESULT", "code", 1, "msg", e.getMessage()));
         }
+    }
+
+    /**
+     * 区域聊天：/app/ws.chat {text}
+     * 校验 uid + 非空 + 限长（≤200）后广播 CHAT 到 /topic/world（single-room 全区域可见）。
+     * 仅广播不落库（cozy 游戏，历史非必需）；如需留存可后续加 world_chat 表。
+     */
+    @MessageMapping("/ws.chat")
+    public void chat(WsChatMsg msg, SimpMessageHeaderAccessor headers) {
+        Long uid = uid(headers);
+        if (uid == null || msg == null || msg.getText() == null) {
+            return;
+        }
+        String text = msg.getText().trim();
+        if (text.isEmpty()) {
+            return;
+        }
+        if (text.length() > 200) {
+            text = text.substring(0, 200); // 服务端兜底限长
+        }
+        String nick = "";
+        User u = userMapper.selectById(uid);
+        if (u != null) {
+            nick = u.getNickname() == null ? "" : u.getNickname();
+        }
+        broker.broadcastWorld(Map.of(
+                "t", "CHAT",
+                "uid", uid,
+                "nickname", nick,
+                "text", text,
+                "ts", System.currentTimeMillis()));
+        log.info("[world] WS chat uid={} nick={} textLen={}", uid, nick, text.length());
     }
 
     private Long uid(SimpMessageHeaderAccessor headers) {

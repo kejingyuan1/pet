@@ -1,4 +1,6 @@
 import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { AuthService } from '../../services/auth.service';
@@ -52,6 +54,8 @@ interface GridData {
 
 @Component({
   selector: 'app-world3d',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
   template: `
     <div #mount class="world3d-mount"></div>
     <div class="w3d-toolbar">
@@ -64,6 +68,27 @@ interface GridData {
       <div class="hud-row">位置 ({{posText}})</div>
       <div class="hud-hint">{{hint}}</div>
     </div>
+    <div class="w3d-chat" [class.collapsed]="!chatOpen">
+      <div class="chat-head" (click)="toggleChat()">
+        <span>💬 聊天 {{chatOpen ? '' : '(' + chatMessages.length + ')'}}</span>
+        <span class="chat-toggle">{{chatOpen ? '▾' : '▸'}}</span>
+      </div>
+      <div class="chat-body" *ngIf="chatOpen">
+        <div class="chat-list" #chatList>
+          <div class="chat-msg" *ngFor="let m of chatMessages">
+            <span class="chat-nick" [class.self]="m.uid === selfUid">{{m.nickname || '玩家'}}：</span>
+            <span class="chat-text">{{m.text}}</span>
+            <span class="chat-time">{{m.timeText}}</span>
+          </div>
+          <div class="chat-empty" *ngIf="chatMessages.length === 0">还没有人说话，来打个招呼吧～</div>
+        </div>
+        <div class="chat-input-row">
+          <input #chatInputEl class="chat-input" type="text" maxlength="200" placeholder="按 Enter 发送"
+                 [(ngModel)]="chatInput" (keyup.enter)="sendChat()" (keyup.escape)="blurChat()" />
+          <button class="chat-send" (click)="sendChat()">发送</button>
+        </div>
+      </div>
+    </div>
   `,
   styles: [`
     .world3d-mount { width: 100%; height: 100%; min-height: 480px; border-radius: 20px; overflow: hidden; background: #8FC8F5; position: relative; }
@@ -72,6 +97,22 @@ interface GridData {
     .w3d-toolbar button.on { background: #FF8C42; color: #fff; }
     .w3d-hud { position: absolute; left: 12px; bottom: 12px; z-index: 5; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); font-size: 13px; line-height: 1.6; pointer-events: none; }
     .hud-hint { opacity: .85; max-width: 420px; }
+    .w3d-chat { position: absolute; right: 12px; bottom: 12px; z-index: 6; width: 300px; max-width: 42vw; pointer-events: auto; background: rgba(20,30,45,.82); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.3); color: #eee; font-size: 13px; }
+    .w3d-chat.collapsed { width: auto; }
+    .chat-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; background: rgba(255,255,255,.06); user-select: none; }
+    .chat-toggle { opacity: .7; }
+    .chat-body { display: flex; flex-direction: column; }
+    .chat-list { max-height: 220px; min-height: 80px; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+    .chat-msg { line-height: 1.5; word-break: break-word; }
+    .chat-nick { color: #8FD3FF; font-weight: 600; }
+    .chat-nick.self { color: #FFD27F; }
+    .chat-text { color: #f0f0f0; }
+    .chat-time { color: rgba(255,255,255,.4); font-size: 11px; margin-left: 6px; }
+    .chat-empty { color: rgba(255,255,255,.45); font-style: italic; padding: 8px 0; }
+    .chat-input-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.08); }
+    .chat-input { flex: 1; border: none; border-radius: 8px; padding: 6px 10px; background: rgba(255,255,255,.92); color: #222; font-size: 13px; outline: none; }
+    .chat-send { border: none; border-radius: 8px; padding: 6px 12px; background: #FF8C42; color: #fff; cursor: pointer; font-size: 13px; }
+    .chat-send:active { background: #e6782e; }
   `]
 })
 export class World3dComponent implements OnInit, OnDestroy {
@@ -84,6 +125,12 @@ export class World3dComponent implements OnInit, OnDestroy {
   coins = 0;
   onlineCount = 1;
 
+  // 聊天（M3）
+  chatOpen = true;
+  chatInput = '';
+  chatMessages: { uid: number; nickname: string; text: string; ts: number; timeText: string }[] = [];
+  @ViewChild('chatList') chatListRef?: ElementRef;
+
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
@@ -93,6 +140,8 @@ export class World3dComponent implements OnInit, OnDestroy {
   private config?: WorldConfigResp;
   private viewRadius = 2;
   private uid = 0;
+  /** 暴露给模板：判断聊天消息是否为自己发送 */
+  get selfUid(): number { return this.uid; }
   private nickname = '';
 
   // 世界数据
@@ -214,15 +263,15 @@ export class World3dComponent implements OnInit, OnDestroy {
         `.replace(
           '#include <begin_vertex>',
           `
-          vec3 pos = position;
-          // 双频率正弦波叠加模拟海浪
-          float wave1 = sin(pos.x * 0.02 + uTime * 1.2) * 0.35;
-          float wave2 = sin(pos.y * 0.03 + uTime * 0.8) * 0.25;
-          float wave3 = sin((pos.x + pos.y) * 0.01 + uTime * 1.5) * 0.5;
-          pos.z = wave1 + wave2 + wave3;
-          vWaveHeight = pos.z;
-          vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
-          transformed = pos;
+          // 声明 transformed（原 begin_vertex 的职责），再叠加海浪位移
+          vec3 transformed = vec3( position );
+          float wave1 = sin(transformed.x * 0.02 + uTime * 1.2) * 0.35;
+          float wave2 = sin(transformed.y * 0.03 + uTime * 0.8) * 0.25;
+          float wave3 = sin((transformed.x + transformed.y) * 0.01 + uTime * 1.5) * 0.5;
+          float waveSum = wave1 + wave2 + wave3;
+          transformed.z += waveSum;
+          vWaveHeight = waveSum;
+          vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
           `
         );
         shader.fragmentShader = `
@@ -345,6 +394,8 @@ export class World3dComponent implements OnInit, OnDestroy {
         this.hint = `${ev.nickname || '玩家'} 进入世界`;
       } else if (ev.t === 'PLAYER_LEAVE' && ev.uid !== this.uid) {
         this.removeRemotePlayer(ev.uid);
+      } else if (ev.t === 'CHAT' && ev.uid != null && ev.text) {
+        this.pushChat(ev.uid, ev.nickname || '', ev.text, ev.ts || Date.now());
       }
       this.onlineCount = this.remotePlayers.size + 1;
     } catch (e) { /* 忽略坏帧 */ }
@@ -389,6 +440,40 @@ export class World3dComponent implements OnInit, OnDestroy {
         this.refreshCoins();
       }
     } catch (e) { /* ignore */ }
+  }
+
+  // ================= 聊天（M3） =================
+  private pushChat(uid: number, nickname: string, text: string, ts: number): void {
+    const d = new Date(ts);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    this.chatMessages.push({ uid, nickname, text, ts, timeText: `${hh}:${mm}` });
+    if (this.chatMessages.length > 100) this.chatMessages.shift(); // 仅保留最近 100 条
+    this.scrollChatToBottom();
+  }
+
+  private scrollChatToBottom(): void {
+    setTimeout(() => {
+      const el = this.chatListRef?.nativeElement as HTMLElement | undefined;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 0);
+  }
+
+  sendChat(): void {
+    const text = (this.chatInput || '').trim();
+    if (!text) return;
+    this.ws.send('/app/ws.chat', { text });
+    this.chatInput = '';
+  }
+
+  toggleChat(): void {
+    this.chatOpen = !this.chatOpen;
+    if (this.chatOpen) this.scrollChatToBottom();
+  }
+
+  blurChat(): void {
+    const el = this.chatListRef?.nativeElement as HTMLElement | undefined;
+    if (el) (el as HTMLElement).blur?.();
   }
 
   // ================= 主循环 =================
