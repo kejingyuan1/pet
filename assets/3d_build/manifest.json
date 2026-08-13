@@ -1,0 +1,4763 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-05T00:00:00Z",
+  "assetRoot": "assets",
+  "assets": [
+    {
+      "assetId": "plant_wheat_seed",
+      "designId": "plant_wheat_seed",
+      "path": "plants/plant_wheat_seed.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "小麦-seed",
+      "desc": "种植作物，3阶段生长",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_wheat_seed.glb"
+        }
+      ],
+      "sizeKB": 1.6,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_wheat_seedling",
+      "designId": "plant_wheat_seedling",
+      "path": "plants/plant_wheat_seedling.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "小麦-seedling",
+      "desc": "种植作物，3阶段生长",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_wheat_seedling.glb"
+        }
+      ],
+      "sizeKB": 3.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_wheat_mature",
+      "designId": "plant_wheat_mature",
+      "path": "plants/plant_wheat_mature.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "小麦-mature",
+      "desc": "种植作物，3阶段生长",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.05,
+          "hy": 0.1,
+          "hz": 0.05
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_wheat_mature.glb"
+        }
+      ],
+      "sizeKB": 4.3,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_carrot_seed",
+      "designId": "plant_carrot_seed",
+      "path": "plants/plant_carrot_seed.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "胡萝卜-seed",
+      "desc": "种植作物，3阶段生长",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_carrot_seed.glb"
+        }
+      ],
+      "sizeKB": 1.9,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_carrot_seedling",
+      "designId": "plant_carrot_seedling",
+      "path": "plants/plant_carrot_seedling.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "胡萝卜-seedling",
+      "desc": "种植作物，3阶段生长",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_carrot_seedling.glb"
+        }
+      ],
+      "sizeKB": 1.6,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_carrot_mature",
+      "designId": "plant_carrot_mature",
+      "path": "plants/plant_carrot_mature.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "胡萝卜-mature",
+      "desc": "种植作物，3阶段生长",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.05,
+          "h": 0.25
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_carrot_mature.glb"
+        }
+      ],
+      "sizeKB": 6.5,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tomato",
+      "designId": "plant_tomato",
+      "path": "plants/plant_tomato.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "番茄",
+      "desc": "P1作物",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.12,
+          "h": 0.3
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tomato.glb"
+        }
+      ],
+      "sizeKB": 69.6,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_pumpkin",
+      "designId": "plant_pumpkin",
+      "path": "plants/plant_pumpkin.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "南瓜",
+      "desc": "P1作物",
+      "collision": {
+        "type": "fixed",
+        "shape": "sphere",
+        "params": {
+          "r": 0.22
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_pumpkin.glb"
+        }
+      ],
+      "sizeKB": 36.7,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tree_oak",
+      "designId": "plant_tree_oak",
+      "path": "plants/plant_tree_oak.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "基础树",
+      "desc": "装饰+障碍/果树",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_oak.glb"
+        }
+      ],
+      "sizeKB": 67.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tree_apple",
+      "designId": "plant_tree_apple",
+      "path": "plants/plant_tree_apple.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "苹果树",
+      "desc": "装饰+障碍/果树",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_apple.glb"
+        }
+      ],
+      "sizeKB": 109.5,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_flower_daisy",
+      "designId": "plant_flower_daisy",
+      "path": "plants/plant_flower_daisy.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "雏菊",
+      "desc": "装饰",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_flower_daisy.glb"
+        }
+      ],
+      "sizeKB": 39.4,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tilled_soil",
+      "designId": "plant_tilled_soil",
+      "path": "plants/plant_tilled_soil.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "耕地地块",
+      "desc": "锄地生成",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.03,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tilled_soil.glb"
+        }
+      ],
+      "sizeKB": 3.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "animal_chicken_white",
+      "designId": "animal_chicken_white",
+      "path": "animals/animal_chicken_white.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "白鸡",
+      "desc": "产蛋，投喂",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.15,
+          "half_h": 0.2
+        }
+      },
+      "animations": [
+        "idle",
+        "walk",
+        "eat",
+        "peck"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "animals/animal_chicken_white.glb"
+        }
+      ],
+      "sizeKB": 81.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "animal_chicken_brown",
+      "designId": "animal_chicken_brown",
+      "path": "animals/animal_chicken_brown.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "棕鸡",
+      "desc": "鸡变体",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.15,
+          "half_h": 0.2
+        }
+      },
+      "animations": [
+        "idle",
+        "walk",
+        "eat",
+        "peck"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "animals/animal_chicken_brown.glb"
+        }
+      ],
+      "sizeKB": 81.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "animal_cow_holstein",
+      "designId": "animal_cow_holstein",
+      "path": "animals/animal_cow_holstein.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "荷斯坦牛",
+      "desc": "产奶，投喂",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.35,
+          "half_h": 0.55
+        }
+      },
+      "animations": [
+        "idle",
+        "walk",
+        "eat"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "animals/animal_cow_holstein.glb"
+        }
+      ],
+      "sizeKB": 135.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "animal_cow_brown",
+      "designId": "animal_cow_brown",
+      "path": "animals/animal_cow_brown.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "棕牛",
+      "desc": "牛变体",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.35,
+          "half_h": 0.55
+        }
+      },
+      "animations": [
+        "idle",
+        "walk",
+        "eat"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "animals/animal_cow_brown.glb"
+        }
+      ],
+      "sizeKB": 103.7,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "animal_sheep",
+      "designId": "animal_sheep",
+      "path": "animals/animal_sheep.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "羊",
+      "desc": "产羊毛",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.25,
+          "half_h": 0.35
+        }
+      },
+      "animations": [
+        "idle",
+        "walk",
+        "eat"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "animals/animal_sheep.glb"
+        }
+      ],
+      "sizeKB": 96.0,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "animal_pig",
+      "designId": "animal_pig",
+      "path": "animals/animal_pig.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "猪",
+      "desc": "增重出售",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.22,
+          "half_h": 0.3
+        }
+      },
+      "animations": [
+        "idle",
+        "walk",
+        "eat"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "animals/animal_pig.glb"
+        }
+      ],
+      "sizeKB": 56.0,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "fish_carp",
+      "designId": "fish_carp",
+      "path": "fish/fish_carp.glb",
+      "category": "fish",
+      "priority": "P0",
+      "name": "鲤鱼",
+      "desc": "垂钓/养殖",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.1,
+          "half_h": 0.25
+        }
+      },
+      "animations": [
+        "swim"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "fish/fish_carp.glb"
+        }
+      ],
+      "sizeKB": 62.3,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "fish_bass",
+      "designId": "fish_bass",
+      "path": "fish/fish_bass.glb",
+      "category": "fish",
+      "priority": "P0",
+      "name": "鲈鱼",
+      "desc": "垂钓/养殖",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.09,
+          "half_h": 0.22
+        }
+      },
+      "animations": [
+        "swim"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "fish/fish_bass.glb"
+        }
+      ],
+      "sizeKB": 62.3,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "fish_trout",
+      "designId": "fish_trout",
+      "path": "fish/fish_trout.glb",
+      "category": "fish",
+      "priority": "P1",
+      "name": "鳟鱼",
+      "desc": "垂钓/养殖",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.09,
+          "half_h": 0.22
+        }
+      },
+      "animations": [
+        "swim"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "fish/fish_trout.glb"
+        }
+      ],
+      "sizeKB": 62.3,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "fish_tilapia",
+      "designId": "fish_tilapia",
+      "path": "fish/fish_tilapia.glb",
+      "category": "fish",
+      "priority": "P1",
+      "name": "罗非鱼",
+      "desc": "垂钓/养殖",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.09,
+          "half_h": 0.2
+        }
+      },
+      "animations": [
+        "swim"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "fish/fish_tilapia.glb"
+        }
+      ],
+      "sizeKB": 62.3,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "fish_catfish",
+      "designId": "fish_catfish",
+      "path": "fish/fish_catfish.glb",
+      "category": "fish",
+      "priority": "P1",
+      "name": "鲶鱼",
+      "desc": "垂钓/养殖",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.11,
+          "half_h": 0.26
+        }
+      },
+      "animations": [
+        "swim"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "fish/fish_catfish.glb"
+        }
+      ],
+      "sizeKB": 62.2,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "fish_grass_carp",
+      "designId": "fish_grass_carp",
+      "path": "fish/fish_grass_carp.glb",
+      "category": "fish",
+      "priority": "P2",
+      "name": "草鱼",
+      "desc": "垂钓/养殖",
+      "collision": {
+        "type": "dynamic",
+        "shape": "capsule",
+        "params": {
+          "r": 0.1,
+          "half_h": 0.25
+        }
+      },
+      "animations": [
+        "swim"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "fish/fish_grass_carp.glb"
+        }
+      ],
+      "sizeKB": 62.3,
+      "loadPriority": 2
+    },
+    {
+      "assetId": "prop_egg",
+      "designId": "prop_egg",
+      "path": "props/prop_egg.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "鸡蛋",
+      "desc": "",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.035
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_egg.glb"
+        }
+      ],
+      "sizeKB": 33.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_milk",
+      "designId": "prop_milk",
+      "path": "props/prop_milk.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "牛奶",
+      "desc": "",
+      "collision": {
+        "type": "dynamic",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.05,
+          "h": 0.16
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_milk.glb"
+        }
+      ],
+      "sizeKB": 3.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_feed",
+      "designId": "prop_feed",
+      "path": "props/prop_feed.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "饲料",
+      "desc": "",
+      "collision": {
+        "type": "dynamic",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.16,
+          "h": 0.3
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_feed.glb"
+        }
+      ],
+      "sizeKB": 2.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_basket",
+      "designId": "prop_basket",
+      "path": "props/prop_basket.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "篮子",
+      "desc": "",
+      "collision": {
+        "type": "dynamic",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.13,
+          "h": 0.12
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_basket.glb"
+        }
+      ],
+      "sizeKB": 3.5,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_hoe",
+      "designId": "prop_hoe",
+      "path": "props/prop_hoe.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "锄头",
+      "desc": "",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_hoe.glb"
+        }
+      ],
+      "sizeKB": 3.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_watering_can",
+      "designId": "prop_watering_can",
+      "path": "props/prop_watering_can.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "水壶",
+      "desc": "",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_watering_can.glb"
+        }
+      ],
+      "sizeKB": 4.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_fishing_rod",
+      "designId": "prop_fishing_rod",
+      "path": "props/prop_fishing_rod.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "鱼竿",
+      "desc": "",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_fishing_rod.glb"
+        }
+      ],
+      "sizeKB": 3.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_scythe",
+      "designId": "prop_scythe",
+      "path": "props/prop_scythe.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "镰刀",
+      "desc": "",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_scythe.glb"
+        }
+      ],
+      "sizeKB": 3.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_shipping_box",
+      "designId": "prop_shipping_box",
+      "path": "props/prop_shipping_box.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "出货箱",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.25,
+          "hy": 0.35,
+          "hz": 0.25
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_shipping_box.glb"
+        }
+      ],
+      "sizeKB": 2.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "prop_fence",
+      "designId": "prop_fence",
+      "path": "props/prop_fence.glb",
+      "category": "prop",
+      "priority": "P0",
+      "name": "围栏段",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.45,
+          "hz": 0.05
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/prop_fence.glb"
+        }
+      ],
+      "sizeKB": 4.9,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "building_farmhouse",
+      "designId": "building_farmhouse",
+      "path": "buildings/building_farmhouse.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "农舍",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 1.3,
+          "hy": 0.8,
+          "hz": 1.1
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/building_farmhouse.glb"
+        }
+      ],
+      "sizeKB": 94.7,
+      "loadPriority": 0,
+      "interactions": {
+        "doors": [
+          {
+            "name": "door",
+            "hinge": "left",
+            "angle": 110
+          }
+        ]
+      }
+    },
+    {
+      "assetId": "building_coop",
+      "designId": "building_coop",
+      "path": "buildings/building_coop.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "鸡舍",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.9,
+          "hy": 0.6,
+          "hz": 0.75
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/building_coop.glb"
+        }
+      ],
+      "sizeKB": 62.5,
+      "loadPriority": 0,
+      "interactions": {
+        "doors": [
+          {
+            "name": "door",
+            "hinge": "left",
+            "angle": 110
+          }
+        ]
+      }
+    },
+    {
+      "assetId": "building_barn",
+      "designId": "building_barn",
+      "path": "buildings/building_barn.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "牛棚",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 1.3,
+          "hy": 0.8,
+          "hz": 1.1
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/building_barn.glb"
+        }
+      ],
+      "sizeKB": 44.3,
+      "loadPriority": 0,
+      "interactions": {
+        "doors": [
+          {
+            "name": "bdoor_l",
+            "hinge": "left",
+            "angle": 100
+          },
+          {
+            "name": "bdoor_r",
+            "hinge": "right",
+            "angle": -100
+          }
+        ]
+      }
+    },
+    {
+      "assetId": "building_well",
+      "designId": "building_well",
+      "path": "buildings/building_well.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "水井",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.32,
+          "h": 0.4
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/building_well.glb"
+        }
+      ],
+      "sizeKB": 31.0,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "furn_bed",
+      "designId": "furn_bed",
+      "path": "buildings/furn_bed.glb",
+      "category": "furniture",
+      "priority": "P0",
+      "name": "床",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.45,
+          "hy": 0.25,
+          "hz": 0.95
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_bed.glb"
+        }
+      ],
+      "sizeKB": 4.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "furn_table",
+      "designId": "furn_table",
+      "path": "buildings/furn_table.glb",
+      "category": "furniture",
+      "priority": "P0",
+      "name": "木桌",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.6,
+          "hy": 0.36,
+          "hz": 0.35
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_table.glb"
+        }
+      ],
+      "sizeKB": 5.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "furn_chair",
+      "designId": "furn_chair",
+      "path": "buildings/furn_chair.glb",
+      "category": "furniture",
+      "priority": "P0",
+      "name": "椅子",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.22,
+          "hy": 0.45,
+          "hz": 0.22
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_chair.glb"
+        }
+      ],
+      "sizeKB": 5.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "furn_cabinet",
+      "designId": "furn_cabinet",
+      "path": "buildings/furn_cabinet.glb",
+      "category": "furniture",
+      "priority": "P0",
+      "name": "储物柜",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.45,
+          "hy": 0.7,
+          "hz": 0.25
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_cabinet.glb"
+        }
+      ],
+      "sizeKB": 5.3,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "furn_stove",
+      "designId": "furn_stove",
+      "path": "buildings/furn_stove.glb",
+      "category": "furniture",
+      "priority": "P0",
+      "name": "炉灶",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.4,
+          "hy": 0.45,
+          "hz": 0.3
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_stove.glb"
+        }
+      ],
+      "sizeKB": 6.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "furn_bookshelf",
+      "designId": "furn_bookshelf",
+      "path": "buildings/furn_bookshelf.glb",
+      "category": "furniture",
+      "priority": "P0",
+      "name": "书架",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.7,
+          "hz": 0.15
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_bookshelf.glb"
+        }
+      ],
+      "sizeKB": 12.3,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "furn_lamp",
+      "designId": "furn_lamp",
+      "path": "buildings/furn_lamp.glb",
+      "category": "furniture",
+      "priority": "P0",
+      "name": "台灯",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.12,
+          "h": 0.6
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_lamp.glb"
+        }
+      ],
+      "sizeKB": 5.5,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "furn_rug",
+      "designId": "furn_rug",
+      "path": "buildings/furn_rug.glb",
+      "category": "furniture",
+      "priority": "P0",
+      "name": "地毯",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.7,
+          "h": 0.02
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_rug.glb"
+        }
+      ],
+      "sizeKB": 2.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "furn_sofa",
+      "designId": "furn_sofa",
+      "path": "buildings/furn_sofa.glb",
+      "category": "furniture",
+      "priority": "P1",
+      "name": "沙发",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.8,
+          "hy": 0.4,
+          "hz": 0.35
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_sofa.glb"
+        }
+      ],
+      "sizeKB": 3.8,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "furn_workbench",
+      "designId": "furn_workbench",
+      "path": "buildings/furn_workbench.glb",
+      "category": "furniture",
+      "priority": "P1",
+      "name": "工作台",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.65,
+          "hy": 0.4,
+          "hz": 0.35
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "buildings/furn_workbench.glb"
+        }
+      ],
+      "sizeKB": 6.4,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "terrain_grass",
+      "designId": "terrain_grass",
+      "path": "props/terrain_grass.glb",
+      "category": "terrain",
+      "priority": "P0",
+      "name": "草地地块",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.05,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/terrain_grass.glb"
+        }
+      ],
+      "sizeKB": 1.5,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_rock",
+      "designId": "terrain_rock",
+      "path": "props/terrain_rock.glb",
+      "category": "terrain",
+      "priority": "P0",
+      "name": "石头",
+      "desc": "",
+      "collision": {
+        "type": "fixed",
+        "shape": "sphere",
+        "params": {
+          "r": 0.25
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/terrain_rock.glb"
+        }
+      ],
+      "sizeKB": 33.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_grass_tuft",
+      "designId": "terrain_grass_tuft",
+      "path": "props/terrain_grass_tuft.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "草丛",
+      "desc": "",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/terrain_grass_tuft.glb"
+        }
+      ],
+      "sizeKB": 3.3,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "building_kenney_house_a",
+      "path": "kenney/building_kenney_house_a.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "肯尼小屋A",
+      "desc": "Kenney CC0 专业资产: building-sample-house-a.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.8,
+          "hy": 1.0,
+          "hz": 0.8
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/building_kenney_house_a.glb"
+        }
+      ],
+      "sizeKB": 27.7,
+      "loadPriority": 0,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "building_kenney_house_b",
+      "path": "kenney/building_kenney_house_b.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "肯尼小屋B",
+      "desc": "Kenney CC0 专业资产: building-sample-house-b.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.8,
+          "hy": 1.0,
+          "hz": 0.8
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/building_kenney_house_b.glb"
+        }
+      ],
+      "sizeKB": 33.0,
+      "loadPriority": 0,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "building_kenney_house_c",
+      "path": "kenney/building_kenney_house_c.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "肯尼小屋C",
+      "desc": "Kenney CC0 专业资产: building-sample-house-c.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.8,
+          "hy": 1.0,
+          "hz": 0.8
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/building_kenney_house_c.glb"
+        }
+      ],
+      "sizeKB": 30.8,
+      "loadPriority": 0,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "building_kenney_tower_a",
+      "path": "kenney/building_kenney_tower_a.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "肯尼塔楼A",
+      "desc": "Kenney CC0 专业资产: building-sample-tower-a.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 1.4,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/building_kenney_tower_a.glb"
+        }
+      ],
+      "sizeKB": 34.4,
+      "loadPriority": 1,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "building_kenney_tower_b",
+      "path": "kenney/building_kenney_tower_b.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "肯尼塔楼B",
+      "desc": "Kenney CC0 专业资产: building-sample-tower-b.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 1.4,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/building_kenney_tower_b.glb"
+        }
+      ],
+      "sizeKB": 28.2,
+      "loadPriority": 1,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "building_kenney_roof_gable",
+      "path": "kenney/building_kenney_roof_gable.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "人字坡屋顶",
+      "desc": "Kenney CC0 专业资产: roof-gable.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.8,
+          "hy": 0.5,
+          "hz": 0.8
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/building_kenney_roof_gable.glb"
+        }
+      ],
+      "sizeKB": 3.5,
+      "loadPriority": 0,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "building_kenney_roof_slanted",
+      "path": "kenney/building_kenney_roof_slanted.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "单坡屋顶",
+      "desc": "Kenney CC0 专业资产: roof-slanted.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.8,
+          "hy": 0.5,
+          "hz": 0.8
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/building_kenney_roof_slanted.glb"
+        }
+      ],
+      "sizeKB": 4.0,
+      "loadPriority": 0,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "prop_kenney_door_brown",
+      "path": "kenney/prop_kenney_door_brown.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "木门(棕)",
+      "desc": "Kenney CC0 专业资产: door-brown.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.3,
+          "hy": 0.9,
+          "hz": 0.1
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/prop_kenney_door_brown.glb"
+        }
+      ],
+      "sizeKB": 4.0,
+      "loadPriority": 1,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "prop_kenney_door_white",
+      "path": "kenney/prop_kenney_door_white.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "木门(白)",
+      "desc": "Kenney CC0 专业资产: door-white.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.3,
+          "hy": 0.9,
+          "hz": 0.1
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/prop_kenney_door_white.glb"
+        }
+      ],
+      "sizeKB": 4.0,
+      "loadPriority": 1,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "prop_kenney_window_brown",
+      "path": "kenney/prop_kenney_window_brown.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "窗(棕)",
+      "desc": "Kenney CC0 专业资产: window-brown.glb",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.3,
+          "hy": 0.3,
+          "hz": 0.05
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "kenney/prop_kenney_window_brown.glb"
+        }
+      ],
+      "sizeKB": 7.1,
+      "loadPriority": 1,
+      "source": {
+        "kind": "cc0_kenney",
+        "license": "CC0",
+        "url": "https://kenney.nl/assets/modular-buildings"
+      }
+    },
+    {
+      "assetId": "building_quaternius_1Story",
+      "designId": "QB-01",
+      "path": "assets/quaternius_glb/building_quaternius_1Story.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "Quaternius 单层小屋",
+      "sizeKB": 171.6,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 2.4,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_1Story_GableRoof",
+      "designId": "QB-02",
+      "path": "assets/quaternius_glb/building_quaternius_1Story_GableRoof.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 单层人字顶",
+      "sizeKB": 111.0,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 3.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_1Story_RoundRoof",
+      "designId": "QB-03",
+      "path": "assets/quaternius_glb/building_quaternius_1Story_RoundRoof.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 单层圆顶",
+      "sizeKB": 153.9,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 2.6,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_1Story_Sign",
+      "designId": "QB-04",
+      "path": "assets/quaternius_glb/building_quaternius_1Story_Sign.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 单层招牌店",
+      "sizeKB": 160.2,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 2.6,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story",
+      "designId": "QB-05",
+      "path": "assets/quaternius_glb/building_quaternius_2Story.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "Quaternius 双层主楼",
+      "sizeKB": 216.8,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_2",
+      "designId": "QB-06",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_2.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层副楼",
+      "sizeKB": 244.2,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Balcony",
+      "designId": "QB-07",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Balcony.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层阳台",
+      "sizeKB": 252.9,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.2,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Center",
+      "designId": "QB-08",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Center.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层中央",
+      "sizeKB": 195.1,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Columns",
+      "designId": "QB-09",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Columns.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层廊柱",
+      "sizeKB": 221.4,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Double",
+      "designId": "QB-10",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Double.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层双开",
+      "sizeKB": 244.7,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_GableRoof",
+      "designId": "QB-11",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_GableRoof.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "Quaternius 双层人字顶",
+      "sizeKB": 193.6,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.4,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_RoundRoof",
+      "designId": "QB-12",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_RoundRoof.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层圆顶",
+      "sizeKB": 181.6,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.4,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Sidehouse",
+      "designId": "QB-13",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Sidehouse.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层侧屋",
+      "sizeKB": 338.1,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Sign",
+      "designId": "QB-14",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Sign.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层招牌店",
+      "sizeKB": 215.3,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.4,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Slim",
+      "designId": "QB-15",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Slim.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层窄楼",
+      "sizeKB": 176.3,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Stairs",
+      "designId": "QB-16",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Stairs.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层楼梯",
+      "sizeKB": 243.9,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.4,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Wide",
+      "designId": "QB-17",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Wide.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "Quaternius 双层宽楼",
+      "sizeKB": 288.1,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_2Story_Wide_2Doors",
+      "designId": "QB-18",
+      "path": "assets/quaternius_glb/building_quaternius_2Story_Wide_2Doors.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 双层宽门",
+      "sizeKB": 447.5,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 4.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_3Story_Balcony",
+      "designId": "QB-19",
+      "path": "assets/quaternius_glb/building_quaternius_3Story_Balcony.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 三层阳台",
+      "sizeKB": 301.6,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 6.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_3Story_Slim",
+      "designId": "QB-20",
+      "path": "assets/quaternius_glb/building_quaternius_3Story_Slim.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 三层窄楼",
+      "sizeKB": 223.5,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 6.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_3Story_Small",
+      "designId": "QB-21",
+      "path": "assets/quaternius_glb/building_quaternius_3Story_Small.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "Quaternius 三层小楼",
+      "sizeKB": 194.3,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 6.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_4Story",
+      "designId": "QB-22",
+      "path": "assets/quaternius_glb/building_quaternius_4Story.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "Quaternius 四层主楼",
+      "sizeKB": 401.5,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 8.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_4Story_Center",
+      "designId": "QB-23",
+      "path": "assets/quaternius_glb/building_quaternius_4Story_Center.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 四层中央",
+      "sizeKB": 371.2,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 8.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_4Story_Wide_2Doors",
+      "designId": "QB-24",
+      "path": "assets/quaternius_glb/building_quaternius_4Story_Wide_2Doors.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 四层宽门",
+      "sizeKB": 758.8,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 8.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_4Story_Wide_2Doors_Roof",
+      "designId": "QB-25",
+      "path": "assets/quaternius_glb/building_quaternius_4Story_Wide_2Doors_Roof.glb",
+      "category": "building",
+      "priority": "P1",
+      "name": "Quaternius 四层宽门带顶",
+      "sizeKB": 698.5,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 8.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_quaternius_6Story_Stack",
+      "designId": "QB-26",
+      "path": "assets/quaternius_glb/building_quaternius_6Story_Stack.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "Quaternius 六层叠楼",
+      "sizeKB": 351.4,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Ultimate Textured Building Pack, Dec 2019)",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "width": 2.2,
+          "height": 12.0,
+          "depth": 2.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_5animal_bird",
+      "designId": "QA5-01",
+      "path": "assets/quaternius_animals5_glb/quaternius_bird.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 鸟(蓝灰)",
+      "sizeKB": 10.6,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Animals Pack by Quaternius, 2016)",
+      "color": [
+        159,
+        184,
+        200
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_5animal_Chick",
+      "designId": "QA5-02",
+      "path": "assets/quaternius_animals5_glb/quaternius_Chick.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "Quaternius 小鸡(黄)",
+      "sizeKB": 16.4,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Animals Pack by Quaternius, 2016)",
+      "color": [
+        255,
+        200,
+        74
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_5animal_Fish",
+      "designId": "QA5-03",
+      "path": "assets/quaternius_animals5_glb/quaternius_Fish.glb",
+      "category": "fish",
+      "priority": "P1",
+      "name": "Quaternius 鱼(橙红)",
+      "sizeKB": 22.1,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Animals Pack by Quaternius, 2016)",
+      "color": [
+        255,
+        107,
+        53
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_5animal_Red_Fox",
+      "designId": "QA5-04",
+      "path": "assets/quaternius_animals5_glb/quaternius_Red Fox.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 红狐",
+      "sizeKB": 27.1,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Animals Pack by Quaternius, 2016)",
+      "color": [
+        230,
+        74,
+        41
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_5animal_Whale",
+      "designId": "QA5-05",
+      "path": "assets/quaternius_animals5_glb/quaternius_Whale.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "Quaternius 鲸鱼(深蓝)",
+      "sizeKB": 48.8,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Animals Pack by Quaternius, 2016)",
+      "color": [
+        74,
+        107,
+        138
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.4
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_farm_Cow",
+      "designId": "QFA-01",
+      "path": "assets/quaternius_farm_animals_glb/quaternius_Cow.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "Quaternius 牛(白)",
+      "sizeKB": 44.3,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Farm Animals Pack)",
+      "color": [
+        232,
+        232,
+        232
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_farm_Horse",
+      "designId": "QFA-02",
+      "path": "assets/quaternius_farm_animals_glb/quaternius_Horse.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "Quaternius 马(棕)",
+      "sizeKB": 38.8,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Farm Animals Pack)",
+      "color": [
+        139,
+        74,
+        43
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_farm_Llama",
+      "designId": "QFA-03",
+      "path": "assets/quaternius_farm_animals_glb/quaternius_Llama.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 羊驼(米)",
+      "sizeKB": 37.0,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Farm Animals Pack)",
+      "color": [
+        245,
+        230,
+        211
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_farm_Pig",
+      "designId": "QFA-04",
+      "path": "assets/quaternius_farm_animals_glb/quaternius_Pig.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 猪(粉)",
+      "sizeKB": 31.6,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Farm Animals Pack)",
+      "color": [
+        240,
+        170,
+        192
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_farm_Pug",
+      "designId": "QFA-05",
+      "path": "assets/quaternius_farm_animals_glb/quaternius_Pug.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 哈巴狗(棕)",
+      "sizeKB": 35.0,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Farm Animals Pack)",
+      "color": [
+        200,
+        160,
+        106
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_farm_Sheep",
+      "designId": "QFA-06",
+      "path": "assets/quaternius_farm_animals_glb/quaternius_Sheep.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 羊(白)",
+      "sizeKB": 34.4,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Farm Animals Pack)",
+      "color": [
+        240,
+        236,
+        224
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "quaternius_farm_Zebra",
+      "designId": "QFA-07",
+      "path": "assets/quaternius_farm_animals_glb/quaternius_Zebra.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 斑马",
+      "sizeKB": 73.9,
+      "source": "cc0_quaternius",
+      "license": "CC0",
+      "attribution": "Quaternius (Farm Animals Pack)",
+      "color": [
+        245,
+        245,
+        245
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "building_upgrade_l1",
+      "designId": "UPG-1",
+      "path": "upgrade_buildings/building_upgrade_l1.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "茅草小屋",
+      "desc": "升级 Lv.1：茅草小屋",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 1.25,
+          "hy": 1.1,
+          "hz": 1.25
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "upgrade_buildings/building_upgrade_l1.glb"
+        }
+      ],
+      "sizeKB": 43.6,
+      "loadPriority": 0,
+      "interactions": {
+        "doors": [
+          {
+            "name": "door_panel",
+            "hinge": "left",
+            "angle": 110
+          }
+        ]
+      }
+    },
+    {
+      "assetId": "building_upgrade_l2",
+      "designId": "UPG-2",
+      "path": "upgrade_buildings/building_upgrade_l2.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "木屋",
+      "desc": "升级 Lv.2：木屋",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 1.5,
+          "hy": 1.3,
+          "hz": 1.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "upgrade_buildings/building_upgrade_l2.glb"
+        }
+      ],
+      "sizeKB": 52.7,
+      "loadPriority": 0,
+      "interactions": {
+        "doors": [
+          {
+            "name": "door_panel",
+            "hinge": "left",
+            "angle": 110
+          }
+        ]
+      }
+    },
+    {
+      "assetId": "building_upgrade_l3",
+      "designId": "UPG-3",
+      "path": "upgrade_buildings/building_upgrade_l3.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "砖瓦房",
+      "desc": "升级 Lv.3：砖瓦房",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 2.0,
+          "hy": 1.5,
+          "hz": 1.75
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "upgrade_buildings/building_upgrade_l3.glb"
+        }
+      ],
+      "sizeKB": 90.2,
+      "loadPriority": 0,
+      "interactions": {
+        "doors": [
+          {
+            "name": "door_panel",
+            "hinge": "left",
+            "angle": 110
+          }
+        ]
+      }
+    },
+    {
+      "assetId": "building_upgrade_l4",
+      "designId": "UPG-4",
+      "path": "upgrade_buildings/building_upgrade_l4.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "石砌宅邸",
+      "desc": "升级 Lv.4：石砌宅邸",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 2.5,
+          "hy": 1.8,
+          "hz": 2.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "upgrade_buildings/building_upgrade_l4.glb"
+        }
+      ],
+      "sizeKB": 91.3,
+      "loadPriority": 0,
+      "interactions": {
+        "doors": [
+          {
+            "name": "door_l",
+            "hinge": "left",
+            "angle": 100
+          },
+          {
+            "name": "door_r",
+            "hinge": "right",
+            "angle": -100
+          }
+        ]
+      }
+    },
+    {
+      "assetId": "building_upgrade_l5",
+      "designId": "UPG-5",
+      "path": "upgrade_buildings/building_upgrade_l5.glb",
+      "category": "building",
+      "priority": "P0",
+      "name": "豪华庄园",
+      "desc": "升级 Lv.5：豪华庄园",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 3.0,
+          "hy": 2.2,
+          "hz": 2.25
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "upgrade_buildings/building_upgrade_l5.glb"
+        }
+      ],
+      "sizeKB": 215.3,
+      "loadPriority": 0,
+      "interactions": {
+        "doors": [
+          {
+            "name": "door_l",
+            "hinge": "left",
+            "angle": 100
+          },
+          {
+            "name": "door_r",
+            "hinge": "right",
+            "angle": -100
+          }
+        ]
+      }
+    },
+    {
+      "assetId": "anim_quaternius_farm_Cow",
+      "designId": "QAN-01",
+      "path": "assets/quaternius_animated/farm_Cow_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 牛(动画)",
+      "sizeKB": 521.0,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 6,
+        "names": [
+          "Cow_anim0",
+          "Cow_anim1",
+          "Cow_anim2",
+          "Cow_anim3",
+          "Cow_anim4",
+          "Cow_anim5"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_farm_Horse",
+      "designId": "QAN-02",
+      "path": "assets/quaternius_animated/farm_Horse_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 马(动画)",
+      "sizeKB": 476.7,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 6,
+        "names": [
+          "Horse_anim0",
+          "Horse_anim1",
+          "Horse_anim2",
+          "Horse_anim3",
+          "Horse_anim4",
+          "Horse_anim5"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_farm_Llama",
+      "designId": "QAN-03",
+      "path": "assets/quaternius_animated/farm_Llama_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 羊驼(动画)",
+      "sizeKB": 257.2,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 2,
+        "names": [
+          "Llama_anim0",
+          "Llama_anim1"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_farm_Pig",
+      "designId": "QAN-04",
+      "path": "assets/quaternius_animated/farm_Pig_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 猪(动画)",
+      "sizeKB": 227.4,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 2,
+        "names": [
+          "Pig_anim0",
+          "Pig_anim1"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_farm_Pug",
+      "designId": "QAN-05",
+      "path": "assets/quaternius_animated/farm_Pug_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 哈巴狗(动画)",
+      "sizeKB": 222.9,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 2,
+        "names": [
+          "Pug_anim0",
+          "Pug_anim1"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_farm_Sheep",
+      "designId": "QAN-06",
+      "path": "assets/quaternius_animated/farm_Sheep_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 羊(动画)",
+      "sizeKB": 240.1,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 2,
+        "names": [
+          "Sheep_anim0",
+          "Sheep_anim1"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_farm_Zebra",
+      "designId": "QAN-07",
+      "path": "assets/quaternius_animated/farm_Zebra_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 斑马(动画)",
+      "sizeKB": 656.6,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 6,
+        "names": [
+          "Zebra_anim0",
+          "Zebra_anim1",
+          "Zebra_anim2",
+          "Zebra_anim3",
+          "Zebra_anim4",
+          "Zebra_anim5"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_wild_bird",
+      "designId": "QAN-08",
+      "path": "assets/quaternius_animated/wild_bird_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 鸟(动画)",
+      "sizeKB": 98.9,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 3,
+        "names": [
+          "Bird_anim0",
+          "Bird_anim1",
+          "Bird_anim2"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_wild_chick",
+      "designId": "QAN-09",
+      "path": "assets/quaternius_animated/wild_chick_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 小鸡(动画)",
+      "sizeKB": 81.8,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 1,
+        "names": [
+          "Chick_anim0"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_wild_fish",
+      "designId": "QAN-10",
+      "path": "assets/quaternius_animated/wild_fish_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 鱼(动画)",
+      "sizeKB": 80.1,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 1,
+        "names": [
+          "Fish_anim0"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_wild_redfox",
+      "designId": "QAN-11",
+      "path": "assets/quaternius_animated/wild_redfox_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 红狐(动画)",
+      "sizeKB": 146.2,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 1,
+        "names": [
+          "Redfox_anim0"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "anim_quaternius_wild_whale",
+      "designId": "QAN-12",
+      "path": "assets/quaternius_animated/wild_whale_animated.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "Quaternius 鲸鱼(动画)",
+      "sizeKB": 211.5,
+      "source": "cc0_quaternius_animated",
+      "license": "CC0",
+      "attribution": "Quaternius (Animated Farm/Animals Pack, FBX 转骨骼动画)",
+      "animations": {
+        "count": 2,
+        "names": [
+          "Whale_anim0",
+          "Whale_anim1"
+        ]
+      },
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.5
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "lifecycle_duck_egg",
+      "designId": "LC-01",
+      "path": "lifecycle/lifecycle_duck_egg.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "鸭蛋",
+      "desc": "养殖生命周期：鸭蛋",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.05
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_duck_egg.glb"
+        }
+      ],
+      "sizeKB": 35.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_duck_baby",
+      "designId": "LC-02",
+      "path": "lifecycle/lifecycle_duck_baby.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "小鸭（幼年）",
+      "desc": "养殖生命周期：小鸭（幼年）",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.18
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_duck_baby.glb"
+        }
+      ],
+      "sizeKB": 134.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_duck_adult",
+      "designId": "LC-03",
+      "path": "lifecycle/lifecycle_duck_adult.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "成年鸭",
+      "desc": "养殖生命周期：成年鸭",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.3
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_duck_adult.glb"
+        }
+      ],
+      "sizeKB": 85.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_goose_egg",
+      "designId": "LC-04",
+      "path": "lifecycle/lifecycle_goose_egg.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "鹅蛋",
+      "desc": "养殖生命周期：鹅蛋",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.055
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_goose_egg.glb"
+        }
+      ],
+      "sizeKB": 35.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_goose_baby",
+      "designId": "LC-05",
+      "path": "lifecycle/lifecycle_goose_baby.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "小鹅（幼年）",
+      "desc": "养殖生命周期：小鹅（幼年）",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.2
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_goose_baby.glb"
+        }
+      ],
+      "sizeKB": 134.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_goose_adult",
+      "designId": "LC-06",
+      "path": "lifecycle/lifecycle_goose_adult.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "成年鹅",
+      "desc": "养殖生命周期：成年鹅",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.36
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_goose_adult.glb"
+        }
+      ],
+      "sizeKB": 85.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_chicken_baby",
+      "designId": "LC-07",
+      "path": "lifecycle/lifecycle_chicken_baby.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "小鸡（幼年）",
+      "desc": "养殖生命周期：小鸡（幼年）",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.16
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_chicken_baby.glb"
+        }
+      ],
+      "sizeKB": 163.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_chicken_egg_brown",
+      "designId": "LC-08",
+      "path": "lifecycle/lifecycle_chicken_egg_brown.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "褐壳鸡蛋",
+      "desc": "养殖生命周期：褐壳鸡蛋",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.04
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_chicken_egg_brown.glb"
+        }
+      ],
+      "sizeKB": 35.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_cow_calf",
+      "designId": "LC-09",
+      "path": "lifecycle/lifecycle_cow_calf.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "牛犊（幼年）",
+      "desc": "养殖生命周期：牛犊（幼年）",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.42
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_cow_calf.glb"
+        }
+      ],
+      "sizeKB": 134.6,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_sheep_lamb",
+      "designId": "LC-10",
+      "path": "lifecycle/lifecycle_sheep_lamb.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "羊羔（幼年）",
+      "desc": "养殖生命周期：羊羔（幼年）",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.31
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_sheep_lamb.glb"
+        }
+      ],
+      "sizeKB": 139.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "lifecycle_pig_piglet",
+      "designId": "LC-11",
+      "path": "lifecycle/lifecycle_pig_piglet.glb",
+      "category": "animal",
+      "priority": "P0",
+      "name": "猪仔（幼年）",
+      "desc": "养殖生命周期：猪仔（幼年）",
+      "source": "procedural",
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "r": 0.23
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "lifecycle/lifecycle_pig_piglet.glb"
+        }
+      ],
+      "sizeKB": 107.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tomato_seed",
+      "designId": "PLA-S01",
+      "path": "plants/plant_tomato_seed.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "番茄-种子",
+      "desc": "番茄生长阶段 1/3",
+      "source": "procedural",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tomato_seed.glb"
+        }
+      ],
+      "sizeKB": 5.1,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tomato_seedling",
+      "designId": "PLA-S02",
+      "path": "plants/plant_tomato_seedling.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "番茄-幼苗",
+      "desc": "番茄生长阶段 2/3",
+      "source": "procedural",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tomato_seedling.glb"
+        }
+      ],
+      "sizeKB": 5.2,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_pumpkin_seed",
+      "designId": "PLA-S04",
+      "path": "plants/plant_pumpkin_seed.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "南瓜-种子",
+      "desc": "南瓜生长阶段 1/3",
+      "source": "procedural",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_pumpkin_seed.glb"
+        }
+      ],
+      "sizeKB": 5.2,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_pumpkin_seedling",
+      "designId": "PLA-S05",
+      "path": "plants/plant_pumpkin_seedling.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "南瓜-幼苗",
+      "desc": "南瓜生长阶段 2/3",
+      "source": "procedural",
+      "collision": {
+        "type": "none"
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_pumpkin_seedling.glb"
+        }
+      ],
+      "sizeKB": 7.0,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tree_oak_spring",
+      "designId": "PLA-S07",
+      "path": "plants/plant_tree_oak_spring.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "橡树-春",
+      "desc": "橡树季节皮肤-春",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_oak_spring.glb"
+        }
+      ],
+      "sizeKB": 32.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tree_oak_summer",
+      "designId": "PLA-S08",
+      "path": "plants/plant_tree_oak_summer.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "橡树-夏",
+      "desc": "橡树季节皮肤-夏",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_oak_summer.glb"
+        }
+      ],
+      "sizeKB": 21.9,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tree_oak_autumn",
+      "designId": "PLA-S09",
+      "path": "plants/plant_tree_oak_autumn.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "橡树-秋",
+      "desc": "橡树季节皮肤-秋",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_oak_autumn.glb"
+        }
+      ],
+      "sizeKB": 22.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tree_oak_winter",
+      "designId": "PLA-S10",
+      "path": "plants/plant_tree_oak_winter.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "橡树-冬",
+      "desc": "橡树季节皮肤-冬",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_oak_winter.glb"
+        }
+      ],
+      "sizeKB": 18.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tree_apple_spring",
+      "designId": "PLA-S11",
+      "path": "plants/plant_tree_apple_spring.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "苹果树-春",
+      "desc": "苹果树季节皮肤-春",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_apple_spring.glb"
+        }
+      ],
+      "sizeKB": 34.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tree_apple_summer",
+      "designId": "PLA-S12",
+      "path": "plants/plant_tree_apple_summer.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "苹果树-夏",
+      "desc": "苹果树季节皮肤-夏",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_apple_summer.glb"
+        }
+      ],
+      "sizeKB": 29.6,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tree_apple_autumn",
+      "designId": "PLA-S13",
+      "path": "plants/plant_tree_apple_autumn.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "苹果树-秋",
+      "desc": "苹果树季节皮肤-秋",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_apple_autumn.glb"
+        }
+      ],
+      "sizeKB": 29.6,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_tree_apple_winter",
+      "designId": "PLA-S14",
+      "path": "plants/plant_tree_apple_winter.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "苹果树-冬",
+      "desc": "苹果树季节皮肤-冬",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.08,
+          "h": 1.0
+        }
+      },
+      "animations": [
+        "sway"
+      ],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tree_apple_winter.glb"
+        }
+      ],
+      "sizeKB": 18.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_grass_spring",
+      "designId": "TER-S01",
+      "path": "props/terrain_grass_spring.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "草地-春",
+      "desc": "草地季节皮肤-春",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.05,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/terrain_grass_spring.glb"
+        }
+      ],
+      "sizeKB": 5.2,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "terrain_grass_summer",
+      "designId": "TER-S02",
+      "path": "props/terrain_grass_summer.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "草地-夏",
+      "desc": "草地季节皮肤-夏",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.05,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/terrain_grass_summer.glb"
+        }
+      ],
+      "sizeKB": 1.5,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "terrain_grass_autumn",
+      "designId": "TER-S03",
+      "path": "props/terrain_grass_autumn.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "草地-秋",
+      "desc": "草地季节皮肤-秋",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.05,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/terrain_grass_autumn.glb"
+        }
+      ],
+      "sizeKB": 4.3,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "terrain_grass_winter",
+      "designId": "TER-S04",
+      "path": "props/terrain_grass_winter.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "草地-冬",
+      "desc": "草地季节皮肤-冬",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.05,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/terrain_grass_winter.glb"
+        }
+      ],
+      "sizeKB": 5.2,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tilled_soil_spring",
+      "designId": "PLA-S15",
+      "path": "plants/plant_tilled_soil_spring.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "耕地-春",
+      "desc": "耕地季节皮肤-春",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.03,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tilled_soil_spring.glb"
+        }
+      ],
+      "sizeKB": 6.0,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tilled_soil_summer",
+      "designId": "PLA-S16",
+      "path": "plants/plant_tilled_soil_summer.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "耕地-夏",
+      "desc": "耕地季节皮肤-夏",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.03,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tilled_soil_summer.glb"
+        }
+      ],
+      "sizeKB": 3.7,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tilled_soil_autumn",
+      "designId": "PLA-S17",
+      "path": "plants/plant_tilled_soil_autumn.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "耕地-秋",
+      "desc": "耕地季节皮肤-秋(干裂)",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.03,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tilled_soil_autumn.glb"
+        }
+      ],
+      "sizeKB": 7.4,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tilled_soil_winter",
+      "designId": "PLA-S18",
+      "path": "plants/plant_tilled_soil_winter.glb",
+      "category": "plant",
+      "priority": "P1",
+      "name": "耕地-冬",
+      "desc": "耕地季节皮肤-冬(覆雪)",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 0.5,
+          "hy": 0.03,
+          "hz": 0.5
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tilled_soil_winter.glb"
+        }
+      ],
+      "sizeKB": 6.0,
+      "loadPriority": 1
+    },
+    {
+      "assetId": "plant_tomato_mature",
+      "designId": "PLA-S03",
+      "path": "plants/plant_tomato_mature.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "番茄-成熟",
+      "desc": "番茄生长阶段 3/3",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "cylinder",
+        "params": {
+          "r": 0.12,
+          "h": 0.3
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_tomato_mature.glb"
+        }
+      ],
+      "sizeKB": 69.8,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "plant_pumpkin_mature",
+      "designId": "PLA-S06",
+      "path": "plants/plant_pumpkin_mature.glb",
+      "category": "plant",
+      "priority": "P0",
+      "name": "南瓜-成熟",
+      "desc": "南瓜生长阶段 3/3",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "sphere",
+        "params": {
+          "r": 0.22
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "plants/plant_pumpkin_mature.glb"
+        }
+      ],
+      "sizeKB": 36.8,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_ocean",
+      "designId": "MAP-01",
+      "path": "terrain/terrain_ocean.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "海洋水面",
+      "desc": "800×800m 海面 + 波光斑块（顶面≈8.3k 顶点）",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 400,
+          "hy": 1.0,
+          "hz": 400
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_ocean.glb"
+        }
+      ],
+      "sizeKB": 526.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_01",
+      "designId": "MAP-02",
+      "path": "terrain/terrain_island_01.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-01",
+      "desc": "岛屿 直径110m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 55.0,
+          "hy": 25.0,
+          "hz": 55.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_01.glb"
+        }
+      ],
+      "sizeKB": 124.9,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_02",
+      "designId": "MAP-03",
+      "path": "terrain/terrain_island_02.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-02",
+      "desc": "岛屿 直径113m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 56.4,
+          "hy": 25.0,
+          "hz": 56.4
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_02.glb"
+        }
+      ],
+      "sizeKB": 135.2,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_03",
+      "designId": "MAP-04",
+      "path": "terrain/terrain_island_03.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-03",
+      "desc": "岛屿 直径116m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 57.800000000000004,
+          "hy": 25.0,
+          "hz": 57.800000000000004
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_03.glb"
+        }
+      ],
+      "sizeKB": 129.3,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_04",
+      "designId": "MAP-05",
+      "path": "terrain/terrain_island_04.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-04",
+      "desc": "岛屿 直径118m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 59.2,
+          "hy": 25.0,
+          "hz": 59.2
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_04.glb"
+        }
+      ],
+      "sizeKB": 135.0,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_05",
+      "designId": "MAP-06",
+      "path": "terrain/terrain_island_05.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-05",
+      "desc": "岛屿 直径121m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 60.599999999999994,
+          "hy": 25.0,
+          "hz": 60.599999999999994
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_05.glb"
+        }
+      ],
+      "sizeKB": 132.0,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_06",
+      "designId": "MAP-07",
+      "path": "terrain/terrain_island_06.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-06",
+      "desc": "岛屿 直径124m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 62.0,
+          "hy": 25.0,
+          "hz": 62.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_06.glb"
+        }
+      ],
+      "sizeKB": 130.3,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_07",
+      "designId": "MAP-08",
+      "path": "terrain/terrain_island_07.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-07",
+      "desc": "岛屿 直径127m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 63.4,
+          "hy": 25.0,
+          "hz": 63.4
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_07.glb"
+        }
+      ],
+      "sizeKB": 121.7,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_08",
+      "designId": "MAP-09",
+      "path": "terrain/terrain_island_08.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-08",
+      "desc": "岛屿 直径130m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 64.80000000000001,
+          "hy": 25.0,
+          "hz": 64.80000000000001
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_08.glb"
+        }
+      ],
+      "sizeKB": 117.8,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_09",
+      "designId": "MAP-10",
+      "path": "terrain/terrain_island_09.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-09",
+      "desc": "岛屿 直径132m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 66.2,
+          "hy": 25.0,
+          "hz": 66.2
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_09.glb"
+        }
+      ],
+      "sizeKB": 147.5,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_10",
+      "designId": "MAP-11",
+      "path": "terrain/terrain_island_10.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-10",
+      "desc": "岛屿 直径135m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 67.6,
+          "hy": 25.0,
+          "hz": 67.6
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_10.glb"
+        }
+      ],
+      "sizeKB": 148.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_11",
+      "designId": "MAP-12",
+      "path": "terrain/terrain_island_11.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-11",
+      "desc": "岛屿 直径138m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 69.0,
+          "hy": 25.0,
+          "hz": 69.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_11.glb"
+        }
+      ],
+      "sizeKB": 131.6,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_12",
+      "designId": "MAP-13",
+      "path": "terrain/terrain_island_12.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-12",
+      "desc": "岛屿 直径141m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 70.4,
+          "hy": 25.0,
+          "hz": 70.4
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_12.glb"
+        }
+      ],
+      "sizeKB": 138.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_13",
+      "designId": "MAP-14",
+      "path": "terrain/terrain_island_13.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-13",
+      "desc": "岛屿 直径144m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 71.8,
+          "hy": 25.0,
+          "hz": 71.8
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_13.glb"
+        }
+      ],
+      "sizeKB": 135.3,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_14",
+      "designId": "MAP-15",
+      "path": "terrain/terrain_island_14.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-14",
+      "desc": "岛屿 直径146m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 73.2,
+          "hy": 25.0,
+          "hz": 73.2
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_14.glb"
+        }
+      ],
+      "sizeKB": 137.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_15",
+      "designId": "MAP-16",
+      "path": "terrain/terrain_island_15.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-15",
+      "desc": "岛屿 直径149m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 74.6,
+          "hy": 25.0,
+          "hz": 74.6
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_15.glb"
+        }
+      ],
+      "sizeKB": 115.1,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "terrain_island_16",
+      "designId": "MAP-17",
+      "path": "terrain/terrain_island_16.glb",
+      "category": "terrain",
+      "priority": "P1",
+      "name": "岛屿-16",
+      "desc": "岛屿 直径150m 沙滩5m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 75.0,
+          "hy": 25.0,
+          "hz": 75.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "terrain/terrain_island_16.glb"
+        }
+      ],
+      "sizeKB": 135.9,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_copper_small",
+      "designId": "ORE-01",
+      "path": "props/ore_copper_small.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "铜矿-小型",
+      "desc": "铜矿 小型矿藏 8m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 4.0,
+          "hy": 2.5,
+          "hz": 4.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_copper_small.glb"
+        }
+      ],
+      "sizeKB": 19.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_copper_medium",
+      "designId": "ORE-02",
+      "path": "props/ore_copper_medium.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "铜矿-中型",
+      "desc": "铜矿 中型矿藏 20m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 10.0,
+          "hy": 9.0,
+          "hz": 10.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_copper_medium.glb"
+        }
+      ],
+      "sizeKB": 29.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_copper_large",
+      "designId": "ORE-03",
+      "path": "props/ore_copper_large.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "铜矿-大型",
+      "desc": "铜矿 大型矿藏 40m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 20.0,
+          "hy": 22.0,
+          "hz": 20.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_copper_large.glb"
+        }
+      ],
+      "sizeKB": 56.9,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_silver_small",
+      "designId": "ORE-04",
+      "path": "props/ore_silver_small.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "银矿-小型",
+      "desc": "银矿 小型矿藏 8m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 4.0,
+          "hy": 2.5,
+          "hz": 4.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_silver_small.glb"
+        }
+      ],
+      "sizeKB": 19.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_silver_medium",
+      "designId": "ORE-05",
+      "path": "props/ore_silver_medium.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "银矿-中型",
+      "desc": "银矿 中型矿藏 20m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 10.0,
+          "hy": 9.0,
+          "hz": 10.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_silver_medium.glb"
+        }
+      ],
+      "sizeKB": 29.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_silver_large",
+      "designId": "ORE-06",
+      "path": "props/ore_silver_large.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "银矿-大型",
+      "desc": "银矿 大型矿藏 40m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 20.0,
+          "hy": 22.0,
+          "hz": 20.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_silver_large.glb"
+        }
+      ],
+      "sizeKB": 56.9,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_gold_small",
+      "designId": "ORE-07",
+      "path": "props/ore_gold_small.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "金矿-小型",
+      "desc": "金矿 小型矿藏 8m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 4.0,
+          "hy": 2.5,
+          "hz": 4.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_gold_small.glb"
+        }
+      ],
+      "sizeKB": 19.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_gold_medium",
+      "designId": "ORE-08",
+      "path": "props/ore_gold_medium.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "金矿-中型",
+      "desc": "金矿 中型矿藏 20m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 10.0,
+          "hy": 9.0,
+          "hz": 10.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_gold_medium.glb"
+        }
+      ],
+      "sizeKB": 29.4,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "ore_gold_large",
+      "designId": "ORE-09",
+      "path": "props/ore_gold_large.glb",
+      "category": "prop",
+      "priority": "P1",
+      "name": "金矿-大型",
+      "desc": "金矿 大型矿藏 40m",
+      "source": "procedural",
+      "collision": {
+        "type": "fixed",
+        "shape": "box",
+        "params": {
+          "hx": 20.0,
+          "hy": 22.0,
+          "hz": 20.0
+        }
+      },
+      "animations": [],
+      "lodLevels": [
+        {
+          "level": 0,
+          "path": "props/ore_gold_large.glb"
+        }
+      ],
+      "sizeKB": 56.5,
+      "loadPriority": 0
+    },
+    {
+      "assetId": "animal_duck_white",
+      "designId": "ANI-DK-01",
+      "path": "assets/animals/animal_duck_white.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "程序化 白鸭（分离式）",
+      "sizeKB": 37.3,
+      "source": "procedural",
+      "license": "CC0",
+      "attribution": "程序化生成（gen_duck.py）",
+      "color": [
+        245,
+        245,
+        240
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.35
+        }
+      },
+      "animatable": {
+        "parts": [
+          "foot_l",
+          "foot_r",
+          "neck_group"
+        ],
+        "suggested": {
+          "walk": "foot_l/foot_r.rotation.x ±25°",
+          "eat": "neck_group.rotation.x 低头 45°"
+        }
+      },
+      "loadPriority": "lazy"
+    },
+    {
+      "assetId": "animal_duck_brown",
+      "designId": "ANI-DK-02",
+      "path": "assets/animals/animal_duck_brown.glb",
+      "category": "animal",
+      "priority": "P1",
+      "name": "程序化 棕鸭（分离式）",
+      "sizeKB": 37.3,
+      "source": "procedural",
+      "license": "CC0",
+      "attribution": "程序化生成（gen_duck.py）",
+      "color": [
+        150,
+        110,
+        70
+      ],
+      "collision": {
+        "type": "dynamic",
+        "shape": "sphere",
+        "params": {
+          "radius": 0.35
+        }
+      },
+      "animatable": {
+        "parts": [
+          "foot_l",
+          "foot_r",
+          "neck_group"
+        ],
+        "suggested": {
+          "walk": "foot_l/foot_r.rotation.x ±25°",
+          "eat": "neck_group.rotation.x 低头 45°"
+        }
+      },
+      "loadPriority": "lazy"
+    }
+  ]
+}
