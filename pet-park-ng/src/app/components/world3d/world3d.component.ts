@@ -411,36 +411,33 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (st) {
       this.px = st.gx; this.py = st.y; this.pz = st.gz; this.prot = st.rot;
     }
-    // 平滑插值：显示位置逐步追赶权威位置（消除抖动和跳跃）
+    // 平滑插值：水平方向纯 lerp（无地面冲突）
     const k = World3dComponent.SMOOTH_FACTOR;
     this.dpx += (this.px - this.dpx) * k;
     this.dpz += (this.pz - this.dpz) * k;
-    this.dpy += (this.py - this.dpy) * k;
     // rot 用角度最短路径差分
     let dr = this.prot - this.dprot;
     while (dr > Math.PI) dr -= 2 * Math.PI;
     while (dr < -Math.PI) dr += 2 * Math.PI;
     this.dprot += dr * k;
 
+    // 垂直方向统一单路径插值（修复原双重写入导致的抖动）：
+    //   空中 → 纯 lerp 追踪物理跳跃弧线（丝滑）
+    //   地面 → 加速收敛到地面高度（防止下陷/悬空）
+    const groundY = this.heightAt(this.dpx, this.dpz);
+    const targetY = (groundY ?? this.dpy) + 0.35; // 脚底偏移
+    const airborne = this.py > targetY + 0.5;       // 降低阈值（原0.8），更快响应起跳/落地
+    if (airborne) {
+      // 空中：lerp 平滑追踪物理权威 Y（跳跃弧线丝滑）
+      this.dpy += (this.py - this.dpy) * k;
+    } else {
+      // 着地：加速贴地（比水平 lerp 快，防止陷入地形但不过度生硬）
+      this.dpy += (targetY - this.dpy) * Math.min(k * 2.5, 0.40);
+    }
+
+    // 统一一次性设置玩家位置（不再有第二处覆写）
     this.playerMesh.position.set(this.dpx, this.dpy, this.dpz);
     this.playerMesh.rotation.y = this.dprot;
-    // 贴地校正：仅在着地时用高度场校正（防止悬空/陷入）
-    // 跳跃时不校正，让物理权威 Y 通过 lerp 平滑显示（消除抖动）
-    const groundY = this.heightAt(this.dpx, this.dpz);
-    if (groundY !== undefined) {
-      const targetY = groundY + 0.35; // 脚底偏移
-      const airborne = this.py > targetY + 0.8; // 物理Y明显高于地面=在空中
-      if (!airborne) {
-        // 着地状态：平滑贴地（悬空超1单位立即校正）
-        if (Math.abs(this.dpy - targetY) > 1.0) {
-          this.dpy = targetY;
-          this.playerMesh.position.y = targetY;
-        } else {
-          this.playerMesh.position.y += (targetY - this.playerMesh.position.y) * 0.2;
-        }
-      }
-      // 空中状态：不干预，让 dpy lerp 自然追踪物理 py
-    }
 
     // 远端玩家：以物理快照刚体为准
     this.updateRemotePlayersFromPhysics();
@@ -1098,12 +1095,13 @@ export class World3dComponent implements OnInit, OnDestroy {
   private onKeyDown = (e: KeyboardEvent): void => {
     this.keys[e.code] = true;
     // 按 WASD/方向键时取消双击自动移动（手动优先）
-    if ((e.code.startsWith('Key') || e.code.startsWith('Arrow')) && this.moveTarget) {
+    const code = e.code ?? '';
+    if ((code.startsWith('Key') || code.startsWith('Arrow')) && this.moveTarget) {
       this.moveTarget = null;
       this.hint = '已取消自动移动，WASD 手动控制';
     }
     // 空格跳跃（非建造/养鱼模式，且不在输入框中）
-    if (e.code === 'Space' && !this.buildMode && !this.fishMode) {
+    if (code === 'Space' && !this.buildMode && !this.fishMode) {
       e.preventDefault();
       this.sendJump();
     }
