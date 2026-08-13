@@ -142,8 +142,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.uid = this.auth.user?.userId ?? 0;
     this.nickname = this.auth.user?.nickname || '我';
     this.coins = this.state.state.coins ?? 0;
-    // 强机（桌面宽视口）放开视距 3
-    this.viewRadius = window.innerWidth >= 1280 ? 3 : 2;
+    // 视距：保证能看到足够多的岛屿（22岛分布在±1300范围）
+    // 强机放宽到5，窄屏至少4（原值2/3只能看到1-2座岛）
+    const baseVR = window.innerWidth >= 1280 ? 5 : 4;
+    this.viewRadius = baseVR;
 
     this.api.config().subscribe({
       next: cfg => {
@@ -151,7 +153,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         // M2 修复（2026-08-12）：总是清空 chunk 缓存（首次 config 时 this.config=undefined 也清，防首次 gridCache 旧数据）
         this.gridCache.clear();
         this.config = cfg;
-        this.viewRadius = cfg.viewRadius || this.viewRadius;
+        this.viewRadius = Math.max(cfg.viewRadius || 0, this.viewRadius); // 前端保底，不被后端小值覆盖
         this.px = cfg.spawnGx;
         this.pz = cfg.spawnGz;
         this.py = cfg.spawnY;
@@ -189,7 +191,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.scene = new THREE.Scene();
     // 天空渐变：晴朗白昼天顶蓝 → 地平线淡青（M4 视觉增强）
     this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(0xB8E0F0, 180, 450);
+    this.scene.fog = new THREE.Fog(0xB8E0F0, 300, 1200);
 
     // 海面（半透明蓝平面，精确对齐后端 waterLevel；覆盖全视图，渲染于地形之后）
     // v8: 高细分网格 + 顶点动画波浪（正弦波叠加，模拟海面起伏）
@@ -254,7 +256,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 存储引用供 animate 更新波浪时间
     (this as any).waterMat = waterMat;
 
-    this.camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 600);
+    this.camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 1500);
     this.camera.position.set(this.px, this.py + 20, this.pz + 20);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
