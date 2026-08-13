@@ -9,6 +9,7 @@ import { WorldApiService, WorldConfigResp, ChunkResp, WorldObjectResp, MiningPro
 import { WorldSocketService } from '../../services/world-socket.service';
 import { WorldPhysicsService } from '../../services/world-physics.service';
 import { AssetService } from '../../services/asset.service';
+import { BOY_RIG, GIRL_RIG } from './rig-configs';
 
 /**
  * 大世界 3D 组件（M1 → M2：服务端权威物理改造，ADR-W7 候选②）
@@ -218,7 +219,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   private decorPlaced = false; // 男孩/女孩是否已放置（仅放一次）
 
   // M5 角色程序化动作：模型无骨骼，用整体变换模拟 走/跑/弯腰/待机
-  private charAnims: { group: THREE.Group; cx: number; cz: number; baseY: number; phase: number; radius: number }[] = [];
+  private charAnims: { group: THREE.Group; cx: number; cz: number; baseY: number; phase: number; radius: number; bones?: Record<string, THREE.Object3D> }[] = [];
   private animClock = 0;
   private lastTs = 0;
   private animStateIdx = 0;
@@ -1018,17 +1019,26 @@ export class World3dComponent implements OnInit, OnDestroy {
   private preloadModels(): void {
     const base = 'assets/models/';
     const norm = (g: THREE.Group | null, h: number) => (g ? this.normalizeModel(g, h) : null);
+    // M7：给定加载后的 gltf 场景 + rig 配置，提取 mesh 并构建骨骼层级后归一化
+    const rigThenNorm = (g: THREE.Group | null, h: number, rig: any): THREE.Group | null => {
+      if (!g) return null;
+      let mesh: THREE.Mesh | null = null;
+      g.traverse(c => { if ((c as THREE.Mesh).isMesh && !mesh) mesh = c as THREE.Mesh; });
+      if (!mesh) return norm(g, h);
+      const rigged = this.buildRiggedModel(mesh, rig);
+      return this.normalizeModel(rigged, h);
+    };
     this.assets.loadModel(base + 'tree.glb').then(g => {
       this.treeModel = norm(g, 3.2);
       if (!this.treeModel) console.warn('[world3d] 树模型加载失败，使用程序化树回退');
       else this.tryPlaceCharacters(); // 树就绪后尝试补放角色（若角色已就绪）
     });
     this.assets.loadModel(base + 'boy.glb').then(g => {
-      this.boyModel = norm(g, 2.0);
+      this.boyModel = rigThenNorm(g, 2.0, BOY_RIG);
       this.tryPlaceCharacters();
     });
     this.assets.loadModel(base + 'girl.glb').then(g => {
-      this.girlModel = norm(g, 2.0);
+      this.girlModel = rigThenNorm(g, 2.0, GIRL_RIG);
       this.tryPlaceCharacters();
     });
   }
@@ -1047,6 +1057,86 @@ export class World3dComponent implements OnInit, OnDestroy {
     return outer;
   }
 
+  /**
+   * M7 刚性骨骼绑定：将无骨骼 GLB 模型按预计算的 rig 配置拆分为骨骼层级。
+   * 原理：rig JSON（gen_rig.py 产出）记录了每根骨骼拥有的三角形索引和 pivot 点。
+   * 运行时按 tris 拆分子几何体，每根骨骼的顶点偏移到 pivot 局部空间，
+   * 创建 bone Object3D(pivot) 作为父节点 → 旋转 bone 即绕 pivot 刚性旋转该肢体。
+   */
+  private buildRiggedModel(sceneMesh: THREE.Mesh, rig: any): THREE.Group {
+    const geo = sceneMesh.geometry;
+    const posAttr = geo.attributes['position'];
+    const nrmAttr = geo.attributes['normal'] || null;
+    const idxAttr = geo.index || null;
+    const nVerts = posAttr.count;
+
+    // 辅助：获取三角形三个顶点的全局索引
+    const getTri = (i: number): [number, number, number] => {
+      if (idxAttr) { return [idxAttr.getX(i * 3), idxAttr.getX(i * 3 + 1), idxAttr.getX(i * 3 + 2)]; }
+      return [i * 3, i * 3 + 1, i * 3 + 2];
+    };
+
+    interface BoneEntry { boneObj: THREE.Object3D; mesh: THREE.Mesh; pivot: number[]; parentName: string | null; }
+    const bones: Record<string, BoneEntry> = {};
+
+    for (const bone of rig.bones) {
+      const vmap: Record<number, number> = {};
+      const lpos: number[] = [];
+      const lnrm: number[] = [];
+      const localTris: number[] = [];
+      let li = 0;
+
+      for (const ti of bone.tris) {
+        const [v0, v1, v2] = getTri(ti);
+        for (const gv of [v0, v1, v2]) {
+          if (!(gv in vmap)) {
+            vmap[gv] = li++;
+            const px = posAttr.getX(gv), py = posAttr.getY(gv), pz = posAttr.getZ(gv);
+            // 偏移到 pivot 局部空间（静止时 world 位置 = pivot + localPos = 原始坐标）
+            lpos.push(px - bone.pivot[0], py - bone.pivot[1], pz - bone.pivot[2]);
+            if (nrmAttr) { lnrm.push(nrmAttr.getX(gv), nrmAttr.getY(gv), nrmAttr.getZ(gv)); }
+          }
+        }
+        localTris.push(vmap[v0], vmap[v1], vmap[v2]);
+      }
+
+      // 构建子 BufferGeometry
+      const sgeo = new THREE.BufferGeometry();
+      sgeo.setAttribute('position', new THREE.Float32BufferAttribute(lpos, 3));
+      if (lnrm.length) { sgeo.setAttribute('normal', new THREE.Float32BufferAttribute(lnrm, 3)); }
+      sgeo.setIndex(localTris);
+      sgeo.computeVertexNormals();
+
+      const mat = new THREE.MeshStandardMaterial({ roughness: 0.65, metalness: 0.05, color: 0xdddddd });
+      // 复用原始材质颜色（若有）
+      if (sceneMesh.material && (sceneMesh.material as THREE.MeshStandardMaterial).color) {
+        (mat as THREE.MeshStandardMaterial).color = ((sceneMesh.material as THREE.MeshStandardMaterial).color).clone();
+      }
+      const mesh = new THREE.Mesh(sgeo, mat);
+
+      bones[bone.name] = { boneObj: new THREE.Object3D(), mesh, pivot: bone.pivot, parentName: bone.parent };
+    }
+
+    // 创建骨骼 Object3D 并建立父子层级
+    const rootGroup = new THREE.Group();
+    for (const b of rig.bones) {
+      const entry = bones[b.name];
+      entry.boneObj.position.set(entry.pivot[0], entry.pivot[1], entry.pivot[2]);
+      entry.boneObj.name = b.name;
+      entry.boneObj.add(entry.mesh);  // 网格作为子节点（局部坐标已在 pivot 空间）
+    }
+    for (const b of rig.bones) {
+      const entry = bones[b.name];
+      if (entry.parentName && bones[entry.parentName]) {
+        bones[entry.parentName].boneObj.add(entry.boneObj);
+      } else {
+        rootGroup.add(entry.boneObj);
+      }
+    }
+
+    return rootGroup;
+  }
+
   /** 在出生区块附近草地放置男孩/女孩（仅放一次；模型与地形均就绪后才落位） */
   private tryPlaceCharacters(): void {
     if (this.decorPlaced) return;
@@ -1057,6 +1147,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (spots.length < 2) return; // 找不到两处草地则暂不放置
     this.decorPlaced = true;
     const models = [this.boyModel, this.girlModel];
+    const boneNames = ['torso', 'head', 'armL', 'armR', 'legL', 'legR'];
     spots.forEach((sp, i) => {
       const y = this.heightAt(sp.gx, sp.gz);
       if (y === undefined) return;
@@ -1065,7 +1156,10 @@ export class World3dComponent implements OnInit, OnDestroy {
       inst.rotation.y = (i * 1.7) % (Math.PI * 2);
       inst.userData['shared'] = true;
       this.scene.add(inst);
-      this.charAnims.push({ group: inst, cx: sp.gx, cz: sp.gz, baseY: y, phase: i * 1.3, radius: 4 + i * 1.6 });
+      // M7：收集骨骼引用（驱动四肢独立运动）
+      const bones: Record<string, THREE.Object3D> = {};
+      inst.traverse(o => { if (o.name && boneNames.includes(o.name)) bones[o.name] = o; });
+      this.charAnims.push({ group: inst, cx: sp.gx, cz: sp.gz, baseY: y, phase: i * 1.3, radius: 4 + i * 1.6, bones });
     });
   }
 
@@ -1089,10 +1183,11 @@ export class World3dComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * M5 程序化角色动作：模型为单网格、无骨骼（已验证 skins:0/animations:0），
-   * 无法做四肢摆动式骨骼动画；改用整体变换模拟 走/跑/弯腰/待机，适合低多边形休闲风。
-   * 演示用：全局循环切换 idle→walk→run→bend，方便直观查看三种动作；
-   * 实际游戏可改为根据角色真实移动意图驱动 state。
+   * M7 骨骼驱动角色动作：模型本身无骨骼（skins:0/animations:0），
+   * 加载时已由 buildRiggedModel 按 rig 配置拆分为 6 根刚性骨骼（头/躯干/左臂/右臂/左腿/右腿）。
+   * 这里 root 组负责整体位置与朝向（巡逻/面向），各骨骼 Object3D 绕自身 pivot 旋转，
+   * 实现手和脚独立摆动：待机点头/轻摆、走跑四肢交替前后摆、弯腰绕髋部前倾。
+   * root 的 -lean/-pitch 已下放给躯干骨骼，避免整体俯仰。
    */
   private updateCharAnimations(dt: number): void {
     this.animClock += dt;
@@ -1111,7 +1206,13 @@ export class World3dComponent implements OnInit, OnDestroy {
         state, clock: +this.animClock.toFixed(2),
         chars: this.charAnims.map(c => ({
           x: +c.group.position.x.toFixed(3), y: +c.group.position.y.toFixed(3), z: +c.group.position.z.toFixed(3),
-          rx: +c.group.rotation.x.toFixed(3), ry: +c.group.rotation.y.toFixed(3), rz: +c.group.rotation.z.toFixed(3)
+          rx: +c.group.rotation.x.toFixed(3), ry: +c.group.rotation.y.toFixed(3), rz: +c.group.rotation.z.toFixed(3),
+          // M7：记录各骨骼旋转，便于验证"手脚分开动"（根组只管位置/朝向）
+          bones: c.bones ? Object.fromEntries(
+            Object.entries(c.bones).map(([k, o]) => [k, {
+              rx: +o.rotation.x.toFixed(3), ry: +o.rotation.y.toFixed(3), rz: +o.rotation.z.toFixed(3)
+            }])
+          ) : null
         }))
       };
     }
@@ -1119,35 +1220,57 @@ export class World3dComponent implements OnInit, OnDestroy {
     for (const c of this.charAnims) {
       const g = c.group;
       const t = this.animClock + c.phase; // 角色间相位错开，避免完全同步
+      const B = c.bones || {};
+      const tor = B['torso'], hed = B['head'];
+      const al = B['armL'], ar = B['armR'], ll = B['legL'], lr = B['legR'];
       if (state === 'idle') {
-        // 待机：呼吸般轻微上下起伏 + 极缓左右摇
+        // 待机：呼吸般轻微上下起伏；骨骼：头微点头 + 手臂轻摆 + 躯干归零
         const bob = Math.sin(t * 1.6) * 0.04;
         g.position.set(c.cx, c.baseY + bob, c.cz);
-        g.rotation.set(0, g.rotation.y, Math.sin(t * 0.8) * 0.02);
+        g.rotation.set(0, g.rotation.y, 0);
+        if (tor) tor.rotation.set(0, 0, 0);
+        if (hed) hed.rotation.set(Math.sin(t * 1.6) * 0.06, 0, Math.sin(t * 0.9) * 0.03);
+        if (al) al.rotation.set(0, 0, Math.sin(t * 0.8) * 0.04);
+        if (ar) ar.rotation.set(0, 0, -Math.sin(t * 0.8) * 0.04);
+        if (ll) ll.rotation.set(0, 0, 0);
+        if (lr) lr.rotation.set(0, 0, 0);
       } else if (state === 'walk' || state === 'run') {
         const isRun = state === 'run';
         const speed = isRun ? 1.7 : 0.9;   // 巡逻角速度
         const freq = isRun ? 3.0 : 2.0;    // 步频
         const amp = isRun ? 0.16 : 0.09;   // 颠簸幅度
-        const lean = isRun ? 0.30 : 0.14;  // 前倾程度
+        const lean = isRun ? 0.30 : 0.14;  // 前倾程度（由躯干骨骼承担）
         const ang = t * speed;
         const nx = c.cx + Math.cos(ang) * c.radius;
         const nz = c.cz + Math.sin(ang) * c.radius;
         const gy = this.heightAt(nx, nz) ?? c.baseY;
         const bob = Math.sin(t * freq) * amp;          // 迈步上下
-        const sway = Math.sin(t * freq) * 0.06;        // 左右摆
         g.position.set(nx, gy + bob, nz);
-        // 朝向运动切线方向
+        // 朝向运动切线方向（root 仅负责朝向，lean 交给躯干骨骼）
         const dx = -Math.sin(ang) * c.radius;
         const dz = Math.cos(ang) * c.radius;
-        g.rotation.set(-lean, Math.atan2(dx, dz), sway);
+        g.rotation.set(0, Math.atan2(dx, dz), 0);
+        // 骨骼驱动：四肢交替摆动（手和脚分开动）
+        const s = Math.sin(t * freq);
+        if (tor) tor.rotation.set(lean, 0, 0);
+        if (hed) hed.rotation.set(0, 0, 0);
+        if (al) al.rotation.set(s * 0.50, 0, 0);   // 左臂前摆
+        if (ar) ar.rotation.set(-s * 0.50, 0, 0);  // 右臂后摆（反向）
+        if (ll) ll.rotation.set(-s * 0.38, 0, 0);  // 左腿后摆（与左臂反相）
+        if (lr) lr.rotation.set(s * 0.38, 0, 0);   // 右腿前摆
       } else if (state === 'bend') {
-        // 弯腰：整体下沉（屈膝感）+ 向前俯身
+        // 弯腰：整体下沉 + 躯干骨骼绕髋部大幅前倾（手和脚跟随躯干）
         const drop = 0.55;
         const pitch = 1.0;
         const bob = Math.sin(t * 1.4) * 0.03;
         g.position.set(c.cx, c.baseY - drop + bob, c.cz);
-        g.rotation.set(-pitch, g.rotation.y, 0);
+        g.rotation.set(0, g.rotation.y, 0);
+        if (tor) tor.rotation.set(pitch, 0, 0);
+        if (hed) hed.rotation.set(0, 0, 0);
+        if (al) al.rotation.set(0.3, 0, 0);   // 手臂随躯干前倾自然下垂向前
+        if (ar) ar.rotation.set(0.3, 0, 0);
+        if (ll) ll.rotation.set(-pitch * 0.25, 0, 0);
+        if (lr) lr.rotation.set(-pitch * 0.25, 0, 0);
       }
     }
   }
