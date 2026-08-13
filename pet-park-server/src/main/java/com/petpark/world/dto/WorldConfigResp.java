@@ -20,9 +20,11 @@ public class WorldConfigResp {
     private int viewRadius;
     /** 单房间模式（≤20 全量订阅，ADR-W2） */
     private boolean singleRoom;
+    /** 海平面高度（前端水面网格 + 水语义格钳制共用） */
+    private double waterLevel;
 
     public WorldConfigResp(String seed, int version, int chunkSize, int worldRadius,
-                           int spawnGx, int spawnGz, float spawnY, int viewRadius, boolean singleRoom) {
+                           int spawnGx, int spawnGz, float spawnY, int viewRadius, boolean singleRoom, double waterLevel) {
         this.seed = seed;
         this.version = version;
         this.chunkSize = chunkSize;
@@ -32,5 +34,6 @@ public class WorldConfigResp {
         this.spawnY = spawnY;
         this.viewRadius = viewRadius;
         this.singleRoom = singleRoom;
+        this.waterLevel = waterLevel;
     }
 }

@@ -198,10 +198,11 @@ export class World3dComponent implements OnInit, OnDestroy {
     const waterMat = new THREE.MeshStandardMaterial({
       color: 0x2f7fd6, transparent: true, opacity: 0.65,
       roughness: 0.1, metalness: 0.3, side: THREE.DoubleSide,
-      // 自定义波浪：顶点着色器做正弦波位移，片元着色器加菲涅尔边缘亮
-      onBeforeCompile: (shader) => {
-        shader.uniforms.uTime = { value: 0 };
-        shader.uniforms.uWaterLevel = { value: waterLevel };
+    });
+    // 自定义波浪：顶点着色器做正弦波位移，片元着色器加菲涅尔边缘亮
+    waterMat.onBeforeCompile = (shader) => {
+        shader.uniforms['uTime'] = { value: 0 };
+        shader.uniforms['uWaterLevel'] = { value: waterLevel };
         shader.vertexShader = `
           uniform float uTime;
           uniform float uWaterLevel;
@@ -245,7 +246,6 @@ export class World3dComponent implements OnInit, OnDestroy {
         // 保存引用以便每帧更新 uTime
         (waterMat as any).waterShader = shader;
       }
-    });
     const waterMesh = new THREE.Mesh(waterGeo, waterMat);
     waterMesh.rotation.x = -Math.PI / 2;
     waterMesh.position.y = waterLevel;
@@ -725,15 +725,17 @@ export class World3dComponent implements OnInit, OnDestroy {
   private buildChunkMesh(resp: ChunkResp): THREE.Mesh {
     const h = resp.height;
     const sem = resp.semantic;
+    const waterLevel = this.config?.waterLevel ?? -5;
     const positions = new Float32Array(N * N * 3);
     const colors = new Float32Array(N * N * 3);
     for (let lz = 0; lz < N; lz++) {
       for (let lx = 0; lx < N; lx++) {
         const i = lz * N + lx;
         positions[i * 3] = resp.cx * CHUNK + lx;
-        positions[i * 3 + 1] = h[i];
-        positions[i * 3 + 2] = resp.cz * CHUNK + lz;
+        // M3 修复：WATER 语义格（0）的 Y 钳制到海平面，消除"水下山脉"和"蓝色高地"
         const cell = sem[Math.min(lz, CHUNK - 1) * CHUNK + Math.min(lx, CHUNK - 1)];
+        positions[i * 3 + 1] = (cell === 0) ? waterLevel : h[i];
+        positions[i * 3 + 2] = resp.cz * CHUNK + lz;
         const c = CELL_COLORS[cell] ?? CELL_COLORS[2];
         colors[i * 3] = ((c >> 16) & 255) / 255;
         colors[i * 3 + 1] = ((c >> 8) & 255) / 255;
@@ -760,17 +762,6 @@ export class World3dComponent implements OnInit, OnDestroy {
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, fog: false, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
-    // 语义化着色（按后端 semantic 字节码）：水/沙/草/树/山/岩/矿 各不相同
-    for (let lz = 0; lz < N; lz++) {
-      for (let lx = 0; lx < N; lx++) {
-        const i = lz * N + lx;
-        const cell = sem[Math.min(lz, CHUNK - 1) * CHUNK + Math.min(lx, CHUNK - 1)];
-        const c = CELL_COLORS[cell] ?? CELL_COLORS[2];
-        colors[i * 3] = ((c >> 16) & 255) / 255;
-        colors[i * 3 + 1] = ((c >> 8) & 255) / 255;
-        colors[i * 3 + 2] = (c & 255) / 255;
-      }
-    }
     mesh.frustumCulled = false;
     return mesh;
   }

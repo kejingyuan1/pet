@@ -42,7 +42,7 @@ public class ChunkController {
         return Result.ok(new WorldConfigResp(
                 world.seed(), world.version(), world.chunkSize(), world.worldRadius(),
                 spawn[0], spawn[1], terrain.heightAt(spawn[0], spawn[1]),
-                2, true));
+                2, true, world.waterLevel()));
     }
 
     /** GET /api/world/chunk?cx=&cz= —— 该 chunk 的地形顶点 + 语义 + 对象 */

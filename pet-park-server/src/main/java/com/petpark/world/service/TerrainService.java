@@ -257,6 +257,9 @@ public class TerrainService {
     /**
      * 按高度 + 岛屿归属 + 散点分类（water_level 判定，接矿脉/树木规则）
      * 分类语义与 chunk 生成完全一致（cell 高度取左上角顶点）。
+     *
+     * 安全兜底（M3 修复）：WATER 语义格高度不得超过 waterLevel + 0.3，
+     * 超出说明是误判（假洼地/边缘混合区），自动降级为 GRASS，防止"蓝色陆地"渲染 BUG。
      */
     public CellType classify(double h, int gx, int gz) {
         double wl = world.waterLevel();
@@ -298,6 +301,19 @@ public class TerrainService {
         return CellType.GRASS;
     }
 
+    /**
+     * 安全兜底包装（M3 修复）：防止任何代码路径产生"高于水线的 WATER 语义格"。
+     * 若 classify 结果为 WATER 但高度明显高于水线（> wl + 0.3），强制降级为 GRASS。
+     * 这能拦截 isRealBasin 假阳性、边缘混合区溢出等所有边界 case。
+     */
+    public CellType classifySafe(double h, int gx, int gz) {
+        CellType t = classify(h, gx, gz);
+        if (t == CellType.WATER && h > world.waterLevel() + 0.3) {
+            return CellType.GRASS; // 高地不应是水，降级为草地
+        }
+        return t;
+    }
+
     // ================= 生成 / 查询 =================
 
     /** 生成整个 chunk：65×65 高度 + 64×64 语义（纯函数，同参数同结果） */
@@ -314,7 +330,7 @@ public class TerrainService {
                 float h = heightAt(gx, gz);
                 height[lz * SemanticGrid.HEIGHT_N + lx] = h;
                 if (gx < gx0 + size && gz < gz0 + size) {
-                    semantic[lz * size + lx] = classify(h, gx, gz).code();
+                    semantic[lz * size + lx] = classifySafe(h, gx, gz).code();
                 }
             }
         }
@@ -323,7 +339,7 @@ public class TerrainService {
 
     /** 单点 cell 语义（放置校验用；与 chunk 生成口径一致） */
     public CellType semanticAt(int gx, int gz) {
-        return classify(heightAt(gx, gz), gx, gz);
+        return classifySafe(heightAt(gx, gz), gx, gz);
     }
 
     /** cell 坡度：四周顶点最大高度差（设计 §5.2，1 格 = 1 单位） */
