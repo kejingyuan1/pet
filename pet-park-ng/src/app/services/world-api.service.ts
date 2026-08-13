@@ -50,8 +50,45 @@ export interface WorldObjectResp {
   state: number;
 }
 
+/** 采矿档案 */
+export interface MiningProfile {
+  energy: number;
+  maxEnergy: number;
+  level: number;
+  exp: number;
+  expToNext: number;
+  inventory: InventoryItem[];
+}
+
+/** 背包条目 */
+export interface InventoryItem {
+  type: string;
+  name: string;
+  qty: number;
+  sellPrice: number;
+}
+
+/** 售卖结果 */
+export interface SellResult {
+  earnedCoins: number;
+  coins: number;
+  inventory: InventoryItem[];
+}
+
+/** 采矿结果 */
+export interface MineResult {
+  oreType: string;
+  expGained: number;
+  energy: number;
+  level: number;
+  itemQty: number;
+  gx: number;
+  gz: number;
+  newType: string;
+}
+
 /**
- * 大世界 REST 服务（config / chunk 流式 / build / fish / objects）
+ * 大世界 REST 服务（config / chunk 流式 / build / fish / objects / mining）
  * 统一走 /api/world 前缀，鉴权头由 AuthService 提供。
  */
 @Injectable({ providedIn: 'root' })
@@ -85,5 +122,17 @@ export class WorldApiService {
   fish(gx: number, gz: number, fishType: string): Observable<ApiResult<WorldObjectResp>> {
     return this.http.post<ApiResult<WorldObjectResp>>('/api/world/fish',
       { gx, gz, fishType }, { headers: this.auth.authHeaders() });
+  }
+
+  /** GET /api/world/mining/profile 采矿档案（能量/等级/经验/背包） */
+  miningProfile(): Observable<MiningProfile> {
+    return this.http.get<ApiResult<MiningProfile>>('/api/world/mining/profile',
+      { headers: this.auth.authHeaders() }).pipe(map(r => r.data));
+  }
+
+  /** POST /api/world/mining/sell 售卖矿石换积分 */
+  sellMining(items: { type: string; qty: number }[]): Observable<ApiResult<SellResult>> {
+    return this.http.post<ApiResult<SellResult>>('/api/world/mining/sell',
+      items, { headers: this.auth.authHeaders() });
   }
 }

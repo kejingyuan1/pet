@@ -191,4 +191,16 @@ public class WorldPhysicsService {
 
     public Map<Long, Player> getPlayers() { return players; }
     public long getTick() { return tick; }
+
+    /**
+     * 采矿邻近校验（M4）：返回玩家当前权威物理位置 {gx, gz}（连续世界坐标）。
+     * 未进入世界（未 WS-join）返回 null；WorldMiningService 据此抛 notInWorld。
+     */
+    public double[] getPlayerPos(long uid) {
+        Player p = players.get(uid);
+        if (p == null) {
+            return null;
+        }
+        return new double[]{p.gx, p.gz};
+    }
 }

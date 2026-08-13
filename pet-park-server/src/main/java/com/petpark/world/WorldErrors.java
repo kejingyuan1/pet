@@ -40,4 +40,32 @@ public final class WorldErrors {
     public static BizException insufficientCoins() {
         return new BizException(INSUFFICIENT_COINS, "金币不足");
     }
+
+    // ===== M4 采矿错误码 =====
+
+    public static final int WORLD_NOT_ORE = 2007;
+    public static final int WORLD_ORE_DEPLETED = 2008;
+    public static final int WORLD_INSUFFICIENT_ENERGY = 2009;
+    public static final int WORLD_TOO_FAR = 2010;
+    public static final int WORLD_NOT_IN_WORLD = 2011;
+
+    public static BizException notOre() {
+        return new BizException(WORLD_NOT_ORE, "该格子不是矿脉");
+    }
+
+    public static BizException oreDepleted() {
+        return new BizException(WORLD_ORE_DEPLETED, "矿脉已被采空");
+    }
+
+    public static BizException insufficientEnergy() {
+        return new BizException(WORLD_INSUFFICIENT_ENERGY, "能量不足，无法采矿");
+    }
+
+    public static BizException tooFar() {
+        return new BizException(WORLD_TOO_FAR, "距离矿脉太远，请靠近后再采");
+    }
+
+    public static BizException notInWorld() {
+        return new BizException(WORLD_NOT_IN_WORLD, "尚未进入世界，无法采矿");
+    }
 }

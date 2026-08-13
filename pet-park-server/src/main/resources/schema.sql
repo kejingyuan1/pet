@@ -535,14 +535,21 @@ SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='
 SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN experience BIGINT NOT NULL DEFAULT 0 COMMENT ''世界经验（累积，B2 采矿）'' AFTER level', 'SELECT 1');
 PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
 
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='energy_updated_at');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN energy_updated_at DATETIME DEFAULT NULL COMMENT ''采矿能量最后再生时间戳（懒再生基准）'' AFTER experience', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ------------------------------------------------------------
--- categories 追加：大世界建筑/鱼塘设施种子（03 §4.2；type 已为 VARCHAR，无需 ALTER）
--- 矿石 resource 类（coal_ore/iron_ore/gold_ore）属 M4 采矿，本期不插入
+-- categories 追加：大世界建筑/鱼塘设施 + 矿石种子（03 §4.2；type 已为 VARCHAR，无需 ALTER）
+-- 矿石 code 必须与 CellType.typeName() 对齐：ore_coal / ore_iron / ore_gold（M4 采矿，WorldMiningService 按 t.typeName() 查 categories）
 -- ------------------------------------------------------------
 INSERT INTO categories (code,name,type,price,sell_price,grow_days,feed_days,exp,level_req,product,prod_price,satiety,energy,color,sort_order) VALUES
  ('wood_house','木屋','building',100,0,0,0,0,1,NULL,0,0,0,'#C98A4B',50),
  ('stone_house','石屋','building',300,0,0,0,0,2,NULL,0,0,0,'#8A8A7A',51),
- ('small_pond','小池塘','pond',50,0,0,0,0,1,NULL,0,0,0,'#2F7FD6',60)
+ ('small_pond','小池塘','pond',50,0,0,0,0,1,NULL,0,0,0,'#2F7FD6',60),
+ ('ore_coal','煤矿','resource',0,5,0,0,10,1,NULL,0,0,0,'#3A3A3A',70),
+ ('ore_iron','铁矿','resource',0,12,0,0,16,1,NULL,0,0,0,'#B0B0B0',71),
+ ('ore_gold','金矿','resource',0,30,0,0,25,2,NULL,0,0,0,'#FFD700',72)
 ON DUPLICATE KEY UPDATE name=VALUES(name);
 
 -- ------------------------------------------------------------

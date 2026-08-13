@@ -9,10 +9,13 @@ import com.petpark.world.dto.WsChatMsg;
 import com.petpark.world.dto.WsInputMsg;
 import com.petpark.world.dto.WsJoinMsg;
 import com.petpark.world.dto.WsPositionMsg;
+import com.petpark.world.dto.MineResult;
+import com.petpark.world.dto.WsMineMsg;
 import com.petpark.world.geo.CellType;
 import com.petpark.world.geo.ChunkKey;
 import com.petpark.world.service.PhysicsGatewayService;
 import com.petpark.world.service.RegionBroker;
+import com.petpark.world.service.WorldMiningService;
 import com.petpark.world.service.TerrainService;
 import com.petpark.world.service.WorldConfigService;
 import com.petpark.world.service.WorldObjectService;
@@ -51,19 +54,22 @@ public class WorldWsController {
     private final WorldObjectService objectService;
     private final UserMapper userMapper;
     private final PhysicsGatewayService physicsGateway;
+    private final WorldMiningService miningService;
 
     public WorldWsController(RegionBroker broker,
                              TerrainService terrain,
                              WorldConfigService world,
                              WorldObjectService objectService,
                              UserMapper userMapper,
-                             PhysicsGatewayService physicsGateway) {
+                             PhysicsGatewayService physicsGateway,
+                             WorldMiningService miningService) {
         this.broker = broker;
         this.terrain = terrain;
         this.world = world;
         this.objectService = objectService;
         this.userMapper = userMapper;
         this.physicsGateway = physicsGateway;
+        this.miningService = miningService;
     }
 
     /** 接入握手：加区域 → 回快照（含 y）+ 广播 PLAYER_JOIN */
@@ -213,6 +219,32 @@ public class WorldWsController {
                 "text", text,
                 "ts", System.currentTimeMillis()));
         log.info("[world] WS chat uid={} nick={} textLen={}", uid, nick, text.length());
+    }
+
+    /**
+     * 采矿请求：/app/ws.mine {gx, gz}
+     * 服务端权威采掘（邻近校验 + 能量 + 防并发），结果经 /user/queue/reply 回 MINE_RESULT。
+     */
+    @MessageMapping("/ws.mine")
+    public void mine(WsMineMsg msg, SimpMessageHeaderAccessor headers) {
+        String sid = headers.getSessionId();
+        Long uid = uid(headers);
+        if (sid == null || uid == null || msg == null || msg.getGx() == null || msg.getGz() == null) {
+            return;
+        }
+        try {
+            Result<MineResult> r = miningService.mine(uid, msg.getGx(), msg.getGz());
+            broker.sendToUser(sid, Map.of(
+                    "t", "MINE_RESULT",
+                    "code", r.getCode(),
+                    "msg", r.getMsg() == null ? "" : r.getMsg(),
+                    "data", r.getData()));
+        } catch (Exception e) {
+            broker.sendToUser(sid, Map.of(
+                    "t", "MINE_RESULT",
+                    "code", 1,
+                    "msg", e.getMessage() == null ? "采矿失败" : e.getMessage()));
+        }
     }
 
     private Long uid(SimpMessageHeaderAccessor headers) {

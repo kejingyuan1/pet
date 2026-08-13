@@ -1,12 +1,15 @@
 package com.petpark.world.service;
 
+import com.petpark.world.entity.TerrainMod;
 import com.petpark.world.geo.CellType;
 import com.petpark.world.geo.ChunkKey;
 import com.petpark.world.geo.OpenSimplex2;
 import com.petpark.world.geo.SemanticGrid;
+import com.petpark.world.mapper.TerrainModMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import java.util.List;
 
 /**
  * 确定性程序化地形生成（核心，ADR-W3 / 02 §1.2）
@@ -47,6 +50,7 @@ public class TerrainService {
     private static final double BEACH_BAND = 1.6;
 
     private final WorldConfigService world;
+    private final TerrainModMapper terrainModMapper;
 
     /** 主地形噪声场 */
     private volatile OpenSimplex2 noise;
@@ -62,8 +66,9 @@ public class TerrainService {
     private final double[] islandCz = new double[ISLAND_COUNT];
     private final double[] islandR = new double[ISLAND_COUNT];
 
-    public TerrainService(WorldConfigService world) {
+    public TerrainService(WorldConfigService world, TerrainModMapper terrainModMapper) {
         this.world = world;
+        this.terrainModMapper = terrainModMapper;
     }
 
     @PostConstruct
@@ -331,6 +336,19 @@ public class TerrainService {
                 height[lz * SemanticGrid.HEIGHT_N + lx] = h;
                 if (gx < gx0 + size && gz < gz0 + size) {
                     semantic[lz * size + lx] = classifySafe(h, gx, gz).code();
+                }
+            }
+        }
+        // 叠加玩家地形修改（采矿/挖填）：已采格按 new_type 覆盖（M4）
+        // 迟到客户端加载 chunk 时也能看到已被采空的矿格（ore → empty），无需前端额外处理
+        String ck = ChunkKey.of(cx, cz);
+        List<TerrainMod> mods = terrainModMapper.listByChunk(ck);
+        if (mods != null) {
+            for (TerrainMod m : mods) {
+                int lx = ChunkKey.lxOf(m.getGx(), cx);
+                int lz = ChunkKey.lzOf(m.getGz(), cz);
+                if (lx >= 0 && lx < size && lz >= 0 && lz < size) {
+                    semantic[lz * size + lx] = CellType.ofName(m.getNewType()).code();
                 }
             }
         }

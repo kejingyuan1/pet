@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { AuthService } from '../../services/auth.service';
 import { StateService } from '../../services/state.service';
-import { WorldApiService, WorldConfigResp, ChunkResp, WorldObjectResp } from '../../services/world-api.service';
+import { WorldApiService, WorldConfigResp, ChunkResp, WorldObjectResp, MiningProfile, InventoryItem, SellResult, MineResult } from '../../services/world-api.service';
 import { WorldSocketService } from '../../services/world-socket.service';
 import { WorldPhysicsService } from '../../services/world-physics.service';
 
@@ -61,6 +61,7 @@ interface GridData {
     <div class="w3d-toolbar">
       <button (click)="enterBuild()" [class.on]="buildMode">🏗️ 建造</button>
       <button (click)="enterFish()" [class.on]="fishMode">🐟 养鱼</button>
+      <button (click)="enterMine()" [class.on]="mineMode">⛏️ 采矿</button>
       <button (click)="exitInteract()" [class.on]="false">🎥 跟随</button>
     </div>
     <div class="w3d-hud">
@@ -89,6 +90,27 @@ interface GridData {
         </div>
       </div>
     </div>
+    <!-- 采矿 HUD（M4）：能量 / 等级 / 经验 / 背包售卖 -->
+    <div class="w3d-mine" *ngIf="miningReady">
+      <div class="mine-head">
+        <span>⛏️ 采矿 Lv.{{level}}</span>
+        <button class="mine-sell-toggle" (click)="toggleSell()">{{sellOpen ? '收起' : '💰 背包'}}</button>
+      </div>
+      <div class="mine-energy">
+        <div class="energy-bar"><div class="energy-fill" [style.width.%]="energyPercent"></div></div>
+        <span class="energy-text">⚡ {{energy}}/{{maxEnergy}}</span>
+      </div>
+      <div class="mine-exp">EXP {{exp}} · 距下级 {{expToNext}}</div>
+      <div class="mine-inv" *ngIf="sellOpen">
+        <div class="inv-row" *ngFor="let it of inventory">
+          <span class="inv-name">{{it.name}} ×{{it.qty}}</span>
+          <span class="inv-price">{{it.sellPrice}}/个</span>
+          <button class="inv-sell" (click)="sellItem(it)" [disabled]="it.qty <= 0">卖</button>
+        </div>
+        <div class="inv-empty" *ngIf="inventory.length === 0">背包空空，去采矿吧～</div>
+      </div>
+    </div>
+    <div class="w3d-toast" *ngIf="miningToast">{{miningToast.text}}</div>
   `,
   styles: [`
     .world3d-mount { width: 100%; height: 100%; min-height: 480px; border-radius: 20px; overflow: hidden; background: #8FC8F5; position: relative; }
@@ -113,6 +135,23 @@ interface GridData {
     .chat-input { flex: 1; border: none; border-radius: 8px; padding: 6px 10px; background: rgba(255,255,255,.92); color: #222; font-size: 13px; outline: none; }
     .chat-send { border: none; border-radius: 8px; padding: 6px 12px; background: #FF8C42; color: #fff; cursor: pointer; font-size: 13px; }
     .chat-send:active { background: #e6782e; }
+    .w3d-mine { position: absolute; top: 12px; right: 12px; z-index: 6; width: 240px; max-width: 44vw; background: rgba(20,30,45,.84); border-radius: 12px; color: #eee; font-size: 12px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
+    .mine-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 6px; }
+    .mine-sell-toggle { border: none; border-radius: 8px; padding: 3px 8px; background: #FF8C42; color: #fff; cursor: pointer; font-size: 12px; }
+    .mine-sell-toggle:active { background: #e6782e; }
+    .mine-energy { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .energy-bar { flex: 1; height: 10px; background: rgba(255,255,255,.15); border-radius: 6px; overflow: hidden; }
+    .energy-fill { height: 100%; background: linear-gradient(90deg,#FFD27F,#FF8C42); transition: width .25s ease; }
+    .energy-text { white-space: nowrap; }
+    .mine-exp { opacity: .85; margin-bottom: 6px; }
+    .mine-inv { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid rgba(255,255,255,.08); padding-top: 6px; max-height: 180px; overflow-y: auto; }
+    .inv-row { display: flex; align-items: center; gap: 6px; }
+    .inv-name { flex: 1; }
+    .inv-price { opacity: .7; }
+    .inv-sell { border: none; border-radius: 6px; padding: 2px 8px; background: #4CC9F0; color: #08323f; cursor: pointer; font-size: 12px; }
+    .inv-sell:disabled { opacity: .4; cursor: not-allowed; }
+    .inv-empty { opacity: .5; font-style: italic; padding: 4px 0; }
+    .w3d-toast { position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%); z-index: 9; background: rgba(0,0,0,.72); color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 15px; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
   `]
 })
 export class World3dComponent implements OnInit, OnDestroy {
@@ -124,6 +163,21 @@ export class World3dComponent implements OnInit, OnDestroy {
   posText = '';
   coins = 0;
   onlineCount = 1;
+
+  // 采矿（M4）
+  mineMode = false;          // 采矿模式（OrbitControls 选矿）
+  miningReady = false;       // 档案已拉取，HUD 可见
+  sellOpen = false;          // 背包/售卖面板展开
+  energy = 0;                // 当前能量
+  maxEnergy = 100;           // 能量上限
+  level = 1;                 // 世界等级
+  exp = 0;                   // 累积经验
+  expToNext = 100;           // 距下级经验
+  inventory: InventoryItem[] = []; // 背包
+  miningToast: { text: string; ts: number } | null = null; // 采矿/售卖提示
+  private nearestOre: { gx: number; gz: number } | null = null; // 最近可采矿（F 键用）
+  /** 能量百分比（模板条形用） */
+  get energyPercent(): number { return this.maxEnergy > 0 ? Math.round((this.energy / this.maxEnergy) * 100) : 0; }
 
   // 聊天（M3）
   chatOpen = true;
@@ -211,6 +265,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         this.initScene();
         this.initPlayer();
         this.connectWs();
+        this.loadMiningProfile();
         this.animate();
       },
       error: () => { this.hint = '世界配置加载失败：请确认后端已启动'; }
@@ -396,6 +451,9 @@ export class World3dComponent implements OnInit, OnDestroy {
         this.removeRemotePlayer(ev.uid);
       } else if (ev.t === 'CHAT' && ev.uid != null && ev.text) {
         this.pushChat(ev.uid, ev.nickname || '', ev.text, ev.ts || Date.now());
+      } else if (ev.t === 'TERRAIN_CHANGE' && ev.chunkKey != null) {
+        // 矿格被采空：重着色地形 + 移除 3D 矿模型（所有客户端同步）
+        this.applyTerrainChange(ev.chunkKey, ev.gx, ev.gz, ev.newType);
       }
       this.onlineCount = this.remotePlayers.size + 1;
     } catch (e) { /* 忽略坏帧 */ }
@@ -438,6 +496,9 @@ export class World3dComponent implements OnInit, OnDestroy {
       } else if (ev.t === 'BUILD_RESULT') {
         this.hint = ev.code === 0 ? '放置成功' : ('放置失败：' + (ev.msg || '未知错误'));
         this.refreshCoins();
+      } else if (ev.t === 'MINE_RESULT') {
+        // 采矿结果回执（/app/ws.mine）：刷新 HUD + 提示 + 本地地形变化
+        this.handleMineResult(ev);
       }
     } catch (e) { /* ignore */ }
   }
@@ -533,6 +594,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (now - this.lastStream > 250) {
       this.lastStream = now;
       this.streamChunks();
+      // 邻近矿脉扫描（F 键采矿 + 提示用，仅需玩家附近 chunk）
+      this.scanNearbyOre();
     }
     // 轻量位置心跳（保留：UI/调试/兜底；权威位置以 POSITION_SNAPSHOT 为准）
     if (now - this.lastPosSend > 1000 && this.ws.isConnected) {
@@ -545,7 +608,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.posText = `${Math.floor(this.px)}, ${Math.floor(this.pz)}, ${this.py.toFixed(1)}`;
 
     // 相机
-    if (this.buildMode || this.fishMode) {
+    if (this.buildMode || this.fishMode || this.mineMode) {
       this.controls.target.set(this.dpx, this.dpy, this.dpz);
       this.controls.update();
     } else {
@@ -1053,6 +1116,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   enterBuild(): void {
     this.buildMode = true;
     this.fishMode = false;
+    this.mineMode = false;
     this.controls.enabled = true;
     this.hint = '建造模式：点击地面放置木屋（100 金币），点击「跟随」退出';
   }
@@ -1060,15 +1124,173 @@ export class World3dComponent implements OnInit, OnDestroy {
   enterFish(): void {
     this.fishMode = true;
     this.buildMode = false;
+    this.mineMode = false;
     this.controls.enabled = true;
     this.hint = '养鱼模式：点击蓝色水面放置鱼塘，点击「跟随」退出';
+  }
+
+  enterMine(): void {
+    this.mineMode = true;
+    this.buildMode = false;
+    this.fishMode = false;
+    this.controls.enabled = true;
+    this.hint = '采矿模式：点击矿石开采（4 能量/次，需靠近矿脉 ≤3.5），点击「跟随」退出';
   }
 
   exitInteract(): void {
     this.buildMode = false;
     this.fishMode = false;
+    this.mineMode = false;
     this.controls.enabled = false;
     this.hint = '已回到跟随视角，WASD 移动';
+  }
+
+  toggleSell(): void {
+    this.sellOpen = !this.sellOpen;
+  }
+
+  /** 售卖单个背包矿石（整组）换积分 */
+  sellItem(it: InventoryItem): void {
+    if (it.qty <= 0) return;
+    this.api.sellMining([{ type: it.type, qty: it.qty }]).subscribe({
+      next: r => {
+        if (r.code === 0 && r.data) {
+          this.coins = r.data.coins ?? this.coins;
+          this.state.state.coins = this.coins;
+          this.showToast(`💰 售卖获得 ${r.data.earnedCoins} 积分`);
+        } else {
+          this.showToast('售卖失败：' + (r.msg || '未知错误'));
+        }
+        this.loadMiningProfile(); // 权威刷新背包/能量
+      },
+      error: () => this.showToast('售卖请求失败')
+    });
+  }
+
+  /** 拉取采矿档案（能量/等级/经验/背包），权威刷新 HUD */
+  private loadMiningProfile(): void {
+    this.api.miningProfile().subscribe({
+      next: p => {
+        if (this.disposed) return;
+        this.energy = p.energy;
+        this.maxEnergy = p.maxEnergy || 100;
+        this.level = p.level;
+        this.exp = p.exp;
+        this.expToNext = p.expToNext;
+        this.inventory = p.inventory || [];
+        this.miningReady = true;
+      },
+      error: () => { this.miningReady = true; } // 仍显示 HUD，能量默认 0
+    });
+  }
+
+  /** 发送采矿意图（/app/ws.mine），服务端校验矿脉/邻近/能量 */
+  private doMine(gx: number, gz: number): void {
+    if (!this.ws.isConnected) {
+      this.hint = '尚未连接，无法采矿';
+      return;
+    }
+    this.ws.send('/app/ws.mine', { gx, gz });
+    this.hint = `⛏️ 采矿中 @(${gx},${gz})...`;
+  }
+
+  /** 处理 MINE_RESULT 回执：刷新 HUD + 提示 + 本地地形变化 */
+  private handleMineResult(ev: any): void {
+    if (ev.code === 0 && ev.data) {
+      const d = ev.data as MineResult;
+      this.showToast(`⛏️ 采到 ${this.oreName(d.oreType)} +${d.expGained}EXP（背包 ×${d.itemQty}）`);
+      this.hint = `采矿成功：${this.oreName(d.oreType)}`;
+      // 本地立即重着色 + 移除矿模型（与 TERRAIN_CHANGE 广播一致，去重安全）
+      this.applyTerrainChange(`${Math.floor(d.gx / CHUNK)}_${Math.floor(d.gz / CHUNK)}`, d.gx, d.gz, d.newType);
+    } else {
+      this.showToast('❌ ' + (ev.msg || '采矿失败'));
+      this.hint = '采矿失败：' + (ev.msg || '未知错误');
+    }
+    this.loadMiningProfile(); // 权威刷新能量/经验/背包
+  }
+
+  /** 矿格变化：重着色地形顶点 + 移除对应 3D 矿模型（所有客户端通用） */
+  private applyTerrainChange(chunkKey: string, gx: number, gz: number, newType: string): void {
+    const mesh = this.chunkMeshes.get(chunkKey);
+    if (mesh) {
+      const [cx, cz] = chunkKey.split('_').map(Number);
+      const lx = gx - cx * CHUNK;
+      const lz = gz - cz * CHUNK;
+      const code = newType === 'empty' ? 10 : (Number(newType) || 10);
+      const col = new THREE.Color(CELL_COLORS[code] ?? CELL_COLORS[10]);
+      const geo = mesh.geometry as THREE.BufferGeometry;
+      const colors = geo.getAttribute('color') as THREE.BufferAttribute;
+      const xs = [lx, Math.min(lx + 1, N - 1)];
+      const zs = [lz, Math.min(lz + 1, N - 1)];
+      for (const x of xs) for (const z of zs) {
+        colors.setXYZ(z * N + x, col.r, col.g, col.b);
+      }
+      colors.needsUpdate = true;
+    }
+    // 移除该矿 3D 模型（按世界坐标匹配）
+    const ores = this.oreMeshes.get(chunkKey);
+    if (ores) {
+      for (let i = ores.length - 1; i >= 0; i--) {
+        const g = ores[i];
+        if (Math.abs(g.position.x - (gx + 0.5)) < 0.01 && Math.abs(g.position.z - (gz + 0.5)) < 0.01) {
+          this.scene.remove(g);
+          g.traverse(o => {
+            const m = o as THREE.Mesh;
+            if (m.geometry) m.geometry.dispose();
+            const mat = m.material as THREE.Material | THREE.Material[];
+            if (mat) (Array.isArray(mat) ? mat : [mat]).forEach(x => x.dispose());
+          });
+          ores.splice(i, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  /** 扫描玩家附近 chunk 的矿脉，供 F 键采矿与提示 */
+  private scanNearbyOre(): void {
+    const R = 3.5;
+    const pcx = Math.floor(this.dpx / CHUNK);
+    const pcz = Math.floor(this.dpz / CHUNK);
+    let best: { gx: number; gz: number; d: number } | null = null;
+    for (const [key, grid] of this.gridCache) {
+      const [cx, cz] = key.split('_').map(Number);
+      if (Math.abs(cx - pcx) > 1 || Math.abs(cz - pcz) > 1) continue; // 仅邻近 chunk
+      for (let lz = 0; lz < CHUNK; lz++) {
+        for (let lx = 0; lx < CHUNK; lx++) {
+          const cell = grid.semantic[lz * CHUNK + lx];
+          if (cell !== 6 && cell !== 7 && cell !== 8) continue; // ORE_*
+          const gx = cx * CHUNK + lx;
+          const gz = cz * CHUNK + lz;
+          const d = Math.hypot(this.dpx - gx, this.dpz - gz);
+          if (d <= R && (!best || d < best.d)) best = { gx, gz, d };
+        }
+      }
+    }
+    this.nearestOre = best ? { gx: best.gx, gz: best.gz } : null;
+    if (best && !this.mineMode) {
+      this.hint = `附近有矿脉（${Math.round(best.d)} 格内），按 F 开采`;
+    } else if (!best && this.hint.indexOf('附近有矿脉') === 0) {
+      this.hint = 'WASD 移动，空格 跳跃，双击地面跑过去，左键拖拽环绕视角';
+    }
+  }
+
+  /** 顶部居中提示（自动消失） */
+  private showToast(text: string): void {
+    this.miningToast = { text, ts: Date.now() };
+    setTimeout(() => {
+      if (this.miningToast && Date.now() - this.miningToast.ts >= 1800) {
+        this.miningToast = null;
+      }
+    }, 1800);
+  }
+
+  /** 矿石类型中文名 */
+  private oreName(code: string): string {
+    if (code === 'ore_coal') return '煤矿';
+    if (code === 'ore_iron') return '铁矿';
+    if (code === 'ore_gold') return '金矿';
+    return code;
   }
 
   private onCanvasClick(x: number, y: number): void {
@@ -1090,6 +1312,8 @@ export class World3dComponent implements OnInit, OnDestroy {
         },
         error: e => { this.hint = '放置请求失败'; }
       });
+    } else if (this.mineMode) {
+      this.doMine(gx, gz);
     } else if (this.fishMode) {
       this.api.fish(gx, gz, 'goldfish').subscribe({
         next: r => {
@@ -1125,7 +1349,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   };
 
   private onPointerMove = (e: PointerEvent): void => {
-    if (!this.dragging || this.buildMode || this.fishMode) return;
+    if (!this.dragging || this.buildMode || this.fishMode || this.mineMode) return;
     const dx = e.clientX - this.lastX;
     const dy = e.clientY - this.lastY;
     this.lastX = e.clientX;
@@ -1187,10 +1411,15 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.moveTarget = null;
       this.hint = '已取消自动移动，WASD 手动控制';
     }
-    // 空格跳跃（非建造/养鱼模式，且不在输入框中）
-    if (code === 'Space' && !this.buildMode && !this.fishMode) {
+    // 空格跳跃（非建造/养鱼/采矿模式，且不在输入框中）
+    if (code === 'Space' && !this.buildMode && !this.fishMode && !this.mineMode) {
       e.preventDefault();
       this.sendJump();
+    }
+    // F 键采矿（跟随/采矿模式均可，自动开采最近矿脉）
+    if (code === 'KeyF' && this.nearestOre) {
+      e.preventDefault();
+      this.doMine(this.nearestOre.gx, this.nearestOre.gz);
     }
   };
 

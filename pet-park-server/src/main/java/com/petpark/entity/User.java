@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -33,6 +34,22 @@ public class User {
     private Object stateJson;
     /** 存档版本号 */
     private Integer version;
+    /** 采矿能量当前值（与 categories.energy 动物饲料能量互不相干） */
+    private Integer energy;
+    /** 世界等级（由累积经验推导：1 + floor(exp/100)） */
+    private Integer level;
+    /** 世界经验（累积） */
+    private Long experience;
+    /** 玩家当前位置 X（世界格） */
+    private Integer posX;
+    /** 玩家当前位置 Z（世界格） */
+    private Integer posZ;
+    /** 玩家当前高度 Y */
+    private BigDecimal posY;
+    /** 玩家所在 chunk_key（区域订阅） */
+    private String lastChunk;
+    /** 能量最后再生时间戳（懒再生基准） */
+    private LocalDateTime energyUpdatedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

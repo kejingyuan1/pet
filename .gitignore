@@ -1,39 +1,56 @@
-# ===== Node / Angular =====
-node_modules/
-pet-park-ng/node_modules/
+# ===== 临时调试 / 构建 / 验证产物（勿提交） =====
+_qa/
+build-check/
+*.out
+*.bak_m2
+
+# 各类一次性排查/诊断 txt
+attrib-check.txt
+build-check-list.txt
+crash-recovery-evidence.txt
+del-check.txt
+fix-check.txt
+readme-note.txt
+hz2.out
+m2-*.txt
+m2-*.sql
+m2-*.out
+ngserve-err.txt
+ngserve-errors.txt
+pet-park-ng/m2-ng-exit.txt
+playwright-m2-world3d.png
+port4200.txt
+ports*.txt
+port*.txt
+ps-*.txt
+ps-del*.txt
+qa-*.out
+qa-*.txt
+rapier-*.json
+restore-*.txt
+restore-*.json
+snap-persist-check.txt
+swap*.txt
+swap*.diag.txt
+vite-overlay*.txt
+worldjs-*.txt
+worldnew-syntax.txt
+
+# ===== 构建输出 / IDE / 工具目录 =====
 pet-park-ng/dist/
 pet-park-ng/dist-manual/
-pet-park-ng/out-tsc/
-pet-park-ng/tmp/
-*.tsbuildinfo
-
-# ===== Java / Maven =====
+pet-park-ng/.angular/
 pet-park-server/target/
-*.class
-*.jar
-mvn-out.txt
-
-# ===== 备份文件 =====
-*.bak_v*
-*.bak
-
-# ===== 系统 =====
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# ===== IDE =====
-.idea/
 .vscode/
-*.iml
-
-# ===== 日志 =====
-*.log
-
-# ===== 本地杂项 / 重复工程 / 测试 scratch =====
-/index.html
-_wtest.txt
+.playwright-cli/
 pet-park-ng2/
-pet-park-ng/.playwright-cli/
-_qa/e2e/
-_qa/*.txt
+
+# ===== 日志 / 杂项临时文件 =====
+*.log
+_wtest.txt
+index.html.bak_v23
+healthz-after-restore.json
+m4-backend.log
+m4-ngbuild.log
+
+# 注意：m4_*.mjs 验证脚本与 m4_pw_verify.png 为 M4 里程碑交付物，保留不忽略
