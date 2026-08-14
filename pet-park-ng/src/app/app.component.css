@@ -634,24 +634,47 @@ p { line-height: 1.55; }
 .task-item > .b:active { transform: scale(.95); }
 .task-item.overdue > .b { background: var(--red); }
 
-/* ===== 3D 场景区 ===== */
+/* ===== 大世界 3D 场景容器（world 模块复用） ===== */
 .scene3d-wrap { border-radius: 20px; overflow: hidden; margin-bottom: 14px; box-shadow: var(--shadow-card); position: relative; }
-.scene-meta { position: absolute; top: 10px; left: 10px; z-index: 14; display: flex; gap: 6px; align-items: center; }
-.weather-chip { display: flex; align-items: center; gap: 5px; background: rgba(255, 255, 255, .88); border-radius: 999px; padding: 6px 12px; font-size: .8rem; font-weight: 800; color: #5A3E1E; box-shadow: 0 2px 6px rgba(168, 110, 60, .15); border: none; cursor: pointer; }
-.scene-actions { position: absolute; top: 10px; right: 10px; z-index: 14; display: flex; gap: 8px; }
-.scene-btn {
-  display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; font-size: .8rem; font-weight: 800;
-  border: none; border-radius: 12px; background: rgba(255, 255, 255, .88); color: var(--ink);
-  cursor: pointer; min-height: 36px; box-shadow: 0 2px 6px rgba(168, 110, 60, .15);
-  transition: transform .15s var(--ease);
-}
-.scene-btn.primary { background: linear-gradient(135deg, var(--orange), var(--pink)); color: #fff; }
-.scene-btn:active { transform: scale(.95); }
-.scene-btn:disabled { opacity: .55; cursor: not-allowed; }
-.scene-tip { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 14; background: rgba(74, 55, 40, .55); color: #fff; padding: 5px 12px; border-radius: 12px; font-size: .72rem; font-weight: 600; backdrop-filter: blur(8px); }
 
-/* ===== 全屏（应用内覆盖式） ===== */
-.scene3d-wrap.fullscreen { position: fixed; inset: 0; z-index: 99; border-radius: 0; margin-bottom: 0; box-shadow: none; background: #8FC8F5; }
+/* ===== 家园首页：欢迎横幅（替代原伪地图区域） ===== */
+.home-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  background: linear-gradient(135deg, var(--orange), var(--pink));
+  border-radius: 22px; padding: 22px 24px; margin-bottom: 16px;
+  box-shadow: var(--shadow-card); color: #fff;
+}
+.home-greet { font-size: 1.35rem; font-weight: 900; text-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+.home-sub { display: flex; gap: 14px; margin-top: 10px; font-size: .9rem; font-weight: 700; opacity: .96; flex-wrap: wrap; }
+.home-weather { cursor: pointer; }
+.home-coins { opacity: .96; }
+.home-explore {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(255, 255, 255, .96); color: var(--orange-d);
+  border: none; border-radius: 16px; padding: 14px 22px;
+  font-size: 1.02rem; font-weight: 900; cursor: pointer; white-space: nowrap;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .2); transition: transform .15s var(--ease);
+}
+.home-explore:active { transform: scale(.96); }
+.home-explore .he-emoji { font-size: 1.4rem; }
+
+/* ===== 家园首页：快捷入口 ===== */
+.home-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.quick-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: var(--card-bg-strong); border: 1px solid rgba(255, 255, 255, .7);
+  border-radius: 18px; padding: 16px 8px; cursor: pointer;
+  box-shadow: var(--shadow-card); font-weight: 800; color: #5A3E1E; font-size: .9rem;
+  transition: transform .2s var(--ease), box-shadow .2s var(--ease);
+}
+.quick-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
+.quick-card .qc-emoji { font-size: 1.9rem; line-height: 1; }
+.quick-card .qc-label { font-size: .85rem; }
+@media (max-width: 480px) {
+  .home-quick { grid-template-columns: repeat(2, 1fr); }
+  .home-hero { padding: 18px; }
+  .home-greet { font-size: 1.2rem; }
+}
 
 /* ===== 宠物卡片 ===== */
 .pet-card { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }

@@ -3,12 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { StateService } from './services/state.service';
 import { AuthService } from './services/auth.service';
-import { Scene3dComponent } from './components/scene3d/scene3d.component';
 import { World3dComponent } from './components/world3d/world3d.component';
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, Scene3dComponent, World3dComponent],
+  imports: [CommonModule, FormsModule, World3dComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
   /* ★ v58 根除版：默认 Emulated 封装会把 body {} 改写成 body[_ngcontent-xxx]

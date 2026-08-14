@@ -71,27 +71,26 @@
 
 <!-- 模块容器 -->
 <main class="modules">
+  <!-- 家园首页：去掉伪地图，改为「欢迎横幅 + 宠物卡片 + 快捷入口」仪表盘 -->
   <section class="module" [class.on]="mod==='home'">
-    <div class="scene3d-wrap">
-      <app-scene3d></app-scene3d>
-      <div class="scene-meta">
-        <button class="weather-chip" (click)="weatherTip()" title="天气自动变化">
-          <span class="weather-emoji">{{ state.state.weather==='rain' ? '🌧️' : '☀️' }}</span>
-          <span>{{ state.state.weather==='rain' ? '下雨' : '晴天' }}</span>
-        </button>
+    <!-- 欢迎横幅：引导进入真正的「大世界」地图 -->
+    <div class="home-hero">
+      <div class="home-hero-text">
+        <div class="home-greet">欢迎回家，{{ pet.name }} 🏡</div>
+        <div class="home-sub">
+          <span class="home-weather" (click)="weatherTip()" title="天气会自动变化，点我了解">
+            {{ state.state.weather==='rain' ? '🌧️ 今天下雨' : '☀️ 天气晴朗' }}
+          </span>
+          <span class="home-coins">💰 {{ coins }} 金币</span>
+        </div>
       </div>
-      <div class="scene-actions">
-        <button class="scene-btn primary" (click)="togglePetOut()" [disabled]="pet.sick" [title]="pet.out ? '叫宠物回家' : '让宠物出门玩'">
-          <span class="btn-emoji">{{ pet.out ? '🏠' : '🚪' }}</span>
-          <span>{{ pet.out ? '叫回家' : '出门玩' }}</span>
-        </button>
-        <button class="scene-btn" (click)="toggleFullscreen()" title="全屏 / 退出（ESC）" aria-label="全屏">
-          <span class="btn-emoji">{{ isFs ? '⤡' : '⤢' }}</span>
-          <span>{{ isFs ? '退出' : '全屏' }}</span>
-        </button>
-      </div>
-      <div class="scene-tip">拖动旋转 · 滚轮缩放 · 右键平移</div>
+      <button class="home-explore" (click)="switchMod('world')" title="进入共享大世界地图">
+        <span class="he-emoji">🗺️</span>
+        <span class="he-text">进入大世界</span>
+      </button>
     </div>
+
+    <!-- 宠物卡片 -->
     <div class="card">
       <div class="pet-card">
         <div class="pet-avatar" [style.background]="pet.sick ? '#E24B4A' : '#FFD166'">
@@ -113,6 +112,14 @@
         </div>
       </div>
       <div class="tips" *ngIf="isNight">🌙 天黑啦，注意体力消耗</div>
+    </div>
+
+    <!-- 快捷入口：一键直达各玩法 -->
+    <div class="home-quick">
+      <button class="quick-card" (click)="switchMod('farm')"><span class="qc-emoji">🥕</span><span class="qc-label">菜地</span></button>
+      <button class="quick-card" (click)="switchMod('pond')"><span class="qc-emoji">🐟</span><span class="qc-label">鱼塘</span></button>
+      <button class="quick-card" (click)="switchMod('ranch')"><span class="qc-emoji">🐔</span><span class="qc-label">牧场</span></button>
+      <button class="quick-card" (click)="switchMod('study')"><span class="qc-emoji">📚</span><span class="qc-label">学习</span></button>
     </div>
   </section>
 
