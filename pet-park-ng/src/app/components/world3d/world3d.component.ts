@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { AuthService } from '../../services/auth.service';
 import { StateService } from '../../services/state.service';
-import { WorldApiService, WorldConfigResp, ChunkResp, WorldObjectResp, MiningProfile, InventoryItem, SellResult, MineResult } from '../../services/world-api.service';
+import { WorldApiService, WorldConfigResp, ChunkResp, WorldObjectResp, MiningProfile, InventoryItem, SellResult, MineResult, HarvestResult } from '../../services/world-api.service';
 import { WorldSocketService } from '../../services/world-socket.service';
 import { WorldPhysicsService } from '../../services/world-physics.service';
 import { AssetService } from '../../services/asset.service';
@@ -64,7 +64,10 @@ interface GridData {
       <button (click)="enterBuild()" [class.on]="buildMode">🏗️ 建造</button>
       <button (click)="enterFish()" [class.on]="fishMode">🐟 养鱼</button>
       <button (click)="enterMine()" [class.on]="mineMode">⛏️ 采矿</button>
-      <button (click)="exitInteract()" [class.on]="false">🎥 跟随</button>
+      <button (click)="enterRemove()" [class.on]="removeMode">🗑️ 拆除</button>
+      <button (click)="enterUpgrade()" [class.on]="upgradeMode">⬆️ 升级</button>
+      <button (click)="enterHarvest()" [class.on]="harvestMode">🎣 收获</button>
+      <button (click)="exitInteract()" [class.on]="!buildMode && !fishMode && !mineMode && !removeMode && !upgradeMode && !harvestMode">🎥 跟随</button>
     </div>
     <div class="w3d-hud">
       <div class="hud-row">金币 {{coins}} · 在线 {{onlineCount}}</div>
@@ -161,6 +164,10 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   buildMode = false;
   fishMode = false;
+  // 拆除 / 升级 / 收获（P0 / P2 / P1 审计缺口的前端交互入口）
+  removeMode = false;
+  upgradeMode = false;
+  harvestMode = false;
   hint = 'WASD 移动，空格 跳跃，双击地面跑过去，左键拖拽环绕视角';
   posText = '';
   coins = 0;
@@ -237,6 +244,8 @@ export class World3dComponent implements OnInit, OnDestroy {
   private keys: Record<string, boolean> = {};
   // 双击移动目标（世界坐标），null 表示无目标
   private moveTarget: { x: number; z: number } | null = null;
+  // P2 双击 A* 寻路：路点队列（世界坐标），依次抵达后清空
+  private pathPoints: { x: number; z: number }[] = [];
 
   // 相机
   private follow = { yaw: 0.7, pitch: 0.5, dist: 30 };
@@ -484,6 +493,12 @@ export class World3dComponent implements OnInit, OnDestroy {
       } else if (ev.t === 'TERRAIN_CHANGE' && ev.chunkKey != null) {
         // 矿格被采空：重着色地形 + 移除 3D 矿模型（所有客户端同步）
         this.applyTerrainChange(ev.chunkKey, ev.gx, ev.gz, ev.newType);
+      } else if (ev.t === 'OBJECT_REMOVE' && ev.id != null) {
+        // P0 拆除：移除网格 + 清缓存（所有客户端同步）
+        this.removeObjectMesh(ev.id);
+      } else if (ev.t === 'OBJECT_UPDATE' && ev.id != null) {
+        // P2 升级 / P1 鱼塘收获：刷新网格（等级缩放 / 生长进度）
+        this.updateObjectMesh(ev.id, ev.extJson);
       }
       this.onlineCount = this.remotePlayers.size + 1;
     } catch (e) { /* 忽略坏帧 */ }
@@ -578,8 +593,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.lastTs = now;
     // 输入上行（非建造/养鱼模式）：本地不移动，只发输入意图；~30Hz + 按键状态变化立即发
     if (!this.buildMode && !this.fishMode) {
-      // 优先处理双击目标移动（有目标时自动走向目标）
-      if (this.moveTarget) {
+      // 优先处理双击目标移动：有 A* 路点队列则逐点跟随，否则单点 moveTarget，否则手动输入
+      if (this.pathPoints.length > 0) {
+        this.followPath(now);
+      } else if (this.moveTarget) {
         this.updateMoveTowardsTarget(now);
       } else {
         this.sendInputIfNeeded(now);
@@ -641,7 +658,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.posText = `${Math.floor(this.px)}, ${Math.floor(this.pz)}, ${this.py.toFixed(1)}`;
 
     // 相机
-    if (this.buildMode || this.fishMode || this.mineMode) {
+    if (this.buildMode || this.fishMode || this.mineMode || this.removeMode || this.upgradeMode || this.harvestMode) {
       this.controls.target.set(this.dpx, this.dpy, this.dpz);
       this.controls.update();
     } else {
@@ -740,6 +757,169 @@ export class World3dComponent implements OnInit, OnDestroy {
         targetGz: Math.floor(tz)
       });
     }
+  }
+
+  /** 沿 A* 路点队列行走：抵达队首后出队，队列空则停止 */
+  private followPath(now: number): void {
+    if (!this.pathPoints.length) {
+      this.moveTarget = null;
+      return;
+    }
+    const head = this.pathPoints[0];
+    const dist = Math.hypot(head.x - this.dpx, head.z - this.dpz);
+    if (dist < 0.8) {
+      this.pathPoints.shift();
+      if (!this.pathPoints.length) {
+        this.moveTarget = null;
+        if (this.ws.isConnected) {
+          this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
+        }
+        this.hint = '已到达目标位置';
+        return;
+      }
+    }
+    this.moveTarget = head;
+    this.updateMoveTowardsTarget(now);
+  }
+
+  /**
+   * P2 双击 A* 寻路：基于已加载 chunk 的语义网格，避开水/树/岩/山/矿，
+   * 从 (startGx,startGz) 寻路到 (targetGx,targetGz)，返回逐格中心点路点。
+   * 无语义网格或不可达时返回 null（调用方回退直线移动）。
+   */
+  private findPath(startGx: number, startGz: number, targetGx: number, targetGz: number): { x: number; z: number }[] | null {
+    // 可达性：起点/终点所在 cell 必须可走（终点不可走则找最近可走邻格）
+    const sc = this.cellChunk(startGx, startGz);
+    const tc = this.cellChunk(targetGx, targetGz);
+    if (!sc || !tc) return null;
+
+    // 目标若不可走，就近找最近可走格
+    let tg = { gx: targetGx, gz: targetGz };
+    if (!this.isWalkableCell(targetGx, targetGz)) {
+      const near = this.nearestWalkable(targetGx, targetGz);
+      if (!near) return null;
+      tg = near;
+    }
+
+    // 取有语义网格覆盖的 chunk 边界（覆盖起终点所在 chunk）
+    const minCx = Math.min(sc.cx, tc.cx), maxCx = Math.max(sc.cx, tc.cx);
+    const minCz = Math.min(sc.cz, tc.cz), maxCz = Math.max(sc.cz, tc.cz);
+    // 若任一关键 chunk 未加载，无法可靠寻路
+    const originX = minCx * CHUNK, originZ = minCz * CHUNK;
+    const spanX = (maxCx - minCx + 1) * CHUNK, spanZ = (maxCz - minCz + 1) * CHUNK;
+    const getSem = (gx: number, gz: number): number | null => {
+      const c = this.cellChunk(gx, gz);
+      if (!c) return null;
+      const grid = this.gridCache.get(`${c.cx}_${c.cz}`);
+      if (!grid) return null;
+      const lx = gx - c.cx * CHUNK, lz = gz - c.cz * CHUNK;
+      if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return null;
+      return grid.semantic[lz * CHUNK + lx];
+    };
+
+    const walk = (gx: number, gz: number): boolean => {
+      const s = getSem(gx, gz);
+      if (s == null) return false;
+      return s === 1 || s === 2 || s === 9; // sand / grass / empty
+    };
+
+    const key = (gx: number, gz: number) => `${gx},${gz}`;
+    const startK = key(startGx, startGz);
+    const targetK = key(tg.gx, tg.gz);
+    const open = new Map<string, { gx: number; gz: number; f: number }>();
+    const came = new Map<string, string>();
+    const gScore = new Map<string, number>();
+    const h = (gx: number, gz: number) => Math.hypot(gx - tg.gx, gz - tg.gz);
+    open.set(startK, { gx: startGx, gz: startGz, f: h(startGx, startGz) });
+    gScore.set(startK, 0);
+    const closed = new Set<string>();
+
+    const dirs = [
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [1, 1], [1, -1], [-1, 1], [-1, -1]
+    ];
+
+    let found = false;
+    let guard = 0;
+    const maxIter = spanX * spanZ * 8 + 1000;
+    while (open.size && guard++ < maxIter) {
+      // 取 f 最小
+      let curK = '', cur: { gx: number; gz: number; f: number } | null = null;
+      let best = Infinity;
+      for (const [k, v] of open) {
+        if (v.f < best) { best = v.f; curK = k; cur = v; }
+      }
+      if (!cur) break;
+      open.delete(curK);
+      if (curK === targetK) { found = true; break; }
+      closed.add(curK);
+      for (const [dx, dz] of dirs) {
+        const ngx = cur.gx + dx, ngz = cur.gz + dz;
+        if (ngx < originX || ngz < originZ || ngx >= originX + spanX || ngz >= originZ + spanZ) continue;
+        if (!walk(ngx, ngz)) continue;
+        // 对角线防穿墙（两侧正交格均须可走）
+        if (dx !== 0 && dz !== 0) {
+          if (!walk(cur.gx + dx, cur.gz) || !walk(cur.gx, cur.gz + dz)) continue;
+        }
+        const nk = key(ngx, ngz);
+        if (closed.has(nk)) continue;
+        const step = (dx !== 0 && dz !== 0) ? 1.4142 : 1;
+        const tentative = (gScore.get(curK) ?? 0) + step;
+        if (tentative < (gScore.get(nk) ?? Infinity)) {
+          came.set(nk, curK);
+          gScore.set(nk, tentative);
+          const f = tentative + h(ngx, ngz);
+          open.set(nk, { gx: ngx, gz: ngz, f });
+        }
+      }
+    }
+    if (!found) return null;
+    // 回溯路径
+    const path: { x: number; z: number }[] = [];
+    let k = targetK;
+    while (k) {
+      const [gx, gz] = k.split(',').map(Number);
+      path.push({ x: gx + 0.5, z: gz + 0.5 });
+      if (k === startK) break;
+      k = came.get(k) || '';
+    }
+    path.reverse();
+    // 去掉起点（玩家已在），保留后续路点
+    if (path.length > 1) path.shift();
+    return path;
+  }
+
+  /** cell 所属 chunk（含越界判断） */
+  private cellChunk(gx: number, gz: number): { cx: number; cz: number } | null {
+    const cx = Math.floor(gx / CHUNK);
+    const cz = Math.floor(gz / CHUNK);
+    if (!this.gridCache.has(`${cx}_${cz}`)) return null;
+    return { cx, cz };
+  }
+
+  /** 单格是否可走（需有语义数据且为 sand/grass/empty） */
+  private isWalkableCell(gx: number, gz: number): boolean {
+    const c = this.cellChunk(gx, gz);
+    if (!c) return false;
+    const grid = this.gridCache.get(`${c.cx}_${c.cz}`);
+    if (!grid) return false;
+    const lx = gx - c.cx * CHUNK, lz = gz - c.cz * CHUNK;
+    if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return false;
+    const s = grid.semantic[lz * CHUNK + lx];
+    return s === 1 || s === 2 || s === 9;
+  }
+
+  /** 从 (gx,gz) 就近找最近可走格（搜索半径内螺旋） */
+  private nearestWalkable(gx: number, gz: number): { gx: number; gz: number } | null {
+    for (let r = 1; r <= 6; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
+          if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
+          if (this.isWalkableCell(gx + dx, gz + dz)) return { gx: gx + dx, gz: gz + dz };
+        }
+      }
+    }
+    return null;
   }
 
   /** 远端玩家：以物理快照刚体为准（创建/更新/删除） */
@@ -1371,6 +1551,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     const y = this.heightAt(o.gx + 0.5, o.gz + 0.5);
     const groundY = y === undefined ? 0 : y;
     const g = new THREE.Group();
+    (g as any).__isObjGroup = true;
     if (o.type === 'fish_pond') {
       // 鱼塘：蓝色扁圆柱 + 水面
       const pond = new THREE.Mesh(
@@ -1379,6 +1560,15 @@ export class World3dComponent implements OnInit, OnDestroy {
       );
       pond.position.y = 0.25;
       g.add(pond);
+      // P1 养殖循环：生长进度环（灰=未成熟，金=成熟可收获），随 OBJECT_UPDATE 刷新
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(1.15, 0.08, 8, 32),
+        new THREE.MeshStandardMaterial({ color: 0x9a9a92 })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.55;
+      ring.name = 'growthRing';
+      g.add(ring);
     } else {
       // 建筑：木屋方块 + 屋顶
       const wall = new THREE.Mesh(
@@ -1393,11 +1583,81 @@ export class World3dComponent implements OnInit, OnDestroy {
       roof.position.y = 1.7;
       roof.rotation.y = Math.PI / 4;
       g.add(wall, roof);
+      // P2 建筑升级：按等级缩放（Lv1→1.0，Lv2→1.18，Lv3→1.36）
+      const lvl = this.objectLevel(o);
+      g.userData['level'] = lvl;
+      const s = 1 + (lvl - 1) * 0.18;
+      g.scale.set(s, s, s);
     }
     g.position.set(o.gx + 0.5, groundY, o.gz + 0.5);
     this.scene.add(g);
     this.objectMeshes.set(o.id, g);
+    // 初始化鱼塘生长进度
+    if (o.type === 'fish_pond') {
+      this.refreshPondGrowth(g, o.extJson);
+    }
   }
+
+  /** 从 object 的 extJson 解析建筑等级（默认 1） */
+  private objectLevel(o: WorldObjectResp): number {
+    const ext = o.extJson as any;
+    if (ext && ext.level != null) {
+      const lv = Number(ext.level);
+      if (!isNaN(lv) && lv >= 1) return lv;
+    }
+    return 1;
+  }
+
+  /** 刷新鱼塘生长进度环（P1）：依据 plantedAt/cycleMs 计算成熟度 → 环色 + 提示 */
+  private refreshPondGrowth(group: THREE.Object3D, extJson: any): void {
+    const ring = group.getObjectByName('growthRing') as THREE.Mesh | undefined;
+    if (!ring) return;
+    const ext = (extJson && typeof extJson === 'object') ? extJson : {};
+    const plantedAt = typeof ext.plantedAt === 'number' ? ext.plantedAt : 0;
+    const cycleMs = typeof ext.cycleMs === 'number' ? ext.cycleMs : 60000;
+    const elapsed = plantedAt ? Date.now() - plantedAt : 0;
+    const progress = cycleMs > 0 ? Math.min(1, Math.max(0, elapsed / cycleMs)) : 0;
+    const ready = progress >= 1;
+    const mat = ring.material as THREE.MeshStandardMaterial;
+    mat.color.set(ready ? 0xFFD700 : 0x9a9a92);
+    const s = 0.4 + progress * 0.8;
+    ring.scale.set(s, s, 1);
+  }
+
+  /** 移除对象网格（OBJECT_REMOVE 同步 / 本地拆除结果用） */
+  private removeObjectMesh(id: number): void {
+    const g = this.objectMeshes.get(id);
+    if (g) {
+      this.scene.remove(g);
+      g.traverse(o => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+        const mat = m.material as THREE.Material | THREE.Material[];
+        if (mat) (Array.isArray(mat) ? mat : [mat]).forEach(x => x.dispose());
+      });
+      this.objectMeshes.delete(id);
+    }
+    this.worldObjects.delete(id);
+  }
+
+  /** 刷新对象网格（OBJECT_UPDATE：升级等级缩放 / 鱼塘收获后进度重置） */
+  private updateObjectMesh(id: number, extJson: any): void {
+    const g = this.objectMeshes.get(id);
+    const o = this.worldObjects.get(id);
+    if (!g || !o) return;
+    if (typeof extJson === 'object' && extJson != null) {
+      o.extJson = extJson;
+      if (o.type === 'fish_pond') {
+        this.refreshPondGrowth(g, extJson);
+      } else {
+        const lvl = (extJson.level != null) ? Number(extJson.level) : (g.userData['level'] || 1);
+        g.userData['level'] = lvl;
+        const s = 1 + (lvl - 1) * 0.18;
+        g.scale.set(s, s, s);
+      }
+    }
+  }
+
 
   // ================= 远端玩家 =================
 
@@ -1453,14 +1713,56 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.mineMode = true;
     this.buildMode = false;
     this.fishMode = false;
+    this.removeMode = false;
+    this.upgradeMode = false;
+    this.harvestMode = false;
     this.controls.enabled = true;
     this.hint = '采矿模式：点击矿石开采（4 能量/次，需靠近矿脉 ≤3.5），点击「跟随」退出';
+  }
+
+  /** 拆除模式（P0）：点击自己放置的建筑/鱼塘即可拆除（不退还金币） */
+  enterRemove(): void {
+    this.removeMode = true;
+    this.buildMode = false;
+    this.fishMode = false;
+    this.mineMode = false;
+    this.upgradeMode = false;
+    this.harvestMode = false;
+    this.controls.enabled = true;
+    this.hint = '拆除模式：点击你的建筑/鱼塘拆除，点击「跟随」退出';
+  }
+
+  /** 升级模式（P2）：点击自己放置的建筑升级（扣升级费，最高 Lv3） */
+  enterUpgrade(): void {
+    this.upgradeMode = true;
+    this.buildMode = false;
+    this.fishMode = false;
+    this.mineMode = false;
+    this.removeMode = false;
+    this.harvestMode = false;
+    this.controls.enabled = true;
+    this.hint = '升级模式：点击你的建筑升级（Lv1→Lv2→Lv3），点击「跟随」退出';
+  }
+
+  /** 收获模式（P1）：点击成熟的鱼塘收获（发放金币并进入下一轮养殖） */
+  enterHarvest(): void {
+    this.harvestMode = true;
+    this.buildMode = false;
+    this.fishMode = false;
+    this.mineMode = false;
+    this.removeMode = false;
+    this.upgradeMode = false;
+    this.controls.enabled = true;
+    this.hint = '收获模式：点击金色光环的成熟鱼塘收获，点击「跟随」退出';
   }
 
   exitInteract(): void {
     this.buildMode = false;
     this.fishMode = false;
     this.mineMode = false;
+    this.removeMode = false;
+    this.upgradeMode = false;
+    this.harvestMode = false;
     this.controls.enabled = false;
     this.hint = '已回到跟随视角，WASD 移动';
   }
@@ -1614,11 +1916,63 @@ export class World3dComponent implements OnInit, OnDestroy {
   }
 
   private onCanvasClick(x: number, y: number): void {
-    if (!this.buildMode && !this.fishMode) return;
+    if (!this.buildMode && !this.fishMode && !this.removeMode && !this.upgradeMode && !this.harvestMode) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const nx = ((x - rect.left) / rect.width) * 2 - 1;
     const ny = -((y - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
+
+    // 拆除 / 升级 / 收获：射线命中已有对象（建筑/鱼塘）
+    if (this.removeMode || this.upgradeMode || this.harvestMode) {
+      const objHits = this.raycaster.intersectObjects(Array.from(this.objectMeshes.values()), true);
+      const group = objHits.length ? this.findObjectGroup(objHits[0].object) : null;
+      if (group) {
+        const gx = Math.floor(group.position.x);
+        const gz = Math.floor(group.position.z);
+        if (this.removeMode) {
+          this.api.remove(gx, gz).subscribe({
+            next: r => {
+              this.hint = r.code === 0 ? '拆除成功！' : '拆除失败：' + r.msg;
+              if (r.code === 0 && r.data) this.removeObjectMesh(r.data.id);
+            },
+            error: () => { this.hint = '拆除请求失败'; }
+          });
+        } else if (this.upgradeMode) {
+          this.api.upgrade(gx, gz).subscribe({
+            next: r => {
+              this.hint = r.code === 0 ? '升级成功！' : '升级失败：' + r.msg;
+              if (r.code === 0 && r.data) this.updateObjectMesh(r.data.id, r.data.extJson);
+              this.refreshCoins();
+            },
+            error: () => { this.hint = '升级请求失败'; }
+          });
+        } else if (this.harvestMode) {
+          this.api.harvest(gx, gz).subscribe({
+            next: r => {
+              if (r.code === 0 && r.data) {
+                if (r.data.ready) {
+                  this.hint = `收获成功！获得 ${r.data.reward} 金币`;
+                  this.showToast(`🎣 收获 +${r.data.reward} 金币`);
+                  if (r.data && this.worldObjects) {
+                    // 通过 OBJECT_UPDATE 已刷新；兜底：本地刷新对应鱼塘
+                  }
+                } else {
+                  this.hint = `鱼塘未成熟，还需 ${Math.ceil(r.data.remainingMs / 1000)} 秒`;
+                }
+                this.refreshCoins();
+              } else {
+                this.hint = '收获失败：' + (r.msg || '未知错误');
+              }
+            },
+            error: () => { this.hint = '收获请求失败'; }
+          });
+        }
+      } else {
+        this.hint = '请点击你的建筑/鱼塘进行操作';
+      }
+      return;
+    }
+
     const meshes = Array.from(this.chunkMeshes.values());
     const hits = this.raycaster.intersectObjects(meshes, false);
     if (!hits.length) return;
@@ -1643,6 +1997,16 @@ export class World3dComponent implements OnInit, OnDestroy {
         error: () => { this.hint = '养鱼请求失败'; }
       });
     }
+  }
+
+  /** 从射线命中的子网格向上回溯到 objectMeshes 中的对象组 */
+  private findObjectGroup(obj: THREE.Object3D): THREE.Group | null {
+    let node: THREE.Object3D | null = obj;
+    while (node) {
+      if (this.objectMeshes && (node as any).__isObjGroup) return node as THREE.Group;
+      node = node.parent;
+    }
+    return null;
   }
 
   private refreshCoins(): void {
@@ -1686,10 +2050,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
   };
 
-  /** 双击地面：射线检测地形交点 → 设为移动目标 → 服务端寻路 */
+  /** 双击地面：射线检测地形交点 → A* 寻路（绕开水/树/岩）→ 逐点行走（P2） */
   private onDoubleClick = (e: MouseEvent): void => {
-    // 建造/养鱼模式下双击不触发移动（避免冲突）
-    if (this.buildMode || this.fishMode) return;
+    // 建造/养鱼/拆除/升级/收获模式下双击不触发移动（避免冲突）
+    if (this.buildMode || this.fishMode || this.removeMode || this.upgradeMode || this.harvestMode) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const ny = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1698,12 +2062,24 @@ export class World3dComponent implements OnInit, OnDestroy {
     const hits = this.raycaster.intersectObjects(meshes, false);
     if (!hits.length) return;
     const point = hits[0].point;
-    // 只在可行走区域（沙/草）才设目标
-    // TODO: 后续可加语义检查，当前简化处理
-    this.moveTarget = { x: point.x, z: point.z };
-    this.hint = `📍 移动目标: (${Math.floor(point.x)}, ${Math.floor(point.z)})`;
-    // 立即发送一次目标位置到后端（后续每帧持续发直到到达）
-    this.sendMoveTarget();
+    const targetGx = Math.floor(point.x);
+    const targetGz = Math.floor(point.z);
+    // 清空旧目标/路径
+    this.moveTarget = null;
+    const startGx = Math.floor(this.dpx);
+    const startGz = Math.floor(this.dpz);
+    // A* 寻路（基于语义网格避障）
+    const path = this.findPath(startGx, startGz, targetGx, targetGz);
+    if (path && path.length > 0) {
+      this.pathPoints = path;
+      this.hint = `🧭 寻路 ${path.length} 个路点 → (${targetGx}, ${targetGz})`;
+      this.sendMoveTarget();
+    } else {
+      // 无语义网格或不可达：回退直线移动
+      this.moveTarget = { x: point.x, z: point.z };
+      this.hint = `📍 移动目标: (${targetGx}, ${targetGz})（直线）`;
+      this.sendMoveTarget();
+    }
   };
 
   /** 发送移动目标到服务端 */
@@ -1727,8 +2103,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.keys[e.code] = true;
     // 按 WASD/方向键时取消双击自动移动（手动优先）
     const code = e.code ?? '';
-    if ((code.startsWith('Key') || code.startsWith('Arrow')) && this.moveTarget) {
+    if ((code.startsWith('Key') || code.startsWith('Arrow')) && (this.moveTarget || this.pathPoints.length)) {
       this.moveTarget = null;
+      this.pathPoints = [];
       this.hint = '已取消自动移动，WASD 手动控制';
     }
     // 空格跳跃（非建造/养鱼/采矿模式，且不在输入框中）

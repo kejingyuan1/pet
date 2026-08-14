@@ -68,4 +68,37 @@ public final class WorldErrors {
     public static BizException notInWorld() {
         return new BizException(WORLD_NOT_IN_WORLD, "尚未进入世界，无法采矿");
     }
+
+    // ===== P0 拆除 / 升级 / 等级门槛（审计缺口 #3） =====
+
+    public static final int WORLD_LEVEL_NOT_ENOUGH = 2012;
+    public static final int WORLD_NOT_OWNER = 2013;
+    public static final int WORLD_OBJECT_NOT_FOUND = 2014;
+    public static final int WORLD_MAX_LEVEL = 2015;
+    public static final int WORLD_FISH_NOT_READY = 2016;
+
+    /** 等级不足（建筑/养鱼 level_req 门槛） */
+    public static BizException levelNotEnough() {
+        return new BizException(WORLD_LEVEL_NOT_ENOUGH, "等级不足，暂无法使用该功能");
+    }
+
+    /** 不是自己的对象（拆除/升级只能操作自己放置的） */
+    public static BizException notOwner() {
+        return new BizException(WORLD_NOT_OWNER, "只能操作自己放置的对象");
+    }
+
+    /** 该位置没有可操作的对象 */
+    public static BizException objectNotFound() {
+        return new BizException(WORLD_OBJECT_NOT_FOUND, "该位置没有可操作的对象");
+    }
+
+    /** 已达到最高等级（建筑升级上限） */
+    public static BizException maxLevel() {
+        return new BizException(WORLD_MAX_LEVEL, "已达到最高等级，无法继续升级");
+    }
+
+    /** 鱼塘尚未成熟（收获过早） */
+    public static BizException fishNotReady() {
+        return new BizException(WORLD_FISH_NOT_READY, "鱼塘尚未成熟，暂不能收获");
+    }
 }

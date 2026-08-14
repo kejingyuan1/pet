@@ -34,4 +34,15 @@ public interface TerrainModMapper extends BaseMapper<TerrainMod> {
     /** 退还认领（能量不足等异常路径，仅删自己刚写的记录） */
     @Delete("DELETE FROM terrain_mods WHERE chunk_key = #{ck} AND gx = #{gx} AND gz = #{gz} AND by_player = #{uid}")
     int deleteOwned(@Param("ck") String ck, @Param("gx") int gx, @Param("gz") int gz, @Param("uid") long uid);
+
+    /** 矿脉再生：选出已被采空（new_type='empty' 且 old_type 为矿）且超过再生周期的记录 */
+    @Select("SELECT * FROM terrain_mods "
+            + "WHERE new_type = 'empty' AND old_type IN ('ore_coal','ore_iron','ore_gold') "
+            + "AND created_at < FROM_UNIXTIME(#{cutoffMs} / 1000)")
+    List<TerrainMod> selectMinedOlderThan(@Param("cutoffMs") long cutoffMs);
+
+    /** 矿脉再生：按 id 批量删除采空记录（删记录即恢复底层矿脉） */
+    @Delete("<script>DELETE FROM terrain_mods WHERE id IN "
+            + "<foreach item='id' collection='ids' open='(' separator=',' close=')'>#{id}</foreach></script>")
+    int deleteMinedByIds(@Param("ids") java.util.List<Long> ids);
 }

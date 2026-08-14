@@ -39,6 +39,7 @@
           "builder": "@angular-devkit/build-angular:application",
           "options": {
             "outputPath": "dist/pet-park-ng",
+            "deleteOutputPath": false,
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": [

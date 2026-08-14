@@ -8,6 +8,7 @@ import com.petpark.entity.User;
 import com.petpark.mapper.CategoryMapper;
 import com.petpark.mapper.UserMapper;
 import com.petpark.world.WorldErrors;
+import com.petpark.world.dto.HarvestResult;
 import com.petpark.world.dto.WorldObjectResp;
 import com.petpark.world.entity.WorldObject;
 import com.petpark.world.geo.CellType;
@@ -21,6 +22,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -68,6 +70,12 @@ public class WorldObjectService {
         this.json = json;
     }
 
+    // ================= 玩法常量（P0/P1/P2 审计缺口） =================
+    /** 建筑最高等级（升级上限） */
+    private static final int MAX_UPGRADE_LEVEL = 3;
+    /** 鱼塘成熟周期（ms）：演示用 60s 一轮，成熟即可收获并重置（可再生鱼塘） */
+    private static final long DEFAULT_FISH_CYCLE_MS = 60000L;
+
     /** 放置建筑（REST / WS 共用） */
     @Transactional(rollbackFor = Exception.class)
     public Result<WorldObjectResp> placeBuild(Long uid, int gx, int gz, String objectType, Double rot) {
@@ -82,6 +90,8 @@ public class WorldObjectService {
         if (cat == null || !"building".equals(cat.getType())) {
             throw WorldErrors.badObjectType();
         }
+        // 等级门槛（P0 审计缺口 #3）：玩家等级需 ≥ 建筑 level_req
+        checkLevelReq(uid, cat);
         // 原子放置（条件 INSERT，防双置）
         WorldObject obj = newObject(gx, gz, objectType, uid, rot == null ? 0.0 : rot);
         int placed = objectMapper.insertIfAbsent(obj);
@@ -115,9 +125,14 @@ public class WorldObjectService {
         if (fish == null || !"fish".equals(fish.getType())) {
             throw WorldErrors.badObjectType();
         }
-        // 原子放置 fish_pond（同 cell 不能有其它对象）
+        // 等级门槛（P0 审计缺口 #3）：玩家等级需 ≥ 鱼种 level_req
+        checkLevelReq(uid, fish);
+        // 原子放置 fish_pond（同 cell 不能有其它对象）；ext_json 记录养殖周期（P1 养殖循环）
         WorldObject obj = newObject(gx, gz, "fish_pond", uid, 0.0);
-        obj.setExtJson(toJson(Map.of("fishType", fishType)));
+        obj.setExtJson(toJson(Map.of(
+                "fishType", fishType,
+                "plantedAt", System.currentTimeMillis(),
+                "cycleMs", DEFAULT_FISH_CYCLE_MS)));
         int placed = objectMapper.insertIfAbsent(obj);
         if (placed != 1) {
             throw WorldErrors.cellOccupied();
@@ -132,6 +147,133 @@ public class WorldObjectService {
                 "object", resp));
         log.info("[world] uid={} 养鱼 {} @({},{}) id={}", uid, fishType, gx, gz, obj.getId());
         return Result.ok(resp);
+    }
+
+    // ================= 拆除 / 升级 / 收获（P0 / P2 / P1 审计缺口） =================
+
+    /**
+     * 拆除建筑（P0 审计缺口 #3）：软删（state=0 保留记录）自己放置的对象 + 广播 OBJECT_REMOVE。
+     * 规则：不退还金币（视为放弃资源，避免刷金币）；只能拆自己的。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Result<WorldObjectResp> removeObject(Long uid, int gx, int gz) {
+        if (!terrain.inWorld(gx, gz)) {
+            throw WorldErrors.outOfBounds();
+        }
+        String ck = ChunkKey.ofWorld(gx, gz);
+        WorldObject obj = objectMapper.selectAt(ck, gx, gz);
+        if (obj == null) {
+            throw WorldErrors.objectNotFound();
+        }
+        if (!obj.getOwnerId().equals(uid)) {
+            throw WorldErrors.notOwner();
+        }
+        if (objectMapper.softDelete(obj.getId()) != 1) {
+            throw WorldErrors.objectNotFound();
+        }
+        broadcastAfterCommit(ck, Map.of(
+                "t", "OBJECT_REMOVE",
+                "id", obj.getId(),
+                "gx", gx, "gz", gz,
+                "chunkKey", ck));
+        log.info("[world] uid={} 拆除对象 {} @({},{}) id={}", uid, obj.getType(), gx, gz, obj.getId());
+        return Result.ok(toResp(obj));
+    }
+
+    /**
+     * 建筑升级（P2 审计缺口 #4）：等级 +1，扣升级费（基础价 × 当前等级），写 ext_json，广播 OBJECT_UPDATE。
+     * 只能升级自己放置的建筑；达上限抛 maxLevel。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Result<WorldObjectResp> upgradeObject(Long uid, int gx, int gz) {
+        if (!terrain.inWorld(gx, gz)) {
+            throw WorldErrors.outOfBounds();
+        }
+        String ck = ChunkKey.ofWorld(gx, gz);
+        WorldObject obj = objectMapper.selectAt(ck, gx, gz);
+        if (obj == null) {
+            throw WorldErrors.objectNotFound();
+        }
+        if (!obj.getOwnerId().equals(uid)) {
+            throw WorldErrors.notOwner();
+        }
+        Map<String, Object> ext = parseExtToMap(obj.getExtJson());
+        int level = ext.get("level") instanceof Number n ? n.intValue() : 1;
+        if (level >= MAX_UPGRADE_LEVEL) {
+            throw WorldErrors.maxLevel();
+        }
+        Category cat = categoryByCode(obj.getType());
+        int base = cat != null && cat.getPrice() != null ? cat.getPrice() : 0;
+        int cost = base * level; // 升级费随等级递增
+        if (userMapper.updateCoinsIfEnough(uid, cost) != 1) {
+            throw WorldErrors.insufficientCoins();
+        }
+        int newLevel = level + 1;
+        ext.put("level", newLevel);
+        objectMapper.updateExtJson(obj.getId(), toJson(ext));
+        WorldObjectResp resp = toResp(obj);
+        resp.setExtJson(ext);
+        broadcastAfterCommit(ck, Map.of(
+                "t", "OBJECT_UPDATE",
+                "id", obj.getId(),
+                "gx", gx, "gz", gz,
+                "level", newLevel,
+                "extJson", ext,
+                "chunkKey", ck));
+        log.info("[world] uid={} 升级 {} → Lv{} @({},{}) id={}", uid, obj.getType(), newLevel, gx, gz, obj.getId());
+        return Result.ok(resp);
+    }
+
+    /**
+     * 鱼塘收获（P1 养殖循环）：成熟则发放金币奖励（鱼种 sell_price）并重置周期（可再生鱼塘）；
+     * 未成熟返回剩余时间（ready=false）。只能收获自己的鱼塘。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Result<HarvestResult> harvestFish(Long uid, int gx, int gz) {
+        if (!terrain.inWorld(gx, gz)) {
+            throw WorldErrors.outOfBounds();
+        }
+        String ck = ChunkKey.ofWorld(gx, gz);
+        WorldObject obj = objectMapper.selectAt(ck, gx, gz);
+        if (obj == null) {
+            throw WorldErrors.objectNotFound();
+        }
+        if (!obj.getOwnerId().equals(uid)) {
+            throw WorldErrors.notOwner();
+        }
+        if (!"fish_pond".equals(obj.getType())) {
+            throw WorldErrors.badObjectType();
+        }
+        Map<String, Object> ext = parseExtToMap(obj.getExtJson());
+        long plantedAt = ext.get("plantedAt") instanceof Number n ? n.longValue() : 0L;
+        long cycleMs = ext.get("cycleMs") instanceof Number n ? n.longValue() : DEFAULT_FISH_CYCLE_MS;
+        long elapsed = System.currentTimeMillis() - plantedAt;
+        HarvestResult r = new HarvestResult();
+        if (elapsed < cycleMs) {
+            r.setReady(false);
+            r.setRemainingMs(cycleMs - elapsed);
+            r.setCoins(userCoins(uid));
+            return Result.ok(r);
+        }
+        String fishType = ext.get("fishType") instanceof String s ? s : "goldfish";
+        Category fish = categoryByCode(fishType);
+        int reward = fish != null && fish.getSellPrice() != null ? fish.getSellPrice() : 0;
+        if (reward > 0) {
+            userMapper.addCoins(uid, reward);
+        }
+        ext.put("plantedAt", System.currentTimeMillis());
+        objectMapper.updateExtJson(obj.getId(), toJson(ext));
+        r.setReady(true);
+        r.setReward(reward);
+        r.setCoins(userCoins(uid));
+        broadcastAfterCommit(ck, Map.of(
+                "t", "OBJECT_UPDATE",
+                "id", obj.getId(),
+                "gx", gx, "gz", gz,
+                "extJson", ext,
+                "chunkKey", ck));
+        log.info("[world] uid={} 收获鱼塘 {} @({},{}) 奖励{}", uid, fishType, gx, gz, reward);
+        return Result.ok(r);
     }
 
     /** 拉取某 chunk 内全部正常对象（chunk 响应 / 快照用） */
@@ -195,6 +337,36 @@ public class WorldObjectService {
         o.setRot(BigDecimal.valueOf(rot));
         o.setState(1);
         return o;
+    }
+
+    /** 等级门槛校验：玩家等级需 ≥ 品类 level_req（P0 审计缺口 #3） */
+    private void checkLevelReq(Long uid, Category cat) {
+        Integer req = cat.getLevelReq();
+        if (req == null || req <= 1) {
+            return; // 无门槛或门槛为 1（默认满足）
+        }
+        User me = userMapper.selectById(uid);
+        int myLevel = me != null && me.getLevel() != null ? me.getLevel() : 1;
+        if (myLevel < req) {
+            throw WorldErrors.levelNotEnough();
+        }
+    }
+
+    /** ext_json 文本 → Map（解析失败返回空 Map，便于升级/养殖状态读写） */
+    private Map<String, Object> parseExtToMap(String ext) {
+        Object o = parseExt(ext);
+        if (o instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> m = (Map<String, Object>) o;
+            return m;
+        }
+        return new LinkedHashMap<>();
+    }
+
+    /** 查玩家当前金币（收获后刷新展示用） */
+    private int userCoins(Long uid) {
+        User u = userMapper.selectById(uid);
+        return u != null && u.getCoins() != null ? u.getCoins() : 0;
     }
 
     private String toJson(Object v) {

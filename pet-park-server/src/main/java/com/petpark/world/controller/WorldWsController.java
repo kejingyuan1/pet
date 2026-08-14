@@ -11,6 +11,7 @@ import com.petpark.world.dto.WsJoinMsg;
 import com.petpark.world.dto.WsPositionMsg;
 import com.petpark.world.dto.MineResult;
 import com.petpark.world.dto.WsMineMsg;
+import com.petpark.world.dto.WsCellMsg;
 import com.petpark.world.geo.CellType;
 import com.petpark.world.geo.ChunkKey;
 import com.petpark.world.service.PhysicsGatewayService;
@@ -244,6 +245,45 @@ public class WorldWsController {
                     "t", "MINE_RESULT",
                     "code", 1,
                     "msg", e.getMessage() == null ? "采矿失败" : e.getMessage()));
+        }
+    }
+
+    /**
+     * 拆除建筑：/app/ws.remove {gx, gz}
+     * 服务端权威软删（仅自己放置的）+ 广播 OBJECT_REMOVE；结果经 /user/queue/reply 回 REMOVE_RESULT。
+     */
+    @MessageMapping("/ws.remove")
+    public void remove(WsCellMsg msg, SimpMessageHeaderAccessor headers) {
+        String sid = headers.getSessionId();
+        Long uid = uid(headers);
+        if (sid == null || uid == null || msg.getGx() == null || msg.getGz() == null) {
+            return;
+        }
+        try {
+            Result<WorldObjectResp> r = objectService.removeObject(uid, msg.getGx(), msg.getGz());
+            broker.sendToUser(sid, Map.of("t", "REMOVE_RESULT", "code", r.getCode(), "msg", r.getMsg()));
+        } catch (Exception e) {
+            broker.sendToUser(sid, Map.of("t", "REMOVE_RESULT", "code", 1, "msg", e.getMessage()));
+        }
+    }
+
+    /**
+     * 建筑升级：/app/ws.upgrade {gx, gz}
+     * 服务端权威升级（等级+1，扣费）+ 广播 OBJECT_UPDATE；结果经 /user/queue/reply 回 UPGRADE_RESULT。
+     */
+    @MessageMapping("/ws.upgrade")
+    public void upgrade(WsCellMsg msg, SimpMessageHeaderAccessor headers) {
+        String sid = headers.getSessionId();
+        Long uid = uid(headers);
+        if (sid == null || uid == null || msg.getGx() == null || msg.getGz() == null) {
+            return;
+        }
+        try {
+            Result<WorldObjectResp> r = objectService.upgradeObject(uid, msg.getGx(), msg.getGz());
+            broker.sendToUser(sid, Map.of(
+                    "t", "UPGRADE_RESULT", "code", r.getCode(), "msg", r.getMsg(), "data", r.getData()));
+        } catch (Exception e) {
+            broker.sendToUser(sid, Map.of("t", "UPGRADE_RESULT", "code", 1, "msg", e.getMessage()));
         }
     }
 

@@ -18,6 +18,7 @@ import com.petpark.world.geo.ChunkKey;
 import com.petpark.world.mapper.TerrainModMapper;
 import com.petpark.world.mapper.WorldInventoryMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -50,6 +51,10 @@ public class WorldMiningService {
     private static final int ENERGY_COST = 4;
     /** 采矿邻近半径（世界单位，1 格 = 1 单位） */
     private static final double MINE_RADIUS = 3.5;
+
+    /** 矿脉再生周期（ms）：采空超过该时长后矿脉自动再生（P0 审计缺口 #1，可配置覆盖） */
+    @org.springframework.beans.factory.annotation.Value("${petpark.world.ore-regen-ms:120000}")
+    private long oreRegenMs;
 
     private final TerrainModMapper terrainModMapper;
     private final WorldInventoryMapper inventoryMapper;
@@ -199,6 +204,36 @@ public class WorldMiningService {
         r.setInventory(listInventory(uid));
         log.info("[world] uid={} 售卖矿石获得 {} 积分，余额 {}", uid, earned, r.getCoins());
         return Result.ok(r);
+    }
+
+    /**
+     * 矿脉再生（P0 审计缺口 #1）：定时扫描「已被采空且超过再生周期」的 terrain_mods 记录并删除，
+     * 删记录即恢复底层矿脉（terrain_mods 叠加层消失 → 渲染回矿）。删除后广播 TERRAIN_CHANGE
+     * （newType=原矿类型）让所有客户端把该格还原为矿脉。
+     * 5s 扫一次，删除阈值 = now - oreRegenMs。
+     */
+    @Scheduled(fixedDelay = 5000)
+    public void regenExpiredOres() {
+        long cutoff = System.currentTimeMillis() - oreRegenMs;
+        List<TerrainMod> expired = terrainModMapper.selectMinedOlderThan(cutoff);
+        if (expired == null || expired.isEmpty()) {
+            return;
+        }
+        List<Long> ids = new java.util.ArrayList<>();
+        for (TerrainMod m : expired) {
+            ids.add(m.getId());
+        }
+        int deleted = terrainModMapper.deleteMinedByIds(ids);
+        // 广播每格还原（newType=原矿类型），客户端重新着色 + 重建矿模型
+        for (TerrainMod m : expired) {
+            broker.broadcastWorld(Map.of(
+                    "t", "TERRAIN_CHANGE",
+                    "chunkKey", m.getChunkKey(),
+                    "gx", m.getGx(),
+                    "gz", m.getGz(),
+                    "newType", m.getOldType()));
+        }
+        log.info("[world] 矿脉再生：扫描 {} 条采空记录，删除 {} 条", expired.size(), deleted);
     }
 
     // ================= 内部工具 =================

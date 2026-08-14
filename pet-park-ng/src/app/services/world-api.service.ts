@@ -87,6 +87,18 @@ export interface MineResult {
   newType: string;
 }
 
+/** 鱼塘收获结果 */
+export interface HarvestResult {
+  /** 是否成熟可收获 */
+  ready: boolean;
+  /** 成熟时发放的奖励金币 */
+  reward: number;
+  /** 未成熟时还需等待的毫秒数 */
+  remainingMs: number;
+  /** 操作后玩家金币余额 */
+  coins: number;
+}
+
 /**
  * 大世界 REST 服务（config / chunk 流式 / build / fish / objects / mining）
  * 统一走 /api/world 前缀，鉴权头由 AuthService 提供。
@@ -122,6 +134,24 @@ export class WorldApiService {
   fish(gx: number, gz: number, fishType: string): Observable<ApiResult<WorldObjectResp>> {
     return this.http.post<ApiResult<WorldObjectResp>>('/api/world/fish',
       { gx, gz, fishType }, { headers: this.auth.authHeaders() });
+  }
+
+  /** POST /api/world/remove 拆除自己放置的建筑/鱼塘 */
+  remove(gx: number, gz: number): Observable<ApiResult<WorldObjectResp>> {
+    return this.http.post<ApiResult<WorldObjectResp>>('/api/world/remove',
+      { gx, gz }, { headers: this.auth.authHeaders() });
+  }
+
+  /** POST /api/world/upgrade 升级自己放置的建筑（等级 +1） */
+  upgrade(gx: number, gz: number): Observable<ApiResult<WorldObjectResp>> {
+    return this.http.post<ApiResult<WorldObjectResp>>('/api/world/upgrade',
+      { gx, gz }, { headers: this.auth.authHeaders() });
+  }
+
+  /** POST /api/world/harvest 收获自己成熟的鱼塘（成熟发放金币奖励，并重置周期） */
+  harvest(gx: number, gz: number): Observable<ApiResult<HarvestResult>> {
+    return this.http.post<ApiResult<HarvestResult>>('/api/world/harvest',
+      { gx, gz }, { headers: this.auth.authHeaders() });
   }
 
   /** GET /api/world/mining/profile 采矿档案（能量/等级/经验/背包） */
