@@ -130,16 +130,36 @@
       <div class="tips" *ngIf="isNight">🌙 天黑啦，注意休息，明天继续！</div>
     </div>
 
-    <!-- 快捷入口：一键直达各玩法（菜地/鱼塘/牧场已移至大世界地图入口） -->
-    <div class="home-quick">
-      <button class="quick-card" (click)="switchMod('study')"><span class="qc-emoji">📚</span><span class="qc-label">学习</span></button>
-    </div>
   </section>
 
   <!-- 大世界（M1 原型：程序化地形 + Chunk 流式 + 放置/养鱼 + WS 广播；双场景分离见 01 §9.3） -->
   <section class="module" [class.on]="mod==='world'">
     <div class="scene3d-wrap">
       <app-world3d></app-world3d>
+      <!-- 聊天面板（嵌入游戏画面内，背景虚化） -->
+      <div class="world-chat-bar" *ngIf="auth.isLoggedIn && mod==='world'">
+        <div class="w3d-chat" [class.collapsed]="!chatOpen">
+          <div class="chat-head" (click)="toggleChat()">
+            <span>💬 聊天 {{chatOpen ? '' : '(' + (chatMessages.length || 0) + ')'}}</span>
+            <span class="chat-toggle">{{chatOpen ? '▾' : '▸'}}</span>
+          </div>
+          <div class="chat-body" *ngIf="chatOpen">
+            <div class="chat-list" #appChatList>
+              <div class="chat-msg" *ngFor="let m of chatMessages">
+                <span class="chat-nick" [class.self]="m.uid === auth.user?.userId">{{m.nickname || '玩家'}}：</span>
+                <span class="chat-text">{{m.text}}</span>
+                <span class="chat-time">{{m.timeText}}</span>
+              </div>
+              <div class="chat-empty" *ngIf="!chatMessages || chatMessages.length === 0">还没有人说话，来打个招呼吧～</div>
+            </div>
+            <div class="chat-input-row">
+              <input #appChatInput class="chat-input" type="text" maxlength="200" placeholder="按 Enter 发送"
+                     [(ngModel)]="chatInput" (keyup.enter)="sendChat()" (keyup.escape)="chatInput=''" />
+              <button class="chat-send" (click)="sendChat()">发送</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="tips" *ngIf="!auth.isLoggedIn">🔒 大世界需要登录后游玩（多人共享、服务端权威）</div>
   </section>
@@ -469,31 +489,6 @@
         </div>
       </div>
       <div *ngIf="!failures.length" class="fail-empty">暂无错题记录，继续加油！🎉</div>
-    </div>
-  </div>
-</div>
-
-<!-- 全局聊天面板（仅大世界页面显示，fixed 定位脱离 3D 容器，避免 HMR 破坏 WebGL） -->
-<div class="world-chat-bar" *ngIf="auth.isLoggedIn && mod==='world'">
-  <div class="w3d-chat" [class.collapsed]="!chatOpen">
-    <div class="chat-head" (click)="toggleChat()">
-      <span>💬 聊天 {{chatOpen ? '' : '(' + (chatMessages?.length || 0) + ')'}}</span>
-      <span class="chat-toggle">{{chatOpen ? '▾' : '▸'}}</span>
-    </div>
-    <div class="chat-body" *ngIf="chatOpen">
-      <div class="chat-list" #appChatList>
-        <div class="chat-msg" *ngFor="let m of chatMessages">
-          <span class="chat-nick" [class.self]="m.uid === auth.user?.userId">{{m.nickname || '玩家'}}：</span>
-          <span class="chat-text">{{m.text}}</span>
-          <span class="chat-time">{{m.timeText}}</span>
-        </div>
-        <div class="chat-empty" *ngIf="!chatMessages || chatMessages.length === 0">还没有人说话，来打个招呼吧～</div>
-      </div>
-      <div class="chat-input-row">
-        <input #appChatInput class="chat-input" type="text" maxlength="200" placeholder="按 Enter 发送"
-               [(ngModel)]="chatInput" (keyup.enter)="sendChat()" (keyup.escape)="chatInput=''" />
-        <button class="chat-send" (click)="sendChat()">发送</button>
-      </div>
     </div>
   </div>
 </div>

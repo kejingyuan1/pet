@@ -58,6 +58,8 @@ public class TerrainService {
     private static final double RIVER_DEPTH = 3.0;
     /** 河流：河床高于水线的高度（位于沙滩带之上、草地层内，避免与海面打架） */
     private static final double RIVER_FLOOR_ABOVE = 2.5;
+    /** 树木最低海拔（高于水线多少才能种树，防止浅滩/海岸线树泡在水里） */
+    private static final double TREE_MIN_ELEV = 1.5;
     /** 河流：仅岛内（falloff 高于此值）才生成，避免海岸破碎河 */
     private static final double RIVER_MIN_FALLOFF = 0.35;
 
@@ -352,8 +354,8 @@ public class TerrainService {
                 && h < wl + MOUNTAIN_THRESH) {
             return CellType.RIVER;
         }
-        // 森林 / 草地
-        if (treeScatter(gx, gz) < world.treeDensity()) {
+        // 森林 / 草地（仅限离水线足够高的陆地，防止树泡在浅滩/海岸水里）
+        if (h >= wl + TREE_MIN_ELEV && treeScatter(gx, gz) < world.treeDensity()) {
             return CellType.TREE;
         }
         return CellType.GRASS;

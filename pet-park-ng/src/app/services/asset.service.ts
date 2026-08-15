@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 /**
  * 外部资源加载服务（v30 资源化架构）
@@ -61,9 +62,14 @@ export class AssetService {
 
   private gltfLoader: GLTFLoader;
   private textureLoader: THREE.TextureLoader;
+  private dracoLoader: DRACOLoader;
 
   constructor() {
     this.gltfLoader = new GLTFLoader();
+    // DRACO 解码器：HY3D 生成的动物 GLB 为 draco 压缩版，必须挂 DRACOLoader 才能解析
+    this.dracoLoader = new DRACOLoader();
+    this.dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+    this.gltfLoader.setDRACOLoader(this.dracoLoader);
     this.textureLoader = new THREE.TextureLoader();
   }
 

@@ -237,8 +237,8 @@ public class WorldPhysicsService {
         if (!terrain.inWorld(gx, gz)) return false;
         CellType t = terrain.semanticAt(gx, gz);
 
-        // 水永远不可进入（无论着地还是空中都不能跳过河）
-        if (t == CellType.WATER) return false;
+        // 水域永远不可进入（无论着地还是空中都不能跳过河/海）
+        if (t == CellType.WATER || t == CellType.RIVER) return false;
 
         double curH = terrain.heightAt((int) Math.floor(p.gx), (int) Math.floor(p.gz));
         double targetH = terrain.heightAt(gx, gz);

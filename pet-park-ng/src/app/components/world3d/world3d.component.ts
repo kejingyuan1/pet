@@ -141,7 +141,7 @@ interface GridData {
       </div>
       <div class="touch-btns">
         <button class="tbtn tbtn-run" [class.on]="running" (pointerdown)="onTouchRun()">🏃</button>
-        <button class="tbtn tbtn-jump" (pointerdown)="onTouchJump()">⬆️</button>
+        <button class="tbtn tbtn-jump" (pointerdown)="onTouchJump()"></button>
       </div>
     </div>
 
@@ -155,8 +155,8 @@ interface GridData {
     <div class="onboard" *ngIf="showOnboarding">
       <div class="onboard-card">
         <div class="onboard-step">第 {{onboardingStep + 1}} / {{onboardingSteps.length}} 步</div>
-        <div class="onboard-title">{{onboardingSteps[onboardingStep]?.title}}</div>
-        <div class="onboard-desc">{{onboardingSteps[onboardingStep]?.desc}}</div>
+        <div class="onboard-title">{{onboardingSteps[onboardingStep].title}}</div>
+        <div class="onboard-desc">{{onboardingSteps[onboardingStep].desc}}</div>
         <div class="onboard-actions">
           <button class="onboard-skip" (pointerdown)="finishOnboarding()">跳过</button>
           <button class="onboard-next" (pointerdown)="nextOnboarding()">{{onboardingStep === onboardingSteps.length - 1 ? '完成' : '下一步'}}</button>
@@ -205,10 +205,10 @@ interface GridData {
     </div>
   `,
   styles: [`
-    /* 世界画布：填满容器，自适应分辨率 */
-    .world3d-mount { width: 100%; height: 100%; min-height: 52vh; aspect-ratio: 16/10; border-radius: 16px; overflow: hidden; background: linear-gradient(160deg,#7EC8E8,#A0D8EF); position: relative; }
+    /* 世界画布：absolute 填满 scene3d-wrap，不依赖 flex 百分比链 */
+    .world3d-mount { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 16px; overflow: hidden; background: linear-gradient(160deg,#7EC8E8,#A0D8EF); }
     @media (max-width: 768px) {
-      .world3d-mount { min-height: 50vh; aspect-ratio: unset; height: 56vh; border-radius: 14px; }
+      .world3d-mount { border-radius: 14px; }
     }
     /* 工具栏：自动换行，小屏紧凑 */
     .w3d-toolbar { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -216,12 +216,15 @@ interface GridData {
     .w3d-toolbar button:hover { background: rgba(255,255,255,.98); }
     .w3d-toolbar button.on { background: rgba(80,160,220,.88); color: #fff; box-shadow: 0 1px 8px rgba(80,160,220,.35); }
     .w3d-hud { position: absolute; left: 10px; bottom: 54px; z-index: 5; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.55); font-size: 12px; line-height: 1.55; pointer-events: none; }
+    @media (max-width: 768px) {
+      .w3d-hud { bottom: auto; top: 52px; left: 8px; right: 8px; font-size: 11px; }
+    }
     .hud-hint { opacity: .82; max-width: 360px; }
 
     /* 背包面板：桌面加大，移动端全宽 */
     .w3d-mine { position: absolute; top: 170px; right: 10px; z-index: 6; width: 300px; max-width: 48vw; max-height: 60vh; overflow-y: auto; background: rgba(18,26,40,.90); border-radius: 14px; color: #eee; font-size: 13px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.32); backdrop-filter: blur(6px); }
     @media (max-width: 768px) {
-      .w3d-mine { top: auto; bottom: 110px; left: 8px; right: 8px; width: auto; max-width: none; max-height: 42vh; }
+      .w3d-mine { top: auto; bottom: 80px; left: 8px; right: 8px; width: auto; max-width: none; max-height: 35vh; }
     }
     .mine-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 8px; font-size: 14px; }
     .mine-sell-toggle { border: none; border-radius: 8px; padding: 4px 10px; background: rgba(80,160,220,.82); color: #fff; cursor: pointer; font-size: 12px; transition: background .15s; }
@@ -316,11 +319,28 @@ interface GridData {
     .joy-knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255,255,255,.8); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
     /* 触屏按钮：低调半透明，不抢戏 */
     .touch-btns { position: absolute; right: 18px; bottom: 28px; display: flex; gap: 12px; align-items: flex-end; }
+    @media (max-width: 768px) {
+      .joystick { left: 14px; bottom: 14px; width: 100px; height: 100px; }
+      .joy-knob { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
+      .touch-btns { right: 10px; bottom: 14px; gap: 8px; }
+    }
     .tbtn { width: 58px; height: 58px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); background: rgba(40,55,75,.60); color: #fff; font-size: 24px; pointer-events: auto; touch-action: none; box-shadow: 0 2px 8px rgba(0,0,0,.22); transition: transform .1s, background .15s; backdrop-filter: blur(2px); }
     .tbtn:active { transform: scale(.92); }
     .tbtn-run { background: rgba(70,130,180,.65); }
     .tbtn-run.on { background: rgba(70,130,180,.85); box-shadow: 0 0 0 3px rgba(120,180,230,.45); }
     .tbtn-jump { background: rgba(60,90,70,.60); }
+    /* 起跳小人象形图（圆头+躯干+双臂上举+双腿张开跳姿+地面虚线），一眼看懂是"跳" */
+    .tbtn-jump::before {
+      content: '';
+      display: block;
+      width: 30px;
+      height: 30px;
+      margin: 0 auto;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='20' cy='9' r='4'/%3E%3Cpath d='M20 13V24'/%3E%3Cpath d='M20 16L12 8'/%3E%3Cpath d='M20 16L28 8'/%3E%3Cpath d='M20 24L13 33'/%3E%3Cpath d='M20 24L27 33'/%3E%3Cpath d='M6 37H34' stroke-dasharray='3 3' opacity='.5'/%3E%3C/svg%3E");
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
 
     /* 上下文动作按钮：低调玻璃态，不突兀 */
     .ctx-actions { position: absolute; right: 18px; bottom: 100px; z-index: 9; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
@@ -414,7 +434,19 @@ export class World3dComponent implements OnInit, OnDestroy {
   private treeModel: THREE.Group | null = null;
   private boyModel: THREE.Group | null = null;
   private girlModel: THREE.Group | null = null;
+  /** HY3D 7 只动物模板（cat/dog/chicken/duck/cow/sheep/fish），归一化后缓存复用 */
+  private animalModels: Record<string, THREE.Group> = {};
+  /** 野生生物容器：一次性散布后常驻世界，不随 chunk 卸载 */
+  private wildlifeGroup: THREE.Group | null = null;
+  private animalsSpawned = false;
   private decorPlaced = false; // 男孩/女孩是否已放置（仅放一次）
+
+  // 🔴 水域调试钩子：记录所有已放置对象的世界坐标，供 playwright 断言"无对象在水中"
+  private treeList: { x: number; z: number }[] = [];
+  private charList: { x: number; y: number; z: number }[] = [];
+  private animalList: { x: number; y: number; z: number }[] = [];
+  private oreList: { x: number; y: number; z: number; type: string }[] = []; // 🔴 矿石坐标跟踪（用于调试+水域校验）
+  private _dbgTick = 0;
 
   // M5 角色程序化动作：模型无骨骼，用整体变换模拟 走/跑/弯腰/待机
   private charAnims: { group: THREE.Group; cx: number; cz: number; baseY: number; phase: number; radius: number; bones?: Record<string, THREE.Object3D> }[] = [];
@@ -430,6 +462,14 @@ export class World3dComponent implements OnInit, OnDestroy {
   private px = 0; private pz = 0; private py = 0; private prot = 0;
   // 平滑显示位置（lerp 跟随物理权威位置，消除一跳一跳）
   private dpx = 0; private dpz = 0; private dpy = 0; private dprot = 0;
+  // 障碍网格（静态：树/矿/建筑）chunkKey -> set("gx,gz")，与 gridCache 同生命周期
+  private obstacleGrid: Map<string, Set<string>> = new Map();
+  // 导航卡住检测 / 重寻路
+  private navGoal: { x: number; z: number } | null = null; // 双击最终目标（世界坐标）
+  private stuckTimer = 0;        // 连续停滞秒数
+  private lastStuckX = 0; private lastStuckZ = 0;
+  private navRetries = 0;        // 重寻路次数（上限防抖）
+  private lastNavNow = 0;
   private static readonly SMOOTH_FACTOR = 0.18; // 每帧追赶比例（60fps下约80ms延迟）
   private playerMesh!: THREE.Group;
   private keys: Record<string, boolean> = {};
@@ -489,7 +529,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   }
 
   // 相机
-  private follow = { yaw: 0.7, pitch: 0.72, dist: 45 }; // 陡俯角(41°)+远距离：群岛世界需俯视才能看到岛屿地面
+  private follow = { yaw: 0.5, pitch: 0.55, dist: 22 }; // 聚焦岛屿：近距离+适中俯角，看清陆地细节
   private dragging = false;
   private lastX = 0; private lastY = 0;
   private downX = 0; private downY = 0;
@@ -542,6 +582,8 @@ export class World3dComponent implements OnInit, OnDestroy {
         this.py = cfg.spawnY;
         // 平滑位置同步初始化（避免首次 lerp 从 0,0,0 追赶的大跳）
         this.dpx = this.px; this.dpz = this.pz; this.dpy = this.py; this.dprot = 0;
+        // 🔴 启动水域安全：3秒后等 chunk 加载完毕，若仍在水里则强制传送到陆地
+        setTimeout(() => this.forceWaterSafety(), 3000);
         this.initScene();
         this.initPlayer();
         this.connectWs();
@@ -579,80 +621,24 @@ export class World3dComponent implements OnInit, OnDestroy {
     const H = mount.clientHeight || 520;
 
     this.scene = new THREE.Scene();
+    
     // 天空渐变：晴朗白昼天顶蓝 → 地平线淡青（M4 视觉增强）
     this.scene.background = new THREE.Color(0x87CEEB);
     // 雾效：推远近裁面，暖化雾色，增加密度隐藏远处水天交界线（消除"无限蓝"感）
     this.scene.fog = new THREE.Fog(0xB8D4E8, 520, 1200);   // 拉远雾起點(520)與終點(1200)，減少近距霧化吞地形
 
-    // 海面（半透明蓝平面，精确对齐后端 waterLevel=-5；海洋环绕岛屿，
-    // 透明度适中：既能看见岛屿浮出海面、又不会淹没地形——这是改动前「正常」的海洋表现）
-    const waterLevel = this.config?.waterLevel ?? -5;
-    const oceanFloor = waterLevel; // 海平面：岛屿浮出海面，仅深海/湖泊处见水
-    const waterGeo = new THREE.PlaneGeometry(12000, 12000, 96, 96);
-    const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x2f8fd6, // 海蓝
-      transparent: true, opacity: 0.32,
-      roughness: 0.15, metalness: 0.25, side: THREE.DoubleSide,
-      depthWrite: false, // 🔴 关键：半透明水面必须关闭深度写入，否则挡住后面所有地形网格
-    });
-    // 自定义波浪：顶点着色器做正弦波位移，片元着色器加菲涅尔边缘亮
-    waterMat.onBeforeCompile = (shader) => {
-        shader.uniforms['uTime'] = { value: 0 };
-        shader.uniforms['uWaterLevel'] = { value: oceanFloor };
-        shader.vertexShader = `
-          uniform float uTime;
-          uniform float uWaterLevel;
-          varying vec3 vWorldPos;
-          varying float vWaveHeight;
-          ${shader.vertexShader}
-        `.replace(
-          '#include <begin_vertex>',
-          `
-          // 海浪位移（正弦波叠加，模拟海面起伏；振幅縮小避免視覺太厚）
-          vec3 transformed = vec3( position );
-          float wave1 = sin(transformed.x * 0.02 + uTime * 1.2) * 0.18;
-          float wave2 = sin(transformed.y * 0.03 + uTime * 0.8) * 0.12;
-          float wave3 = sin((transformed.x + transformed.y) * 0.01 + uTime * 1.5) * 0.22;
-          float waveSum = wave1 + wave2 + wave3;
-          transformed.z += waveSum;
-          vWaveHeight = waveSum;
-          vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
-          `
-        );
-        shader.fragmentShader = `
-          uniform float uTime;
-          varying vec3 vWorldPos;
-          varying float vWaveHeight;
-          ${shader.fragmentShader}
-        `.replace(
-          '#include <dithering_fragment>',
-          `
-          #include <dithering_fragment>
-          // 海岸泡沫：靠近水线+波峰处加白色高光
-          float foam = smoothstep(0.3, 0.6, vWaveHeight);
-          float distFromCenter = length(vWorldPos.xz) / 4000.0;
-          float edgeFoam = smoothstep(0.7, 1.0, distFromCenter) * 0.4;
-          gl_FragColor.rgb += vec3((foam * 0.35 + edgeFoam * 0.25));
-          // 菲涅尔边缘亮（水面反光感）
-          vec3 viewDir = normalize(cameraPosition - vWorldPos);
-          float fresnel = pow(1.0 - max(0.0, dot(normalize(vNormal), viewDir)), 3.0);
-          gl_FragColor.rgb += vec3(fresnel * 0.15);
-          `
-        );
-        // 保存引用以便每帧更新 uTime
-        (waterMat as any).waterShader = shader;
-      }
-    const waterMesh = new THREE.Mesh(waterGeo, waterMat);
-    waterMesh.rotation.x = -Math.PI / 2;
-    waterMesh.position.y = oceanFloor; // 海平面
-    waterMesh.renderOrder = 1;
-    this.scene.add(waterMesh);
-    // 存储引用供 animate 更新波浪时间
-    (this as any).waterMat = waterMat;
+    // 🔴 水面已禁用：原 12000×12000 半透明蓝平面覆盖整个地图导致"全屏泛蓝"
+    // 地形网格已用语义色着色（水=0x2f7fd6 蓝），不需要额外叠加层
+    // 如需恢复波浪效果，必须将水平面裁剪到实际水域格（非全图），否则视觉错误
+    // const waterLevel = this.config?.waterLevel ?? -5;
+    // const oceanFloor = waterLevel;
+    // ...water mesh code removed...
+    (this as any).waterMat = null; // 无水面材质
 
     this.camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 1500);
     // 相机初始位置：高俯视（群岛世界需要更陡的视角才能看到岛屿全貌，避免"全在水上"感）
-    this.camera.position.set(this.px, this.py + 42, this.pz + 32);
+    // 相机初始位置：降低高度+拉近距离，聚焦岛屿陆地（避免"全看海洋"）
+    this.camera.position.set(this.px, this.py + 18, this.pz + 16);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(W, H, false); // CSS 由后续 100% 覆盖控制
@@ -930,6 +916,24 @@ export class World3dComponent implements OnInit, OnDestroy {
         if (Array.isArray(ev.players)) {
           for (const p of ev.players) {
             if (p.uid !== this.uid) this.addRemotePlayer(p);
+            else {
+              // 🔴 自己的快照：先检查是否在水域，若是则延迟到 animate() 的水域保护处理
+              // （animate 每帧跑，比这里更可靠；此处仅记录日志）
+              const sgx = Math.floor(p.gx), sgz = Math.floor(p.gz);
+              const sc = this.cellChunk(sgx, sgz);
+              if (sc) {
+                const grid = this.gridCache.get(`${sc.cx}_${sc.cz}`);
+                if (grid) {
+                  const lx = sgx - sc.cx * CHUNK, lz = sgz - sc.cz * CHUNK;
+                  if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
+                    const sem = grid.semantic[lz * CHUNK + lx];
+                    if (sem === 0 || sem === 10) {
+                      console.warn('[WATER-SNAPSHOT] 服务端快照把玩家放在水域！等待 animate() 推回', { gx: sgx, gz: sgz, sem });
+                    }
+                  }
+                }
+              }
+            }
           }
         }
         if (Array.isArray(ev.objects)) {
@@ -995,6 +999,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.lastTs = now;
     // 输入上行（非建造/养鱼模式）：本地不移动，只发输入意图；~30Hz + 按键状态变化立即发
     if (!this.buildMode && !this.fishMode) {
+      // 自动导航卡住检测：被障碍挡住 → 重寻路绕开 / 放弃，杜绝无限转圈
+      if (this.pathPoints.length || this.moveTarget) {
+        this.checkNavigationStuck(now, dt);
+      }
       // 优先处理双击目标移动：有 A* 路点队列则逐点跟随，否则单点 moveTarget，否则手动输入
       if (this.pathPoints.length > 0) {
         this.followPath(now);
@@ -1020,18 +1028,68 @@ export class World3dComponent implements OnInit, OnDestroy {
     while (dr < -Math.PI) dr += 2 * Math.PI;
     this.dprot += dr * k;
 
+    // 🔴 水域保护（三层检测，任一触发即推回陆地）：
+    //   Layer 1: 语义格检测（WATER=0 / RIVER=10）
+    //   Layer 2: 高度检测（y < waterLevel → 必在水下/水面，无论语义如何）
+    //   Layer 3: 服务端 canEnter 已阻挡 WATER+RIVER，但浮点精度/插值延迟/旧快照可能导致短暂落水
+    const pgx = Math.floor(this.dpx);
+    const pgz = Math.floor(this.dpz);
+    let inWater = false;
+
+    // Layer 1: 语义格检测
+    const cc = this.cellChunk(pgx, pgz);
+    if (cc) {
+      const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+      if (g) {
+        const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
+        if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
+          const sem = g.semantic[lz * CHUNK + lx];
+          if (sem === 0 || sem === 10) { inWater = true; } // WATER or RIVER
+        }
+      }
+    }
+
+    // Layer 2: 高度 fallback（语义数据未加载时也能保护）
+    if (!inWater) {
+      const groundY = this.heightAt(this.dpx, this.dpz);
+      const wl = this.config?.waterLevel ?? -5;
+      const safeLine = Math.max(wl + 0.5, 0); // 🔴🔴 安全线=海平面以上
+      if (groundY != null && groundY < safeLine) { inWater = true; } // 地面低于安全线≈在水里/低洼
+    }
+
+    // 推回陆地
+    if (inWater) {
+      console.warn('[WATER] 玩家落水！推回陆地', { gx: pgx, gz: pgz, px: this.dpx.toFixed(1), pz: this.dpz.toFixed(1) });
+      const land = this.nearestWalkable(pgx, pgz);
+      if (land) {
+        this.px = land.gx + 0.5; this.pz = land.gz + 0.5;
+        this.dpx = this.px; this.dpz = this.pz; // 立即同步插值目标（避免 lerp 延迟导致持续渲染水下位置）
+        // 同时取消自动导航（避免 AI 继续往水里走）
+        this.pathPoints = []; this.moveTarget = null; this.navGoal = null;
+        if (this.ws.isConnected) {
+          this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
+        }
+      }
+    }
+
     // 垂直方向统一单路径插值（修复原双重写入导致的抖动）：
     //   空中 → 纯 lerp 追踪物理跳跃弧线（丝滑）
     //   地面 → 加速收敛到地面高度（防止下陷/悬空）
     const groundY = this.heightAt(this.dpx, this.dpz);
-    const targetY = (groundY ?? this.dpy) + 0.35; // 脚底偏移
+    // ⚠️ heightAt 返回 undefined 时（chunk 未加载），必须用 server 权威 py 做 fallback，
+    //    绝不能用 this.dpy —— 否则 targetY=dpy+0.35 导致每帧 +0.14 的正反馈循环 → 玩家无限上升！
+    const baseY = groundY ?? this.py;
+    const targetY = baseY + 0.35; // 脚底偏移
     const airborne = this.py > targetY + 0.5;       // 降低阈值（原0.8），更快响应起跳/落地
     if (airborne) {
       // 空中：lerp 平滑追踪物理权威 Y（跳跃弧线丝滑）
       this.dpy += (this.py - this.dpy) * k;
-    } else {
-      // 着地：加速贴地（比水平 lerp 快，防止陷入地形但不过度生硬）
+    } else if (groundY != null) {
+      // 着地且有地形数据：加速贴地（比水平 lerp 快，防止陷入地形但不过度生硬）
       this.dpy += (targetY - this.dpy) * Math.min(k * 2.5, 0.40);
+    } else {
+      // chunk 未加载时：纯 lerp 追踪服务器权威 Y，不自我加速（防上升/下降漂移）
+      this.dpy += (this.py - this.dpy) * k;
     }
 
     // 统一一次性设置玩家位置（不再有第二处覆写）
@@ -1083,6 +1141,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (wMat && (wMat as any).waterShader) {
       (wMat as any).waterShader.uniforms.uTime.value = performance.now() * 0.001;
     }
+    // 🔴 暴露场景调试数据（含水域安全状态），供 playwright 断言
+    this.publishWorldDebug();
   }
 
   private updateFollowCamera(): void {
@@ -1243,6 +1303,51 @@ export class World3dComponent implements OnInit, OnDestroy {
   }
 
   /**
+   * 自动导航卡住检测：玩家被障碍（树/矿/建筑）挡住、长时间（>1.4s）几乎不前进时，
+   * 利用已加载的障碍网格从当前位置重新 A* 寻路绕开；重寻路仍不可达则放弃并提示，
+   * 彻底杜绝「被挡住后持续朝目标推 → 卡墙角无限转圈」。
+   */
+  private checkNavigationStuck(now: number, dt: number): void {
+    const dtNav = this.lastNavNow ? (now - this.lastNavNow) / 1000 : 0;
+    this.lastNavNow = now;
+    const moved = Math.hypot(this.dpx - this.lastStuckX, this.dpz - this.lastStuckZ);
+    if (moved < 0.25) {
+      this.stuckTimer += Math.min(dtNav, 0.1);
+    } else {
+      this.stuckTimer = 0;
+      this.navRetries = 0;
+      this.lastStuckX = this.dpx;
+      this.lastStuckZ = this.dpz;
+      return;
+    }
+    if (this.stuckTimer < 1.4) return; // 需持续停滞 1.4s 才判定卡住
+
+    // 先发停止，避免重寻路期间继续朝旧方向推
+    if (this.ws.isConnected) {
+      this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
+    }
+    const goal = this.navGoal;
+    if (goal && this.navRetries < 2) {
+      this.navRetries++;
+      this.stuckTimer = 0;
+      this.lastStuckX = this.dpx;
+      this.lastStuckZ = this.dpz;
+      const repath = this.findPath(Math.floor(this.dpx), Math.floor(this.dpz), Math.floor(goal.x), Math.floor(goal.z));
+      if (repath && repath.length) {
+        this.pathPoints = repath;
+        this.moveTarget = null;
+        this.hint = `🔄 重新寻路，已绕过障碍（${repath.length} 路点）`;
+        return;
+      }
+    }
+    // 重寻路失败或次数用尽 → 放弃并提示
+    this.pathPoints = [];
+    this.moveTarget = null;
+    this.navGoal = null;
+    this.hint = '⚠️ 被障碍物阻挡，无法到达目标';
+  }
+
+  /**
    * P2 双击 A* 寻路：基于已加载 chunk 的语义网格，避开水/树/岩/山/矿，
    * 从 (startGx,startGz) 寻路到 (targetGx,targetGz)，返回逐格中心点路点。
    * 无语义网格或不可达时返回 null（调用方回退直线移动）。
@@ -1280,7 +1385,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     const walk = (gx: number, gz: number): boolean => {
       const s = getSem(gx, gz);
       if (s == null) return false;
-      return s === 1 || s === 2 || s === 9; // sand / grass / empty
+      if (s !== 1 && s !== 2 && s !== 9) return false; // sand / grass / empty
+      if (this.isObstacle(gx, gz)) return false;       // 树/矿/建筑占位 → 绕行
+      return true;
     };
 
     const key = (gx: number, gz: number) => `${gx},${gz}`;
@@ -1366,7 +1473,150 @@ export class World3dComponent implements OnInit, OnDestroy {
     const lx = gx - c.cx * CHUNK, lz = gz - c.cz * CHUNK;
     if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return false;
     const s = grid.semantic[lz * CHUNK + lx];
-    return s === 1 || s === 2 || s === 9;
+    if (s !== 1 && s !== 2 && s !== 9) return false;
+    if (this.isObstacle(gx, gz)) return false; // 树/矿/建筑占位 → 不可走
+    return true;
+  }
+
+  /** 🔴 启动水域安全：检查当前位置是否在水里，若是则强制传送到陆地（chunk 加载后延迟调用） */
+  private forceWaterSafety(): void {
+    if (this.disposed) return;
+    const pgx = Math.floor(this.dpx);
+    const pgz = Math.floor(this.dpz);
+    let inWater = false;
+    // Layer 1: 语义检测
+    const cc = this.cellChunk(pgx, pgz);
+    if (cc) {
+      const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+      if (g) {
+        const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
+        if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
+          const sem = g.semantic[lz * CHUNK + lx];
+          if (sem === 0 || sem === 10) inWater = true;
+        }
+      }
+    }
+    // Layer 2: 高度 fallback
+    if (!inWater) {
+      const groundY = this.heightAt(this.dpx, this.dpz);
+      const wl = this.config?.waterLevel ?? -5;
+      const safeLine = Math.max(wl + 0.5, 0); // 🔴🔴 安全线=海平面以上
+      if (groundY != null && groundY < safeLine) inWater = true;
+    }
+    if (inWater) {
+      console.warn('[WATER-SAFETY] 启动检测到玩家在水中！强制传送回陆地');
+      const land = this.nearestWalkable(pgx, pgz);
+      if (land) {
+        const newPx = land.gx + 0.5, newPz = land.gz + 0.5;
+        this.px = newPx; this.pz = newPz;
+        this.dpx = newPx; this.dpz = newPz;
+        this.py = (this.heightAt(newPx, newPz) ?? 0) + 0.35;
+        this.dpy = this.py;
+        // 同步到服务器
+        if (this.ws.isConnected) {
+          this.ws.send('/app/ws.input', { seq: Date.now(), move: { dx: 0, dz: 0, run: false } });
+        }
+        this.hint = '🌊 已自动离开水域';
+      }
+    }
+  }
+
+  /** 🔴 暴露场景内所有对象的世界坐标与地形高度，供 playwright 断言"无对象在水中" */
+  private publishWorldDebug(): void {
+    if (this.disposed) return;
+    this._dbgTick++;
+    if ((this._dbgTick & 7) !== 0) return; // 每 8 帧刷新一次（降开销）
+    const wl = this.config?.waterLevel ?? -5;
+    const sample = (x: number, z: number) => {
+      const gx = Math.floor(x), gz = Math.floor(z);
+      const cc = this.cellChunk(gx, gz);
+      let sem = -1;
+      if (cc) {
+        const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+        if (g) {
+          const lx = gx - cc.cx * CHUNK, lz = gz - cc.cz * CHUNK;
+          if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) sem = g.semantic[lz * CHUNK + lx];
+        }
+      }
+      const h = this.heightAt(x, z);
+      const safeLine = Math.max(wl + 0.6, 0); // 🔴🔴 安全线=海平面以上(2026-08-15修复)
+      const inWater = (sem === 0 || sem === 10) || (h != null && h < safeLine);
+      return { sem, h: h ?? null, inWater };
+    };
+    const trees = this.treeList.map(t => { const s = sample(t.x, t.z); return { x: +t.x.toFixed(2), z: +t.z.toFixed(2), ...s }; });
+    const chars = this.charList.map(c => { const s = sample(c.x, c.z); return { x: +c.x.toFixed(2), z: +c.z.toFixed(2), y: +c.y.toFixed(2), ...s }; });
+    const animals = this.animalList.map(a => { const s = sample(a.x, a.z); return { x: +a.x.toFixed(2), z: +a.z.toFixed(2), y: +a.y.toFixed(2), ...s }; });
+    const ores = this.oreList.map(o => { const s = sample(o.x, o.z); return { x: +o.x.toFixed(2), z: +o.z.toFixed(2), y: +o.y.toFixed(3), type: o.type, ...s }; });
+    const ps = sample(this.dpx, this.dpz);
+    const player = { x: +this.dpx.toFixed(2), z: +this.dpz.toFixed(2), y: +this.dpy.toFixed(2), ...ps };
+    // 🔴🔴 chunk mesh 诊断（2026-08-15：地形消失排查）—— 深挖"mesh 在 scene 里却不渲染"的根因
+    const chunkMeshDiag: { key: string; visible: boolean; worldVisible: boolean; verts: number; indexCount: number; drawCount: number; materialVisible: boolean; materialOpacity: number; materialType: string; renderOrder: number; parentIsScene: boolean; sphereR: number; yRange: [number, number] }[] = [];
+    let totalChunkVerts = 0, chunkYMin = Infinity, chunkYMax = -Infinity;
+    this.chunkMeshes.forEach((m, k) => {
+      const geo = m.geometry;
+      const pa = geo.getAttribute('position');
+      const idx = geo.getIndex();
+      let cMin = Infinity, cMax = -Infinity, vc = 0;
+      if (pa) {
+        vc = pa.count;
+        for (let vi = 0; vi < vc; vi++) { const y = pa.getY(vi); if (y < cMin) cMin = y; if (y > cMax) cMax = y; }
+        if (cMin < chunkYMin) chunkYMin = cMin;
+        if (cMax > chunkYMax) chunkYMax = cMax;
+        totalChunkVerts += vc;
+      }
+      // worldVisible：沿父链检查 visible
+      let wv = m.visible;
+      let p = m.parent;
+      while (p) { if (!p.visible) { wv = false; break; } p = p.parent; }
+      const mat = m.material as THREE.Material;
+      chunkMeshDiag.push({
+        key: k,
+        visible: m.visible,
+        worldVisible: wv,
+        verts: vc,
+        indexCount: idx ? idx.count : 0,
+        drawCount: geo.drawRange ? geo.drawRange.count : -1,
+        materialVisible: mat ? mat.visible : false,
+        materialOpacity: mat ? mat.opacity : -1,
+        materialType: mat ? mat.type : 'NONE',
+        renderOrder: m.renderOrder,
+        parentIsScene: m.parent === this.scene,
+        sphereR: geo.boundingSphere ? +geo.boundingSphere.radius.toFixed(1) : -1,
+        yRange: [+cMin.toFixed(2), +cMax.toFixed(2)]
+      });
+    });
+    
+    (window as any).__worldDebug = {
+      waterLevel: wl,
+      ready: trees.length > 0 || chars.length > 0 || animals.length > 0 || ores.length > 0,
+      player,
+      trees, chars, animals, ores,
+      counts: {
+        trees: trees.length, chars: chars.length, animals: animals.length, ores: ores.length,
+        treesInWater: trees.filter(t => t.inWater).length,
+        charsInWater: chars.filter(c => c.inWater).length,
+        animalsInWater: animals.filter(a => a.inWater).length,
+        oresInWater: ores.filter(o => o.inWater).length,
+        playerInWater: player.inWater ? 1 : 0
+      },
+      // 🔴 地形诊断
+      terrain: {
+        chunkMeshCount: this.chunkMeshes.size,
+        gridCacheSize: this.gridCache.size,
+        totalChunkVerts,
+        chunkGlobalYRange: [Number(chunkYMin.toFixed(2)), Number(chunkYMax.toFixed(2))],
+        samples: chunkMeshDiag.slice(0, 8)
+      },
+      camera: {
+        position: { x: +this.camera.position.x.toFixed(1), y: +this.camera.position.y.toFixed(1), z: +this.camera.position.z.toFixed(1) },
+        fov: this.camera.fov, near: this.camera.near, far: this.camera.far
+      },
+      scene: {
+        bg: this.scene.background ? ('#' + (this.scene.background as any).color?.getHexString?.() || String(this.scene.background)) : 'none',
+        fog: !!this.scene.fog,
+        childCount: this.scene.children.length
+      }
+    };
   }
 
   /** 从 (gx,gz) 就近找最近可走格（搜索半径内螺旋） */
@@ -1380,6 +1630,27 @@ export class World3dComponent implements OnInit, OnDestroy {
       }
     }
     return null;
+  }
+
+  /** 标记某格（含半径内邻格）为障碍（树/矿/建筑占位，A* 需绕行） */
+  private markObstacle(cx: number, cz: number, gx: number, gz: number, radius = 1): void {
+    const key = `${cx}_${cz}`;
+    let set = this.obstacleGrid.get(key);
+    if (!set) { set = new Set<string>(); this.obstacleGrid.set(key, set); }
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        if (dx * dx + dz * dz > radius * radius + 0.5) continue; // 近似圆
+        set.add(`${gx + dx},${gz + dz}`);
+      }
+    }
+  }
+
+  /** 某格是否为障碍（树/矿/建筑） */
+  private isObstacle(gx: number, gz: number): boolean {
+    const cx = Math.floor(gx / CHUNK), cz = Math.floor(gz / CHUNK);
+    const set = this.obstacleGrid.get(`${cx}_${cz}`);
+    if (!set) return false;
+    return set.has(`${gx},${gz}`);
   }
 
   /** 远端玩家：以物理快照刚体为准（创建/更新/删除） */
@@ -1475,6 +1746,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   private applyChunk(resp: ChunkResp): void {
     if (this.disposed) return;
     const key = `${resp.cx}_${resp.cz}`;
+    this.obstacleGrid.delete(key); // 重置该 chunk 障碍（防重复加载叠加）
     // 语义/高度缓存
     this.gridCache.set(key, {
       cx: resp.cx, cz: resp.cz,
@@ -1491,6 +1763,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.tryPlaceCharacters();
     // 矿石（ORE_GOLD/ORE_IRON/ORE_COAL → 3D 矿石模型）
     this.spawnOres(resp);
+    // HY3D 野生生物：地形与模型均就绪后随机散布（自带防重入 + 重试）
+    this.trySpawnAnimals();
     // 对象
     if (resp.objects) {
       for (const o of resp.objects) this.addObject(o);
@@ -1506,6 +1780,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.chunkMeshes.delete(key);
     }
     this.gridCache.delete(key);
+    this.obstacleGrid.delete(key); // 卸载障碍占位
     // 卸载该 chunk 的树模型
     const trees = this.treeMeshes.get(key);
     if (trees) {
@@ -1559,6 +1834,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       for (let lx = 0; lx < N; lx++) {
         const i = lz * N + lx;
         positions[i * 3] = resp.cx * CHUNK + lx;
+        positions[i * 3 + 2] = resp.cz * CHUNK + lz; // 🔴🔴 修复：Z 坐标此前漏赋值，导致整个地形塌缩在 z=0 平面（树用真实 x,z 散开故飘在空中）
         // M3 修复：WATER 语义格（0）的 Y 钳制到海平面
         // RIVER（10）：略高于水面形成可见河道，颜色深蓝区别于海洋亮青
         const cell = sem[Math.min(lz, CHUNK - 1) * CHUNK + Math.min(lx, CHUNK - 1)];
@@ -1606,23 +1882,91 @@ export class World3dComponent implements OnInit, OnDestroy {
   // ================= 树木渲染（TREE 语义 → 3D 树） =================
 
   /** 按 chunk 语义中的 TREE 格生成 3D 树模型（树干 + 树冠），带确定性随机旋转/缩放 */
+  /** HY3D 动物散布：7 只模型全部就绪 + 地形就绪后，随机撒到已加载的陆地 chunk（仅一次） */
+  private trySpawnAnimals(): void {
+    if (this.animalsSpawned || this.disposed) return;
+    if (Object.keys(this.animalModels).length < 7) return;   // 等 7 只全部就绪
+    if (this.gridCache.size === 0) { setTimeout(() => this.trySpawnAnimals(), 600); return; }
+    this.spawnAnimals();
+  }
+
+  private spawnAnimals(): void {
+    this.animalsSpawned = true;
+    if (!this.wildlifeGroup) {
+      this.wildlifeGroup = new THREE.Group();
+      this.scene.add(this.wildlifeGroup);
+    }
+    const waterLevel = this.config?.waterLevel ?? -5;
+    const order = ['cat', 'dog', 'chicken', 'duck', 'cow', 'sheep', 'fish'];
+    for (const key of order) {
+      const tpl = this.animalModels[key];
+      if (!tpl) continue;
+      let placed = false;
+      for (let tries = 0; tries < 30 && !placed; tries++) {
+        const keys = Array.from(this.gridCache.keys());
+        const k = keys[Math.floor(Math.random() * keys.length)];
+        const grid = this.gridCache.get(k)!;
+        const lx = Math.floor(Math.random() * CHUNK);
+        const lz = Math.floor(Math.random() * CHUNK);
+        const sem = grid.semantic[lz * CHUNK + lx];
+        const gx = grid.cx * CHUNK + lx + 0.5;
+        const gz = grid.cz * CHUNK + lz + 0.5;
+        if (key === 'fish') {
+          if (sem !== 0 && sem !== 10) continue;            // 鱼只落水
+          const inst = tpl.clone(true);
+          inst.position.set(gx, waterLevel + 0.15, gz);
+          inst.rotation.y = Math.random() * Math.PI * 2;
+          this.wildlifeGroup.add(inst);
+          placed = true;
+        } else {
+          if (sem === 0 || sem === 10) continue;            // 陆地动物避开水
+          const rawY = grid.height[lz * N + lx];
+          const y = (rawY != null && !isNaN(rawY)) ? rawY : (this.heightAt(gx, gz) ?? 0);
+          // 🔴🔴 水域防护（2026-08-15 修复）：陆地动物必须在海平面以上
+          const safeY = Math.max(waterLevel + 0.6, 0);
+          if (y < safeY) continue;
+          const inst = tpl.clone(true);
+          inst.position.set(gx, y, gz);
+          inst.rotation.y = Math.random() * Math.PI * 2;
+          this.wildlifeGroup.add(inst);
+          this.animalList.push({ x: gx, y, z: gz });
+          placed = true;
+        }
+      }
+    }
+    console.log('[world3d] 7 只动物已随机散布到地图');
+  }
+
   private spawnTrees(resp: ChunkResp): void {
     const key = `${resp.cx}_${resp.cz}`;
     const trees: THREE.Group[] = [];
+    const waterLevel = this.config?.waterLevel ?? -5;
+    const h = resp.height;
     for (let lz = 0; lz < CHUNK; lz++) {
       for (let lx = 0; lx < CHUNK; lx++) {
         const cell = resp.semantic[lz * CHUNK + lx];
         if (cell !== 4) continue; // 4 = TREE
         const gx = resp.cx * CHUNK + lx;
         const gz = resp.cz * CHUNK + lz;
-        const y = this.heightAt(gx + 0.5, gz + 0.5);
+        // 直接从高度数组取值（避免 heightAt 插值/缓存未命中返回 undefined → y=0 漂浮）
+        const rawY = h[lz * N + lx];
+        // 🔴 用插值地表高度判定（与调试探针一致）：水边插值后树基会低于水面
+        const surf = this.heightAt(gx + 0.5, gz + 0.5);
+        const y = (surf != null && !isNaN(surf)) ? surf : ((rawY != null && !isNaN(rawY)) ? rawY : (waterLevel + 0.5));
+        // 🔴🔴 水域防护（2026-08-15 截图验证修复）：树根必须在海平面(0)以上
+        // 之前用 waterLevel+0.6(-4.4) 太宽 → 负高度格(-3~-0.3)全漏过 → 树站在水里
+        const safeY = Math.max(waterLevel + 0.6, 0); // 安全线 = 海平面以上
+        if (y < safeY) continue; // 跳过水下/水边低洼格
+        const finalY = y;
         const tree = this.makeTree();
-        tree.position.set(gx + 0.5, y ?? 0, gz + 0.5);
+        tree.position.set(gx + 0.5, finalY, gz + 0.5);
         tree.rotation.y = (((gx * 13 + gz * 7) % 360) * Math.PI) / 180;
         const s = 0.85 + (((gx * 31 + gz * 17) % 30) / 100);
         tree.scale.setScalar(s);
         this.scene.add(tree);
         trees.push(tree);
+        this.treeList.push({ x: gx + 0.5, z: gz + 0.5 });
+        this.markObstacle(resp.cx, resp.cz, gx, gz, 1); // TREE 占位 → 寻路避障
       }
     }
     this.treeMeshes.set(key, trees);
@@ -1681,6 +2025,23 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.girlModel = norm(g, 2.0);
       this.tryPlaceCharacters();
     });
+    // HY3D 7 只动物（draco 压缩）：归一化到合理高度后缓存，供 spawnAnimals 随机散布
+    const wildList: { key: string; file: string; h: number }[] = [
+      { key: 'cat',     file: 'animals/hy3_cat_draco.glb',     h: 1.4 },
+      { key: 'dog',     file: 'animals/hy3_dog_draco.glb',     h: 1.7 },
+      { key: 'chicken', file: 'animals/hy3_chicken_draco.glb', h: 1.1 },
+      { key: 'duck',    file: 'animals/hy3_duck_draco.glb',    h: 1.1 },
+      { key: 'cow',     file: 'animals/hy3_cow_draco.glb',     h: 2.6 },
+      { key: 'sheep',   file: 'animals/hy3_sheep_draco.glb',   h: 1.8 },
+      { key: 'fish',    file: 'animals/hy3_fish_draco.glb',    h: 0.8 },
+    ];
+    for (const w of wildList) {
+      this.assets.loadModel(base + w.file).then(g => {
+        const m = norm(g, w.h);
+        if (m) { this.animalModels[w.key] = m; this.trySpawnAnimals(); }
+        else console.warn('[world3d] 动物模型加载失败: ' + w.key);
+      }).catch(() => console.warn('[world3d] 动物模型加载异常: ' + w.key));
+    }
   }
 
   /** 归一化模型：缩放到目标高度，并把底部对齐到局部 y=0（外层 Group 包裹，便于按实例设置世界坐标） */
@@ -1791,11 +2152,15 @@ export class World3dComponent implements OnInit, OnDestroy {
     spots.forEach((sp, i) => {
       const y = this.heightAt(sp.gx, sp.gz);
       if (y === undefined) return;
+      // 🔴🔴 水域防护（2026-08-15 修复）：NPC 必须在海平面以上
+      const safeY = Math.max((this.config?.waterLevel ?? -5) + 0.6, 0);
+      if (y < safeY) return;
       const inst = models[i].clone(true);
       inst.position.set(sp.gx, y, sp.gz);
       inst.rotation.y = (i * 1.7) % (Math.PI * 2);
       inst.userData['shared'] = true;
       this.scene.add(inst);
+      this.charList.push({ x: sp.gx, y, z: sp.gz });
       // M7：收集骨骼引用（驱动四肢独立运动）
       const bones: Record<string, THREE.Object3D> = {};
       inst.traverse(o => { if (o.name && boneNames.includes(o.name)) bones[o.name] = o; });
@@ -1917,10 +2282,26 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   // ================= 矿石渲染（ORE_* 语义 → 3D 矿石模型） =================
 
-  /** 按 chunk 语义中的 ORE_* 格生成 3D 矿石模型（露出地面的岩石/晶体） */
+  /** 按 chunk 语义中的 ORE_* 格生成 3D 矿石模型（露出地面的岩石/晶体）
+   *  🔴🔴 2026-08-15 修复：1202 个矿石太多导致视觉上"悬空云"
+   *  三重削减：① 概率稀疏(8%) ② 高度上限(Y≤12) ③ 每chunk上限(6个)
+   */
   private spawnOres(resp: ChunkResp): void {
     const key = `${resp.cx}_${resp.cz}`;
     const ores: THREE.Group[] = [];
+    const waterLevel = this.config?.waterLevel ?? -5;
+    const h = resp.height;
+    let chunkOreCount = 0;
+    const MAX_ORES_PER_CHUNK = 6; // 每个 chunk 最多 6 个矿石（之前是几十个）
+    const ORE_SPAWN_CHANCE = 0.08; // 8% 概率实际生成 3D 模型（稀疏化）
+    const MAX_ORE_Y = 12; // 不在太高的悬崖上放矿
+
+    // 确定性伪随机（基于坐标，同位置每次结果一致）
+    const seededRandom = (x: number, z: number) => {
+      const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453123;
+      return n - Math.floor(n);
+    };
+
     for (let lz = 0; lz < CHUNK; lz++) {
       for (let lx = 0; lx < CHUNK; lx++) {
         const cell = resp.semantic[lz * CHUNK + lx];
@@ -1929,17 +2310,32 @@ export class World3dComponent implements OnInit, OnDestroy {
         else if (cell === 7) oreType = 'iron';   // ORE_IRON
         else if (cell === 8) oreType = 'gold';   // ORE_GOLD
         if (!oreType) continue;
+        
+        // 🔴 稀疏化：只有 8% 的矿点真正生成 3D 模型
         const gx = resp.cx * CHUNK + lx;
         const gz = resp.cz * CHUNK + lz;
-        const y = this.heightAt(gx + 0.5, gz + 0.5);
+        if (seededRandom(gx, gz) > ORE_SPAWN_CHANCE) continue;
+        
+        // 🔴 每 chunk 上限
+        if (chunkOreCount >= MAX_ORES_PER_CHUNK) continue;
+
+        // 直接从高度数组取值
+        const rawY = h[lz * N + lx];
+        const y = (rawY != null && !isNaN(rawY)) ? rawY : (this.heightAt(gx + 0.5, gz + 0.5) ?? (waterLevel + 1.0));
+        
+        // 🔴🔴 水域防护 + 高度上限
+        if (y < 0 || y > MAX_ORE_Y) continue; // 跳过水下和过高矿点
+        
         const ore = this.makeOre(oreType);
-        ore.position.set(gx + 0.5, y ?? 0, gz + 0.5);
-        // 随机旋转和轻微缩放变化
+        ore.position.set(gx + 0.5, y, gz + 0.5);
         ore.rotation.y = (((gx * 7 + gz * 13) % 360) * Math.PI) / 180;
         const s = 0.8 + (((gx * 23 + gz * 31) % 20) / 100);
         ore.scale.setScalar(s);
         this.scene.add(ore);
         ores.push(ore);
+        this.oreList.push({ x: gx + 0.5, y, z: gz + 0.5, type: oreType });
+        this.markObstacle(resp.cx, resp.cz, gx, gz, 1);
+        chunkOreCount++;
       }
     }
     this.oreMeshes.set(key, ores);
@@ -2048,6 +2444,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       g.userData['level'] = lvl;
       const s = 1 + (lvl - 1) * 0.18;
       g.scale.set(s, s, s);
+      this.markObstacle(Math.floor(o.gx / CHUNK), Math.floor(o.gz / CHUNK), o.gx, o.gz, 1); // 建筑占位 → 寻路避障
     }
     g.position.set(o.gx + 0.5, groundY, o.gz + 0.5);
     this.scene.add(g);
@@ -2670,6 +3067,12 @@ export class World3dComponent implements OnInit, OnDestroy {
     const targetGz = Math.floor(point.z);
     // 清空旧目标/路径
     this.moveTarget = null;
+    // 记录最终导航目标（供卡住时重寻路）
+    this.navGoal = { x: point.x, z: point.z };
+    this.navRetries = 0;
+    this.stuckTimer = 0;
+    this.lastStuckX = this.dpx;
+    this.lastStuckZ = this.dpz;
     const startGx = Math.floor(this.dpx);
     const startGz = Math.floor(this.dpz);
     // A* 寻路（基于语义网格避障）
@@ -2679,9 +3082,15 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.hint = `🧭 寻路 ${path.length} 个路点 → (${targetGx}, ${targetGz})`;
       this.sendMoveTarget();
     } else {
-      // 无语义网格或不可达：回退直线移动
-      this.moveTarget = { x: point.x, z: point.z };
-      this.hint = `📍 移动目标: (${targetGx}, ${targetGz})（直线）`;
+      // 无语义网格或不可达：回退直线移动（但目标若在水域则找最近陆地）
+      let fx = point.x, fz = point.z;
+      if (!this.isWalkableCell(targetGx, targetGz)) {
+        const land = this.nearestWalkable(targetGx, targetGz);
+        if (land) { fx = land.gx + 0.5; fz = land.gz + 0.5; }
+        else { this.hint = '⚠️ 目标在水域/障碍中，无法到达'; return; }
+      }
+      this.moveTarget = { x: fx, z: fz };
+      this.hint = `📍 移动目标: (${Math.floor(fx)}, ${Math.floor(fz)})（直线）`;
       this.sendMoveTarget();
     }
   };
@@ -2725,6 +3134,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     if ((code.startsWith('Key') || code.startsWith('Arrow')) && (this.moveTarget || this.pathPoints.length)) {
       this.moveTarget = null;
       this.pathPoints = [];
+      this.navGoal = null;
       this.hint = '已取消自动移动，WASD 手动控制';
     }
     // 空格跳跃（非建造/养鱼/采矿模式，且不在输入框中）

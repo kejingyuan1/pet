@@ -106,11 +106,11 @@ body::before, body::after { z-index: 0; }
 .user-btn { width: auto; padding: 0 14px; gap: 8px; font-size: .85rem; font-weight: 800; color: var(--orange-d); }
 .user-name { white-space: nowrap; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
 
-/* ===== 主容器 ===== */
-.app-shell { position: relative; z-index: 1; padding-bottom: 76px; }
-main { padding: 0 14px 100px; }
+/* ===== 主容器（全高 flex 布局，确保子模块能填满屏幕） ===== */
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; position: relative; z-index: 1; padding-bottom: 76px; }
+main { flex: 1; display: flex; flex-direction: column; padding: 0 14px 8px; min-height: 0; }
 .module { display: none; }
-.module.on { display: block; animation: fadeIn .35s var(--ease); }
+.module.on { display: flex; flex-direction: column; flex: 1; min-height: 0; animation: fadeIn .35s var(--ease); }
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -642,8 +642,10 @@ p { line-height: 1.55; }
 .task-item.overdue > .b { background: var(--red); }
 
 /* ===== 大世界 3D 场景容器（world 模块复用，自适应填满） ===== */
-.scene3d-wrap { border-radius: 16px; overflow: hidden; margin-bottom: 12px; box-shadow: var(--shadow-card); position: relative; width: 100%; }
-.scene3d-wrap > app-world3d { display: block; }
+.scene3d-wrap { border-radius: 16px; overflow: hidden; margin-bottom: 0; box-shadow: var(--shadow-card); position: relative; width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.scene3d-wrap > app-world3d { display: block; flex: 1; min-height: 0; }
+.scene3d-wrap > app-world3d ::ng-deep > div { width: 100%; height: 100%; }
+.scene3d-wrap > app-world3d ::ng-deep canvas { display: block; width: 100% !important; height: 100% !important; }
 
 /* ===== 家园首页：欢迎横幅（替代原伪地图区域） ===== */
 .home-hero {
@@ -800,10 +802,14 @@ p { line-height: 1.55; }
 .admin-page { display: block; position: fixed; top: 70px; left: 0; right: 0; bottom: 70px; z-index: 60; overflow-y: auto; padding: 18px; background: var(--bg-grad); animation: fadeIn .3s var(--ease); }
 .admin-page .card { max-width: 920px; margin: 0 auto; background: var(--card-bg-strong); backdrop-filter: blur(24px) saturate(180%); border: 1px solid rgba(255, 255, 255, .7); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-card); }
 
-/* ===== 全局聊天面板（大世界页面，fixed 定位脱离 3D 容器） ===== */
-.world-chat-bar { position: fixed; left: 0; right: 0; bottom: 76px; z-index: 6; pointer-events: none; }
-.w3d-chat { position: absolute; left: 16px; right: 51%; bottom: 0; min-width: 260px; pointer-events: auto; background: rgba(20,30,45,.88); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,.4); color: #eee; font-size: 13px; }
-.w3d-chat.collapsed { width: auto; right: auto; }
+/* ===== 聊天面板（嵌入游戏画面内，背景虚化） ===== */
+.world-chat-bar { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 10; pointer-events: none; }
+/* 当屏幕较小时（手机竖屏），聊天框不与底部 HUD（采矿/背包）重叠 */
+@media (max-height: 700px) {
+  .world-chat-bar { bottom: auto; top: 8px; max-height: 45vh; }
+}
+.w3d-chat { pointer-events: auto; background: rgba(15,22,35,.40) !important; backdrop-filter: blur(18px) saturate(180%) !important; -webkit-backdrop-filter: blur(18px) saturate(180%) !important; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08); color: #eee; font-size: 13px; border: 1px solid rgba(255,255,255,.12); }
+.w3d-chat.collapsed { width: auto; right: auto; display: inline-block; }
 .chat-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; background: rgba(255,255,255,.06); user-select: none; }
 .chat-toggle { opacity: .7; }
 .chat-body { display: flex; flex-direction: column; }
