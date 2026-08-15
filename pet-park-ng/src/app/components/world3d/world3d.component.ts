@@ -445,6 +445,9 @@ export class World3dComponent implements OnInit, OnDestroy {
   private starField!: THREE.Points;          // 夜晚星空粒子
   private starMaterial!: THREE.ShaderMaterial; // 星星材质（透明度随昼夜变化）
   private cloudGroup!: THREE.Group;           // 云朵容器
+
+  // 独立光滑水面（解决锯齿水岸线）
+  private waterPlane!: THREE.Mesh;              // 大平面覆盖所有水域
   private static readonly STAR_COUNT = 1800;   // 星星数量
   private static readonly CLOUD_COUNT = 12;    // 云朵数量
 
@@ -613,6 +616,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 清理天空装饰
     if (this.starField) { this.scene?.remove(this.starField); this.starField.geometry.dispose(); this.starMaterial.dispose(); }
     if (this.cloudGroup) { this.scene?.remove(this.cloudGroup); }
+    // 清理水面
+    if (this.waterPlane) { this.scene?.remove(this.waterPlane); this.waterPlane.geometry.dispose(); (this.waterPlane.material as THREE.Material).dispose(); }
     this.renderer?.dispose();
     this.scene?.traverse(o => {
       if (o.userData?.['shared']) return; // 共享 GLB 模板实例，几何复用不释放
@@ -687,6 +692,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.createStarField();
     // ====== 云朵（昼夜均可见） ======
     this.createClouds();
+
+    // ====== 独立光滑水面（覆盖所有水域，消除锯齿水岸线） ======
+    this.createWaterPlane();
 
     // OrbitControls（默认禁用，跟随模式由自研 rig 控制；建造模式启用）
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -1099,6 +1107,30 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.scene.add(this.cloudGroup);
   }
 
+  /** 创建独立光滑水面：大平面覆盖所有水域，消除锯齿水岸线 */
+  private createWaterPlane(): void {
+    const wl = this.config?.waterLevel ?? -5;
+    // 水面尺寸：覆盖整个可见世界（岛屿分布在 ±1300 范围）
+    const size = 4000;
+    const geo = new THREE.PlaneGeometry(size, size, 1, 1);
+    // 旋转到水平面（PlaneGeometry 默认竖直）
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x2EAFCF,        // 亮青蓝色（匹配天空+水面）
+      transparent: true,
+      opacity: 0.72,          // 半透明，能看到水下地形过渡
+      roughness: 0.12,        // 光滑水面，有高光反射
+      metalness: 0.25,
+      fog: false,             // 不受雾影响（水应在雾层之下清晰可见）
+      side: THREE.DoubleSide,
+    });
+    this.waterPlane = new THREE.Mesh(geo, mat);
+    this.waterPlane.position.y = wl - 0.08; // 略低于水位线，避免 Z-fighting
+    this.waterPlane.name = 'water_plane';
+    this.waterPlane.renderOrder = -1;       // 先于地形渲染（底层）
+    this.scene.add(this.waterPlane);
+  }
+
   /** 构建单朵云：由 4~8 个不同大小的球体组成 */
   private buildCloudPuff(mat: THREE.Material): THREE.Group {
     const group = new THREE.Group();
@@ -1338,6 +1370,11 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 天空装饰：星星闪烁 + 云朵漂移
     this.updateStars(now * 0.001);
     this.updateClouds(dt, now * 0.001);
+    // 水面微动：正弦波模拟轻微起伏
+    if (this.waterPlane) {
+      const wl = this.config?.waterLevel ?? -5;
+      this.waterPlane.position.y = wl - 0.08 + Math.sin(now * 0.0008) * 0.06;
+    }
     this.renderer.render(this.scene, this.camera);
 
     // v8 海浪动画：更新 shader 时间 uniform
@@ -2073,16 +2110,15 @@ export class World3dComponent implements OnInit, OnDestroy {
         const b = a + 1;
         const cIdx = (lz + 1) * N + lx;
         const d = cIdx + 1;
-        // 🔴🔴 退化三角形过滤：跳过面积为零或法线异常的三角形
-        // 通过检查三个顶点 Y 值差异是否极端来过滤
-        const yA = positions[a * 3 + 1], yB = positions[b * 3 + 1];
-        const yC = positions[cIdx * 3 + 1], yD = positions[d * 3 + 1];
-        const maxY = Math.max(yA, yB, yC, yD);
-        const minY = Math.min(yA, yB, yC, yD);
-        // 如果同一三角形的 Y 跨度 > 200 单位（正常地形 < 80），视为退化/异常
-        const isDegenerate = (maxY - minY > 200) || !Number.isFinite(maxY - minY);
-        if (!isDegenerate) {
-          indices.push(a, cIdx, b, cIdx, d, b);
+
+        // ===== 逐三角形检查（比 quad 级检查严格得多） =====
+        // 三角形 1: (a, cIdx, b)
+        if (this.isValidTriangle(positions, a, cIdx, b, waterLevel)) {
+          indices.push(a, cIdx, b);
+        }
+        // 三角形 2: (cIdx, d, b)
+        if (this.isValidTriangle(positions, cIdx, d, b, waterLevel)) {
+          indices.push(cIdx, d, b);
         }
       }
     }
@@ -2098,6 +2134,41 @@ export class World3dComponent implements OnInit, OnDestroy {
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
     mesh.frustumCulled = false;
     return mesh;
+  }
+
+  /** 严格三角形有效性检查：过滤退化/异常三角形（修复黑色三角洞根因） */
+  private isValidTriangle(pos: Float32Array, i1: number, i2: number, i3: number, wl: number): boolean {
+    const x1 = pos[i1 * 3], y1 = pos[i1 * 3 + 1], z1 = pos[i1 * 3 + 2];
+    const x2 = pos[i2 * 3], y2 = pos[i2 * 3 + 1], z2 = pos[i2 * 3 + 2];
+    const x3 = pos[i3 * 3], y3 = pos[i3 * 3 + 1], z3 = pos[i3 * 3 + 2];
+
+    // 1. 每个顶点必须是有限数
+    if (!Number.isFinite(x1) || !Number.isFinite(y1) || !Number.isFinite(z1)) return false;
+    if (!Number.isFinite(x2) || !Number.isFinite(y2) || !Number.isFinite(z2)) return false;
+    if (!Number.isFinite(x3) || !Number.isFinite(y3) || !Number.isFinite(z3)) return false;
+
+    // 2. Y 值跨度不能极端（正常地形 Y 范围约 -10~30，跨度 < 50）
+    const yMax = Math.max(y1, y2, y3);
+    const yMin = Math.min(y1, y2, y3);
+    if (yMax - yMin > 50) return false;
+
+    // 3. 边长不能过大（相邻顶点间距应 < 20 单位）
+    const d12 = (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2) + (z1-z2)*(z1-z2);
+    const d23 = (x2-x3)*(x2-x3) + (y2-y3)*(y2-y3) + (z2-z3)*(z2-z3);
+    const d31 = (x3-x1)*(x3-x1) + (y3-y1)*(y3-y1) + (z3-z1)*(z3-z1);
+    const maxEdgeSq = 20 * 20 * 4; // 允许对角线长度
+    if (d12 > maxEdgeSq || d23 > maxEdgeSq || d31 > maxEdgeSq) return false;
+
+    // 4. 面积不能接近零（叉积检测共线/退化）
+    const ux = x2 - x1, uy = y2 - y1, uz = z2 - z1;
+    const vx = x3 - x1, vy = y3 - y1, vz = z3 - z1;
+    const crossX = uy * vz - uz * vy;
+    const crossY = uz * ux - ux * vz;
+    const crossZ = ux * vy - uy * ux;
+    const area2 = crossX * crossX + crossY * crossY + crossZ * crossZ;
+    if (area2 < 0.001) return false; // 面积 ≈ 0
+
+    return true;
   }
 
   /** 水岸线平滑：对水陆边界顶点做邻域平均，减少锯齿 */
