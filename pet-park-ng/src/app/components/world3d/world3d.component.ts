@@ -1016,7 +1016,16 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 权威姿态：physics-service 快照插值；快照未到前停留出生点
     const st = this.physics.getState(this.uid);
     if (st) {
-      this.px = st.gx; this.py = st.y; this.pz = st.gz; this.prot = st.rot;
+      this.px = st.gx; this.pz = st.gz; this.prot = st.rot;
+      // 🔴 y 值异常 guard：服务端可能广播极端值（如 MySQL 脏数据 y=-798）
+      //   → 前端每帧吃 -798 → 落水保护触发 → 推回 → 下一帧又 -798 → 死循环打转
+      //   正常地形高度约 [-20, 30]，留余量；异常时用本地 heightAt 兜底
+      if (st.y < -50 || st.y > 100 || !Number.isFinite(st.y)) {
+        const safeY = this.heightAt(st.gx, st.gz);
+        this.py = (safeY ?? 0) + 0.35;
+      } else {
+        this.py = st.y;
+      }
     }
     // 平滑插值：水平方向纯 lerp（无地面冲突）
     const k = World3dComponent.SMOOTH_FACTOR;

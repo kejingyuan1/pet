@@ -74,6 +74,13 @@ public class WorldPhysicsService {
             gx = restored[0]; gz = restored[1]; y = restored[2];
             log.info("[physics-J] restore uid={} from snapshot pos=({}, {}, {})", uid, gx, gz, y);
         }
+        // 🔴 y 值合理性校验：MySQL 脏数据或异常值会导致 y=-798 之类极端值
+        //   → 广播到前端 → 触发落水保护 → 推回 → 下一帧又是 -798 → 死循环打转
+        //   正常地形高度范围约 [-20, 30]（含海床-16~高山26），留宽裕余量
+        if (y < -50.0 || y > 100.0 || Double.isNaN(y) || Double.isInfinite(y)) {
+            log.warn("[physics-J] y value out of range for uid={} y={}, recalculating from terrain", uid, y);
+            y = terrain.heightAt((int)Math.floor(gx), (int)Math.floor(gz));
+        }
         Player p = new Player();
         p.uid = uid; p.gx = gx; p.gz = gz; p.y = y; p.rot = 0;
         p.vx = 0; p.vz = 0; p.vy = 0; p.grounded = true;
