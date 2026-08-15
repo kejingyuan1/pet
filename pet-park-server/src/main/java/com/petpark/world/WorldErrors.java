@@ -69,6 +69,28 @@ public final class WorldErrors {
         return new BizException(WORLD_NOT_IN_WORLD, "尚未进入世界，无法采矿");
     }
 
+    // ===== P1 钓鱼错误码 =====
+
+    public static final int WORLD_NOT_NEAR_WATER = 2019;
+
+    /** 不在水边（钓鱼需临水） */
+    public static BizException notNearWater() {
+        return new BizException(WORLD_NOT_NEAR_WATER, "需要站在水边才能钓鱼");
+    }
+
+    public static final int WORLD_NOT_TREE = 2017;
+    public static final int WORLD_INVALID_ANIMAL = 2018;
+
+    /** 该格子不是树木（采集仅限 TREE 格） */
+    public static BizException notTree() {
+        return new BizException(WORLD_NOT_TREE, "这里没有可采集的树木");
+    }
+
+    /** 牧场动物代码非法（无法映射到背包产物） */
+    public static BizException invalidAnimal() {
+        return new BizException(WORLD_INVALID_ANIMAL, "未知的牧场动物，无法收取产物");
+    }
+
     // ===== P0 拆除 / 升级 / 等级门槛（审计缺口 #3） =====
 
     public static final int WORLD_LEVEL_NOT_ENOUGH = 2012;

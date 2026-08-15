@@ -64,6 +64,9 @@ public class TerrainService {
     private final WorldConfigService world;
     private final TerrainModMapper terrainModMapper;
 
+    /** 公开水面高度（供 WorldPhysicsService 等外部访问） */
+    public double getWaterLevel() { return world.waterLevel(); }
+
     /** 主地形噪声场 */
     private volatile OpenSimplex2 noise;
     /** 种子派生基数（散点哈希用） */
@@ -320,8 +323,8 @@ public class TerrainService {
             // 极薄陆地视为海洋（防破碎小岛穿帮）
             return CellType.WATER;
         }
-        // 沙滩带（海岸）
-        if (h < wl + BEACH_BAND) {
+        // 沙滩带（仅限岛屿边缘的低海拔区域；岛内部低洼应为草地/河/湖，不应变沙滩）
+        if (h < wl + BEACH_BAND && falloff < 0.55) {
             return CellType.SAND;
         }
         // 山地 + 矿脉
@@ -451,46 +454,79 @@ public class TerrainService {
      * 让玩家初始落在面积较大的岛屿中央平坦区，方便建造与探索。回退沙地/近岛草地。
      */
     public int[] findSpawn() {
-        double bestH = Double.NEGATIVE_INFINITY;
-        int[] best = {0, 0};
+        // 群岛出生点策略（2026-08-15 第三版）：
+        // 选「稳固陆地内部 + 可见海洋」的草地。
+        // 🔴 硬约束：
+        //   1. 高度高于水面至少 3 单位
+        //   2. 7×7 范围内 >= 70% 是陆地（GRASS/SAND/MOUNTAIN/TREE/ROCK）—— 排除水上孤岛/窄半岛
+        //   3. 离海岸 5~20 格（海在眼前但不贴水）
+        // 老玩家由 WorldPhysicsService 从 MySQL 快照恢复上次位置（带高度合法性校验）。
+        int bestGx = 0, bestGz = 0;
+        double bestScore = Double.POSITIVE_INFINITY;
         boolean found = false;
-        // 全局扫描 ±1600（覆盖所有岛屿），步长 16，选全局最高草地（= 岛屿内部高地）
-        for (int radius = 0; radius <= 1600; radius += 16) {
-            for (int gx = -radius; gx <= radius; gx += 16) {
-                for (int gz = -radius; gz <= radius; gz += 16) {
-                    if (Math.max(Math.abs(gx), Math.abs(gz)) != radius) {
-                        continue;
-                    }
+        final double wl = world.waterLevel();
+        final double MIN_ELEV = 3.0;
+        final int K = 20;          // 海岸探测半径
+        final int TARGET_COAST = 14; // 期望离岸距离
+        final int CHECK_R = 3;      // 陆地连通性检查半径
+        final double MIN_LAND_RATIO = 0.70; // 7×7 内最低陆地占比
+        for (int radius = 0; radius <= 1600; radius += 8) {
+            for (int gx = -radius; gx <= radius; gx += 8) {
+                for (int gz = -radius; gz <= radius; gz += 8) {
+                    if (Math.max(Math.abs(gx), Math.abs(gz)) != radius) continue;
+                    if (islandFalloff(gx, gz) > 0.45) continue;
                     CellType t = semanticAt(gx, gz);
-                    if (t == CellType.GRASS && slopeAt(gx, gz) < 0.6) {
-                        double h = heightAt(gx, gz);
-                        if (h > bestH) {
-                            bestH = h;
-                            best = new int[]{gx, gz};
-                            found = true;
+                    if (t != CellType.GRASS || slopeAt(gx, gz) >= 0.6) continue;
+                    double h = heightAt(gx, gz);
+                    if (h < wl + MIN_ELEV) continue;
+                    // 🔴 陆地连通性：7×7 范围内至少 70% 是陆地（排除孤岛）
+                    int landCnt = 0, total = 0;
+                    for (int dx = -CHECK_R; dx <= CHECK_R; dx++) {
+                        for (int dz = -CHECK_R; dz <= CHECK_R; dz++) {
+                            total++;
+                            CellType ct = semanticAt(gx + dx, gz + dz);
+                            if (ct != CellType.WATER) landCnt++;
                         }
+                    }
+                    if ((double) landCnt / total < MIN_LAND_RATIO) continue;
+                    int coast = coastDistance(gx, gz, K);
+                    if (coast < 5) continue;
+                    if (coast < 0) continue; // 内陆深处无海（跳过，除非找不到海边点）
+                    double elev = h - wl;
+                    double score = Math.abs(coast - TARGET_COAST) - Math.min(elev, 10) * 0.10;
+                    if (score < bestScore) {
+                        bestScore = score; bestGx = gx; bestGz = gz; found = true;
                     }
                 }
             }
-            // 不提前退出——必须扫完所有岛屿才能确定全局最高点
         }
-        if (found) {
-            return best;
-        }
-        // 回退：最近的非水可站格（SAND/GRASS 且非障碍，坡度不限；仍无则 (0,0)）
-        for (int radius = 0; radius <= 4000; radius += 8) {
+        if (found) return new int[]{bestGx, bestGz};
+        // 放宽到只要求陆地占比 50%（小岛 fallback）
+        for (int radius = 0; radius <= 1600; radius += 8) {
             for (int gx = -radius; gx <= radius; gx += 8) {
                 for (int gz = -radius; gz <= radius; gz += 8) {
-                    if (Math.max(Math.abs(gx), Math.abs(gz)) != radius) {
-                        continue;
-                    }
+                    if (Math.max(Math.abs(gx), Math.abs(gz)) != radius) continue;
                     CellType t = semanticAt(gx, gz);
-                    if ((t == CellType.SAND || t == CellType.GRASS) && !t.isObstacle()) {
-                        return new int[]{gx, gz};
+                    if ((t == CellType.GRASS || t == CellType.SAND) && !t.isObstacle()) {
+                        double h = heightAt(gx, gz);
+                        if (h >= wl + MIN_ELEV) return new int[]{gx, gz};
                     }
                 }
             }
         }
         return new int[]{0, 0};
+    }
+
+    /** 从 (gx,gz) 向四周探测到最近海洋（falloff<=0.02）的格距；K 内无海洋返回 -1 */
+    private int coastDistance(int gx, int gz, int K) {
+        for (int r = 1; r <= K; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
+                    if (islandFalloff(gx + dx, gz + dz) <= 0.02) return r;
+                }
+            }
+        }
+        return -1;
     }
 }

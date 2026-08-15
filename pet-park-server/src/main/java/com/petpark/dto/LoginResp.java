@@ -17,4 +17,6 @@ public class LoginResp {
     private String role;
     /** 学历：PRIMARY_1..UNIVERSITY_4（注册时填写，决定考试默认题库） */
     private String education;
+    /** 性别：M 男 / F 女 */
+    private String gender;
 }

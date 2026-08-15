@@ -12,14 +12,18 @@ import com.petpark.world.dto.WsPositionMsg;
 import com.petpark.world.dto.MineResult;
 import com.petpark.world.dto.WsMineMsg;
 import com.petpark.world.dto.WsCellMsg;
+import com.petpark.world.dto.FishCatchResult;
+import com.petpark.world.dto.WsFishMsg;
 import com.petpark.world.geo.CellType;
 import com.petpark.world.geo.ChunkKey;
 import com.petpark.world.service.PhysicsGatewayService;
 import com.petpark.world.service.RegionBroker;
 import com.petpark.world.service.WorldMiningService;
+import com.petpark.world.service.WorldFishingService;
 import com.petpark.world.service.TerrainService;
 import com.petpark.world.service.WorldConfigService;
 import com.petpark.world.service.WorldObjectService;
+import com.petpark.world.service.WorldTimeService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -56,6 +60,8 @@ public class WorldWsController {
     private final UserMapper userMapper;
     private final PhysicsGatewayService physicsGateway;
     private final WorldMiningService miningService;
+    private final WorldFishingService fishingService;
+    private final WorldTimeService timeService;
 
     public WorldWsController(RegionBroker broker,
                              TerrainService terrain,
@@ -63,7 +69,9 @@ public class WorldWsController {
                              WorldObjectService objectService,
                              UserMapper userMapper,
                              PhysicsGatewayService physicsGateway,
-                             WorldMiningService miningService) {
+                             WorldMiningService miningService,
+                             WorldFishingService fishingService,
+                             WorldTimeService timeService) {
         this.broker = broker;
         this.terrain = terrain;
         this.world = world;
@@ -71,6 +79,8 @@ public class WorldWsController {
         this.userMapper = userMapper;
         this.physicsGateway = physicsGateway;
         this.miningService = miningService;
+        this.fishingService = fishingService;
+        this.timeService = timeService;
     }
 
     /** 接入握手：加区域 → 回快照（含 y）+ 广播 PLAYER_JOIN */
@@ -115,6 +125,9 @@ public class WorldWsController {
         // 回快照：区域内全部玩家（含 y）+ 区域对象全量 + version
         List<WorldObjectResp> objects = objectService.listByChunkKey(chunkKey);
         broker.sendToUser(sid, broker.snapshot(sid, world.version(), objects));
+
+        // 立即私发当前昼夜相位（避免新客户端苦等 5s 周期广播）
+        broker.sendToUser(sid, timeService.currentPhase());
 
         // 广播玩家加入
         broker.broadcastWorld(Map.of(
@@ -245,6 +258,32 @@ public class WorldWsController {
                     "t", "MINE_RESULT",
                     "code", 1,
                     "msg", e.getMessage() == null ? "采矿失败" : e.getMessage()));
+        }
+    }
+
+    /**
+     * 钓鱼请求：/app/ws.fish {gx, gz}
+     * 服务端权威采集（临水校验 + 能量 + 随机鱼种），结果经 /user/queue/reply 回 FISH_RESULT。
+     */
+    @MessageMapping("/ws.fish")
+    public void fish(WsFishMsg msg, SimpMessageHeaderAccessor headers) {
+        String sid = headers.getSessionId();
+        Long uid = uid(headers);
+        if (sid == null || uid == null || msg == null || msg.getGx() == null || msg.getGz() == null) {
+            return;
+        }
+        try {
+            Result<FishCatchResult> r = fishingService.fish(uid, msg.getGx(), msg.getGz());
+            broker.sendToUser(sid, Map.of(
+                    "t", "FISH_RESULT",
+                    "code", r.getCode(),
+                    "msg", r.getMsg() == null ? "" : r.getMsg(),
+                    "data", r.getData()));
+        } catch (Exception e) {
+            broker.sendToUser(sid, Map.of(
+                    "t", "FISH_RESULT",
+                    "code", 1,
+                    "msg", e.getMessage() == null ? "钓鱼失败" : e.getMessage()));
         }
     }
 

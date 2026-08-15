@@ -99,6 +99,28 @@ export interface HarvestResult {
   coins: number;
 }
 
+/** 采集结果（砍树 / 摘野果） */
+export interface ForageResult {
+  /** 获得木材数量 */
+  wood: number;
+  /** 获得野果数量 */
+  berry: number;
+  /** 最新背包（含名称/售价） */
+  inventory: InventoryItem[];
+}
+
+/** 牧场收蛋结果（动物产物写入背包） */
+export interface RanchCollectResult {
+  /** 实际写入背包的物品类型（egg_chicken / egg_duck / milk） */
+  itemType: string;
+  /** 物品名称（鸡蛋 / 鸭蛋 / 牛奶） */
+  itemName: string;
+  /** 本次获得数量 */
+  qty: number;
+  /** 最新背包（含名称/售价） */
+  inventory: InventoryItem[];
+}
+
 /**
  * 大世界 REST 服务（config / chunk 流式 / build / fish / objects / mining）
  * 统一走 /api/world 前缀，鉴权头由 AuthService 提供。
@@ -154,6 +176,18 @@ export class WorldApiService {
       { gx, gz }, { headers: this.auth.authHeaders() });
   }
 
+  /** POST /api/world/forage 砍树/摘野果（写入背包 world_inventory） */
+  forage(gx: number, gz: number): Observable<ApiResult<ForageResult>> {
+    return this.http.post<ApiResult<ForageResult>>('/api/world/forage',
+      { gx, gz }, { headers: this.auth.authHeaders() });
+  }
+
+  /** POST /api/ranch/collect 牧场收蛋/动物产物（写入背包 world_inventory） */
+  collectRanchProduct(animalCode: string): Observable<ApiResult<RanchCollectResult>> {
+    return this.http.post<ApiResult<RanchCollectResult>>('/api/ranch/collect',
+      { animalCode }, { headers: this.auth.authHeaders() });
+  }
+
   /** GET /api/world/mining/profile 采矿档案（能量/等级/经验/背包） */
   miningProfile(): Observable<MiningProfile> {
     return this.http.get<ApiResult<MiningProfile>>('/api/world/mining/profile',
@@ -164,5 +198,17 @@ export class WorldApiService {
   sellMining(items: { type: string; qty: number }[]): Observable<ApiResult<SellResult>> {
     return this.http.post<ApiResult<SellResult>>('/api/world/mining/sell',
       items, { headers: this.auth.authHeaders() });
+  }
+
+  /** GET /api/world/cultivation 养成汇总（等级/经验/能量/积分 + 收益曲线 + 解锁里程碑） */
+  cultivation(): Observable<ApiResult<any>> {
+    return this.http.get<ApiResult<any>>('/api/world/cultivation',
+      { headers: this.auth.authHeaders() });
+  }
+
+  /** GET /api/world/codex 图鉴（鱼 + 矿石，标已发现） */
+  codex(): Observable<ApiResult<any>> {
+    return this.http.get<ApiResult<any>>('/api/world/codex',
+      { headers: this.auth.authHeaders() });
   }
 }

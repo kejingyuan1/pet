@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
 import { AuthService } from './auth.service';
 
 /**
@@ -27,7 +28,17 @@ export class WorldSocketService {
 
   constructor(private auth: AuthService) {}
 
+  /** 连接状态（供 UI 订阅）：connecting / connected / reconnecting / disconnected */
+  connectionState$ = new BehaviorSubject<ConnState>('disconnected');
+
+  private reconnectAttempts = 0;
+  private reconnectTimer: any = null;
+  private heartbeatTimer: any = null;
+  private manualClose = false;
+
   get isConnected(): boolean { return this.connected; }
+
+  private setConnState(s: ConnState): void { this.connectionState$.next(s); }
 
   /** 连接 WS 端点
    *  - M2 修复（2026-08-12）：URL 路由兼容
@@ -35,11 +46,17 @@ export class WorldSocketService {
    *    · Python http.server / 其它简易服务器在 4200 上无 proxy：自动降级直连 localhost:8080
    *    · 生产环境：location.host 由反代（nginx/spring cloud gateway）兜底
    *  - 服务端 SecurityConfig 已 setAllowedOriginPatterns("*")，CORS/WS 握手不受限
+   *  - P0 修复（2026-08-14）：断线自动重连 + 心跳保活；暴露 connectionState$ 供 UI 显示
    */
   connect(): Promise<void> {
     if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
       return Promise.resolve();
     }
+    // 已在连接中（含重连握手阶段）：复用，避免重复建连
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      return Promise.resolve();
+    }
+    this.manualClose = false;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     // 自动检测：Angular dev server 默认可信端口（含 4200/4201 等常用 dev proxy 端口）
     const knownProxyPorts = new Set(['4200', '4201', '4202', '5173', '3000']);
@@ -51,6 +68,7 @@ export class WorldSocketService {
       }
     }
     const url = `${proto}://${wsHost}/ws?token=${encodeURIComponent(this.auth.token || '')}`;
+    this.setConnState(this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting');
     return new Promise<void>((resolve, reject) => {
       this.connectResolve = resolve;
       this.connectReject = reject;
@@ -58,17 +76,25 @@ export class WorldSocketService {
       const ws = new WebSocket(url, 'v12.stomp');
       this.ws = ws;
       ws.onopen = () => {
-        // CONNECT 帧（禁心跳，简单可靠）
-        this.rawSend('CONNECT\naccept-version:1.2\nhost:petpark\nheart-beat:0,0\n\n\0');
+        // CONNECT 帧：声明 10s 心跳（客户端每 5s 发一次保活，探测静默断线）
+        this.rawSend('CONNECT\naccept-version:1.2\nhost:petpark\nheart-beat:10000,10000\n\n\0');
       };
       ws.onmessage = (ev) => this.onMessage(ev.data as string);
       ws.onerror = (ev) => {
-        this.connected = false;
+        // 连接期错误：仅首次 reject（避免重连循环里反复 reject 触发未捕获异常）
         if (this.connectReject) { this.connectReject(ev); this.connectReject = null; }
       };
       ws.onclose = () => {
         this.connected = false;
         this.ws = null;
+        this.stopHeartbeat();
+        this.subs.clear(); // 服务端已移除订阅，本地清理以便重连后重建
+        if (this.manualClose) {
+          this.setConnState('disconnected');
+        } else {
+          this.setConnState('disconnected');
+          this.scheduleReconnect(); // 自动重连（指数退避）
+        }
       };
     });
   }
@@ -85,8 +111,11 @@ export class WorldSocketService {
     this.rawSend(`SEND\ndestination:${destination}\ncontent-type:application/json\n\n${JSON.stringify(body)}\0`);
   }
 
-  /** 断开并清理订阅 */
+  /** 断开并清理订阅（组件销毁时调用：主动断开，不触发重连） */
   disconnect(): void {
+    this.manualClose = true;
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    this.stopHeartbeat();
     try {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.rawSend('DISCONNECT\n\n\0');
@@ -96,6 +125,36 @@ export class WorldSocketService {
     this.ws = null;
     this.connected = false;
     this.subs.clear();
+    this.setConnState('disconnected');
+  }
+
+  // ================= 内部：重连 / 心跳 =================
+
+  /** 指数退避重连：1s → 2s → 4s → 8s → 封顶 10s */
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer || this.manualClose) return;
+    this.reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, Math.min(this.reconnectAttempts - 1, 4)), 10000);
+    this.setConnState('reconnecting');
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      // 连接结果交由 onclose / CONNECTED 处理；失败会再次调度
+      this.connect().catch(() => { /* onclose 会再次触发重连 */ });
+    }, delay);
+  }
+
+  /** 应用层心跳：每 5s 发一个 STOMP 心跳帧（EOL），探测静默断线（移动端 WiFi 漂移常见） */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.rawSend('\n');
+      }
+    }, 5000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
   }
 
   // ================= 内部：STOMP 帧 =================
@@ -134,6 +193,9 @@ export class WorldSocketService {
 
     if (command === 'CONNECTED') {
       this.connected = true;
+      this.reconnectAttempts = 0;
+      this.startHeartbeat();
+      this.setConnState('connected');
       if (this.connectResolve) { this.connectResolve(); this.connectResolve = null; }
       return;
     }
@@ -159,3 +221,6 @@ export interface StompFrame {
   headers: Record<string, string>;
   body: string;
 }
+
+/** WS 连接状态（供 UI 展示） */
+export type ConnState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';

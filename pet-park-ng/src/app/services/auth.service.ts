@@ -21,9 +21,9 @@ export class AuthService {
 
   get isLoggedIn(): boolean { return !!this.token; }
 
-  register(username: string, password: string, nickname: string, confirmPassword: string, inviteCode: string, education: string): Observable<{ code: number; msg: string; data: UserInfo }> {
+  register(username: string, password: string, nickname: string, confirmPassword: string, inviteCode: string, education: string, gender: string): Observable<{ code: number; msg: string; data: UserInfo }> {
     return this.http.post<{ code: number; msg: string; data: UserInfo }>('/api/auth/register',
-      { username, password, nickname, confirmPassword, inviteCode, education });
+      { username, password, nickname, confirmPassword, inviteCode, education, gender });
   }
 
   login(username: string, password: string): Observable<{ code: number; msg: string; data: UserInfo }> {
@@ -38,7 +38,7 @@ export class AuthService {
     try {
       localStorage.setItem(this.TOKEN_KEY, this.token);
       localStorage.setItem(this.USER_KEY, JSON.stringify({
-        userId: data.userId, username: data.username, nickname: data.nickname, role: data.role ?? 'user', coins: data.coins ?? 0, education: data.education ?? 'PRIMARY_1'
+        userId: data.userId, username: data.username, nickname: data.nickname, role: data.role ?? 'user', coins: data.coins ?? 0, education: data.education ?? 'PRIMARY_1', gender: data.gender ?? 'M'
       }));
     } catch (e) { /* ignore */ }
   }

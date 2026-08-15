@@ -16,6 +16,8 @@ public class UserDetailResp {
     private Integer coins;
     /** 学历：PRIMARY_1..UNIVERSITY_4 */
     private String education;
+    /** 性别：M 男 / F 女 */
+    private String gender;
     /** 角色：user 普通 / admin 管理员 */
     private String role;
     private LocalDateTime createdAt;

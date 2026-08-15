@@ -25,6 +25,8 @@ public class User {
     private String nickname;
     /** 学历：PRIMARY_1..PRIMARY_6 / JUNIOR_1..JUNIOR_3 / SENIOR_1..SENIOR_3 / UNIVERSITY_1..UNIVERSITY_4 */
     private String education;
+    /** 性别：M 男 / F 女（决定玩家使用男孩/女孩建模） */
+    private String gender;
     /** 角色：user 普通 / admin 管理员 */
     private String role;
     /** 积分（独立字段，权威数据源） */

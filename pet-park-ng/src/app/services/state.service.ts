@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { GameState, Category, StudySubject, StudySession, GAME_DAY_MS, DAY_START_H, NIGHT_START_H,
   FARM_PLOTS, FARM_UP_COST, POND_SLOTS, POND_UP_COST, RANCH_SLOTS, RANCH_UP_COST, STUDY_DAILY_LIMIT } from '../models';
 import { AuthService } from './auth.service';
+import { WorldApiService } from './world-api.service';
 
 /** 五科目题库：全部从后端 /api/questions 拉取（不内置题目，杜绝单机版） */
 
@@ -38,7 +39,7 @@ export class StateService {
   private saveTimer: any = null;
   private tickTimer: any = null;
 
-  constructor(private http: HttpClient, private auth: AuthService) {}
+  constructor(private http: HttpClient, private auth: AuthService, private worldApi: WorldApiService) {}
 
   // ================= 初始化 =================
   private defaultState(): GameState {
@@ -373,12 +374,26 @@ export class StateService {
     if (!a || !a.type || !a.productReady) return;
     const c = this.catByCode(a.type);
     if (!c) return;
-    this.addCoins(c.prod_price);
-    this.state.pet.stats.harvest++;
-    this.addExp(c.exp);
-    this.addLog('harvest', '收获了' + c.product + '，卖了 ' + c.prod_price + ' 金币');
-    a.productReady = false; a.lastProductDay = this.state.gameDays;
+    // 立即收起按钮（防止连点重复收）；本地状态等后端成功再提交
+    const wasReady = a.productReady;
+    a.productReady = false;
     this.save();
+    this.worldApi.collectRanchProduct(a.type).subscribe({
+      next: () => {
+        // 后端已将产物写入统一背包（world_inventory），不再自动卖币
+        a.lastProductDay = this.state.gameDays;
+        this.state.pet.stats.harvest++;
+        this.addExp(c.exp);
+        this.addLog('harvest', '收获了' + c.product + '，已存入背包（可在大世界背包中卖出换金币）');
+        this.save();
+      },
+      error: (err) => {
+        // 后端失败：回滚，允许重试
+        a.productReady = wasReady;
+        this.addLog('error', '收' + c.product + '失败：' + (err?.error?.msg || '服务器错误'));
+        this.save();
+      }
+    });
   }
   sellAnimal(id: number): void {
     const a = this.state.ranch.stalls.find(x => x.id === id);

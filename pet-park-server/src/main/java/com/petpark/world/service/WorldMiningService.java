@@ -10,6 +10,8 @@ import com.petpark.world.WorldErrors;
 import com.petpark.world.dto.InventoryItem;
 import com.petpark.world.dto.ItemSellReq;
 import com.petpark.world.dto.MineResult;
+import com.petpark.world.dto.ForageResult;
+import com.petpark.world.dto.RanchCollectResult;
 import com.petpark.world.dto.MiningProfile;
 import com.petpark.world.dto.SellResult;
 import com.petpark.world.entity.TerrainMod;
@@ -147,6 +149,70 @@ public class WorldMiningService {
         r.setNewType("empty");
         log.info("[world] uid={} 采矿 {} @({},{}) exp+{} 能量={}", uid, t.typeName(), gx, gz, exp, r.getEnergy());
         return Result.ok(r);
+    }
+
+    /**
+     * 采集：砍树得木材（wood）+ 概率摘野果（berry），写入背包（world_inventory 持久化）。
+     * 仅 TREE 语义格可采集；树不消失（可持续采集，类似矿脉再生语义）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Result<ForageResult> forage(Long uid, int gx, int gz) {
+        if (!terrain.inWorld(gx, gz)) {
+            throw WorldErrors.outOfBounds();
+        }
+        CellType t = terrain.semanticAt(gx, gz);
+        if (t != CellType.TREE) {
+            throw WorldErrors.notTree();
+        }
+        // 砍树得木材（必出）
+        inventoryMapper.addQty(uid, "wood", 1);
+        // 摘野果（50% 概率）
+        int berry = 0;
+        if (Math.random() < 0.5) {
+            inventoryMapper.addQty(uid, "berry", 1);
+            berry = 1;
+        }
+        ForageResult r = new ForageResult();
+        r.setWood(1);
+        r.setBerry(berry);
+        r.setInventory(listInventory(uid));
+        log.info("[world] uid={} 采集 @({},{}) wood=1 berry={}", uid, gx, gz, berry);
+        return Result.ok(r);
+    }
+
+    /**
+     * 牧场收蛋（动物产物）：将产物写入背包（world_inventory 持久化）。
+     * 牧场动物（chicken/duck/cow）映射为背包物品（egg_chicken/egg_duck/milk）。
+     * 与 forage 同构——产物进入统一背包，不再自动卖币（卖币改由背包售卖完成）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Result<RanchCollectResult> collectProduct(Long uid, String animalCode) {
+        String itemType = animalProductType(animalCode);
+        if (itemType == null) {
+            throw WorldErrors.invalidAnimal();
+        }
+        inventoryMapper.addQty(uid, itemType, 1);
+        Category c = categoryByCode(itemType);
+        RanchCollectResult r = new RanchCollectResult();
+        r.setItemType(itemType);
+        r.setItemName(c != null && c.getName() != null ? c.getName() : itemType);
+        r.setQty(1);
+        r.setInventory(listInventory(uid));
+        log.info("[world] uid={} 牧场收蛋 animal={} -> {} 已存入背包", uid, animalCode, itemType);
+        return Result.ok(r);
+    }
+
+    /** 牧场动物代码 -> 背包产物类型（无匹配返回 null） */
+    private static String animalProductType(String animalCode) {
+        if (animalCode == null) {
+            return null;
+        }
+        return switch (animalCode) {
+            case "chicken" -> "egg_chicken";
+            case "duck" -> "egg_duck";
+            case "cow" -> "milk";
+            default -> null;
+        };
     }
 
     /**

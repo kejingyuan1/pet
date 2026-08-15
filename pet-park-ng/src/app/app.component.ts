@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { StateService } from './services/state.service';
 import { AuthService } from './services/auth.service';
 import { World3dComponent } from './components/world3d/world3d.component';
+import { ChatService, ChatMessage } from './services/chat.service';
+import { WorldSocketService } from './services/world-socket.service';
 
 @Component({
   selector: 'app-root',
@@ -27,6 +29,7 @@ export class AppComponent implements OnInit, OnDestroy {
   regPass2 = '';
   regInvite = '';
   regEducation = 'PRIMARY_1';
+  regGender = 'M';   // 性别：M 男 / F 女（注册必选）
   loginMode: 'login' | 'register' = 'login';
   showLogin = false;
   loginBusy = false;
@@ -54,13 +57,20 @@ export class AppComponent implements OnInit, OnDestroy {
   showFailBook = false;
   failures: any[] = [];
   failMsg = '';
+
+  // 全局聊天面板（app 层级，脱离 3D 容器避免 HMR 破坏 WebGL）
+  chatOpen = true;
+  chatInput = '';
+  chatMessages: ChatMessage[] = [];
+  private chatSub: any;
   /** AI 答疑结果（答错后由 state 异步回填） */
   get aiResult() { return this.state.aiResult; }
 
   // 今日待办
   todayList: Array<{ icon: string; text: string; btn: string; action: () => void }> = [];
 
-  constructor(public state: StateService, public auth: AuthService) {}
+  constructor(public state: StateService, public auth: AuthService,
+    private chatService: ChatService, private ws: WorldSocketService) {}
 
   /** 积分：读游戏实时值（登录成功时已用后端权威 users.coins 初始化） */
   get coins(): number { return this.state.state.coins ?? 0; }
@@ -201,6 +211,15 @@ export class AppComponent implements OnInit, OnDestroy {
     this.renderToday();
     document.addEventListener('fullscreenchange', this.fsHandler);
     document.addEventListener('webkitfullscreenchange', this.fsHandler);
+    // 订阅全局聊天消息（world3d 组件通过 ChatService 推送）
+    this.chatSub = this.chatService.messages$.subscribe(msgs => {
+      this.chatMessages = msgs;
+      // 自动滚动到底部
+      setTimeout(() => {
+        const el = document.querySelector('.chat-list') as HTMLElement | null;
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 0);
+    });
   }
 
   ngOnDestroy(): void {
@@ -208,6 +227,25 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.weatherTimer) { clearInterval(this.weatherTimer); this.weatherTimer = null; }
     document.removeEventListener('fullscreenchange', this.fsHandler);
     document.removeEventListener('webkitfullscreenchange', this.fsHandler);
+    if (this.chatSub) this.chatSub.unsubscribe();
+  }
+
+  // ================= 全局聊天（app 层级） =================
+  toggleChat(): void {
+    this.chatOpen = !this.chatOpen;
+    if (this.chatOpen) {
+      setTimeout(() => {
+        const el = document.querySelector('.chat-list') as HTMLElement | null;
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 0);
+    }
+  }
+
+  sendChat(): void {
+    const text = (this.chatInput || '').trim();
+    if (!text || !this.ws.isConnected) return;
+    this.ws.send('/app/ws.chat', { text });
+    this.chatInput = '';
   }
 
   // ================= 登录 =================
@@ -238,8 +276,9 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.loginPass !== this.regPass2) { this.loginMsg = '两次输入的密码不一致'; return; }
     if (!this.regInvite || !this.regInvite.trim()) { this.loginMsg = '请输入邀请码'; return; }
     if (!this.regEducation) { this.loginMsg = '请选择学历'; return; }
+    if (!this.regGender) { this.loginMsg = '请选择性别'; return; }
     this.loginBusy = true; this.loginMsg = '';
-    this.auth.register(this.loginUser, this.loginPass, this.regNickname.trim(), this.regPass2, this.regInvite.trim(), this.regEducation).subscribe({
+    this.auth.register(this.loginUser, this.loginPass, this.regNickname.trim(), this.regPass2, this.regInvite.trim(), this.regEducation, this.regGender).subscribe({
       next: res => {
         this.loginBusy = false;
         if (res.code === 0) {
@@ -272,7 +311,7 @@ export class AppComponent implements OnInit, OnDestroy {
           this.newUsername = res.data.username || '';
           try {
             localStorage.setItem(this.auth['USER_KEY'], JSON.stringify({
-              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname, coins: res.data.coins ?? 0, education: res.data.education ?? 'PRIMARY_1'
+              userId: res.data.userId, username: res.data.username, nickname: res.data.nickname, coins: res.data.coins ?? 0, education: res.data.education ?? 'PRIMARY_1', gender: res.data.gender ?? 'M'
             }));
           } catch (e) { /* ignore */ }
         }

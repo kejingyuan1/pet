@@ -228,6 +228,13 @@ p { line-height: 1.55; }
   border-color: #FF8B3D; background-color: rgba(255, 255, 255, .95);
   box-shadow: 0 0 0 4px rgba(255, 139, 61, .12);
 }
+.reg-gender {
+  display: flex; align-items: center; gap: 14px;
+  margin: 2px 0 10px; font-size: 15px; color: #5A3E1E;
+}
+.reg-gender-label { font-weight: 600; }
+.reg-gender-opt { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+.reg-gender-opt input { width: 16px; height: 16px; accent-color: #FF8B3D; cursor: pointer; }
 .login-msg { color: var(--red); font-size: .8rem; margin-bottom: 8px; text-align: center; }
 .modal button {
   width: 100%; min-height: 46px; border: none; border-radius: var(--radius-sm);
@@ -634,8 +641,9 @@ p { line-height: 1.55; }
 .task-item > .b:active { transform: scale(.95); }
 .task-item.overdue > .b { background: var(--red); }
 
-/* ===== 大世界 3D 场景容器（world 模块复用） ===== */
-.scene3d-wrap { border-radius: 20px; overflow: hidden; margin-bottom: 14px; box-shadow: var(--shadow-card); position: relative; }
+/* ===== 大世界 3D 场景容器（world 模块复用，自适应填满） ===== */
+.scene3d-wrap { border-radius: 16px; overflow: hidden; margin-bottom: 12px; box-shadow: var(--shadow-card); position: relative; width: 100%; }
+.scene3d-wrap > app-world3d { display: block; }
 
 /* ===== 家园首页：欢迎横幅（替代原伪地图区域） ===== */
 .home-hero {
@@ -676,7 +684,31 @@ p { line-height: 1.55; }
   .home-greet { font-size: 1.2rem; }
 }
 
-/* ===== 宠物卡片 ===== */
+/* ===== 首页学习区（替代原宠物卡片，展示错题集+推荐学习） ===== */
+.learn-zone { padding: 4px 0; }
+.learn-zone h3 { margin: 0 0 12px; font-size: 1.1rem; font-weight: 900; color: var(--ink); }
+.learn-section { margin-bottom: 14px; }
+.learn-label { font-size: .88rem; font-weight: 700; color: #555; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.fail-preview { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(255,80,80,.05); border-radius: 10px; margin-bottom: 6px; border-left: 3px solid rgba(255,100,100,.5); }
+.fp-q { flex: 1; font-size: .82rem; color: #444; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-btn { flex-shrink: 0; border: none; border-radius: 8px; padding: 4px 12px; background: rgba(70,140,200,.78); color: #fff; cursor: pointer; font-size: .78rem; font-weight: 600; transition: background .15s; }
+.fp-btn:hover { background: rgba(60,120,180,.9); }
+.fp-more { width: 100%; border: none; border-radius: 10px; padding: 8px; background: none; color: #38BDF8; cursor: pointer; font-size: .84rem; font-weight: 600; text-align: center; transition: background .15s; }
+.fp-more:hover { background: rgba(56,189,248,.08); }
+.learn-empty { text-align: center; padding: 28px 16px; color: #999; }
+.le-icon { font-size: 2.5rem; margin-bottom: 8px; }
+.learn-empty p { margin: 4px 0; font-size: .9rem; }
+.le-hint { font-size: .82rem !important; color: #bbb !important; margin-top: 4px; }
+.learn-scheduled { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(0,0,0,.06); }
+.sched-list { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.sched-item { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid rgba(0,0,0,.08); border-radius: 12px; background: #fff; cursor: pointer; font-size: .86rem; font-weight: 600; color: var(--ink); transition: border-color .15s, box-shadow .15s; }
+.sched-item:hover { border-color: rgba(56,189,248,.5); box-shadow: 0 2px 8px rgba(56,189,248,.12); }
+.sched-item.done { opacity: .5; background: #f5f5f5; text-decoration: line-through; }
+.sched-emoji { font-size: 1.2rem; }
+.sched-name { color: var(--ink); }
+.sched-done { color: #4CAF50; font-weight: 800; margin-left: 4px; }
+
+/* ===== 宠物卡片（保留供其他模块引用，但首页不再显示） ===== */
 .pet-card { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
 .pet-avatar { width: 72px; height: 72px; border-radius: 22px; display: flex; align-items: center; justify-content: center; font-size: 2rem; box-shadow: 0 4px 12px rgba(255, 139, 61, .35); flex-shrink: 0; }
 .pet-avatar.sick { box-shadow: 0 4px 12px rgba(232, 80, 58, .5); }
@@ -767,3 +799,22 @@ p { line-height: 1.55; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
 .admin-page { display: block; position: fixed; top: 70px; left: 0; right: 0; bottom: 70px; z-index: 60; overflow-y: auto; padding: 18px; background: var(--bg-grad); animation: fadeIn .3s var(--ease); }
 .admin-page .card { max-width: 920px; margin: 0 auto; background: var(--card-bg-strong); backdrop-filter: blur(24px) saturate(180%); border: 1px solid rgba(255, 255, 255, .7); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-card); }
+
+/* ===== 全局聊天面板（大世界页面，fixed 定位脱离 3D 容器） ===== */
+.world-chat-bar { position: fixed; left: 0; right: 0; bottom: 76px; z-index: 6; pointer-events: none; }
+.w3d-chat { position: absolute; left: 16px; right: 51%; bottom: 0; min-width: 260px; pointer-events: auto; background: rgba(20,30,45,.88); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,.4); color: #eee; font-size: 13px; }
+.w3d-chat.collapsed { width: auto; right: auto; }
+.chat-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; background: rgba(255,255,255,.06); user-select: none; }
+.chat-toggle { opacity: .7; }
+.chat-body { display: flex; flex-direction: column; }
+.chat-list { max-height: 160px; min-height: 60px; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+.chat-msg { line-height: 1.5; word-break: break-word; }
+.chat-nick { color: #8FD3FF; font-weight: 600; }
+.chat-nick.self { color: #FFD27F; }
+.chat-text { color: #f0f0f0; }
+.chat-time { color: rgba(255,255,255,.4); font-size: 11px; margin-left: 6px; }
+.chat-empty { color: rgba(255,255,255,.45); font-style: italic; padding: 8px 0; }
+.chat-input-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.08); }
+.chat-input { flex: 1; border: none; border-radius: 8px; padding: 6px 10px; background: rgba(255,255,255,.92); color: #222; font-size: 13px; outline: none; }
+.chat-send { border: none; border-radius: 8px; padding: 6px 12px; background: #FF8C42; color: #fff; cursor: pointer; font-size: 13px; }
+.chat-send:active { background: #e6782e; }

@@ -6,10 +6,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { AuthService } from '../../services/auth.service';
 import { StateService } from '../../services/state.service';
 import { WorldApiService, WorldConfigResp, ChunkResp, WorldObjectResp, MiningProfile, InventoryItem, SellResult, MineResult, HarvestResult } from '../../services/world-api.service';
-import { WorldSocketService } from '../../services/world-socket.service';
+import { WorldSocketService, ConnState } from '../../services/world-socket.service';
 import { WorldPhysicsService } from '../../services/world-physics.service';
 import { AssetService } from '../../services/asset.service';
-import { BOY_RIG, GIRL_RIG } from './rig-configs';
+import { ChatService } from '../../services/chat.service';
 
 /**
  * 大世界 3D 组件（M1 → M2：服务端权威物理改造，ADR-W7 候选②）
@@ -44,7 +44,7 @@ const CELL_COLORS: Record<number, number> = {
   7: 0xb0b0b0, // ore_iron
   8: 0xffd700, // ore_gold
   9: 0x6abf4b,  // empty（回落草地色，与后端 EMPTY=9 对齐）
-  10: 0x4aa3df // river（浅河蓝，区别于深海；后端 RIVER=10）
+  10: 0x29B6F6 // river（亮河道蓝，区别于海洋青；后端 RIVER=10）
 };
 
 interface GridData {
@@ -67,33 +67,16 @@ interface GridData {
       <button (click)="enterRemove()" [class.on]="removeMode">🗑️ 拆除</button>
       <button (click)="enterUpgrade()" [class.on]="upgradeMode">⬆️ 升级</button>
       <button (click)="enterHarvest()" [class.on]="harvestMode">🎣 收获</button>
+      <button (click)="enterForage()" [class.on]="forageMode">🌳 采集</button>
       <button (click)="exitInteract()" [class.on]="!buildMode && !fishMode && !mineMode && !removeMode && !upgradeMode && !harvestMode">🎥 跟随</button>
+      <button (click)="toggleHelp()" [class.on]="showHelp">❓ 帮助</button>
+      <button (click)="toggleCult()" [class.on]="showCult">📖 养成</button>
     </div>
     <div class="w3d-hud">
       <div class="hud-row">金币 {{coins}} · 在线 {{onlineCount}}</div>
       <div class="hud-row">位置 ({{posText}})</div>
       <div class="hud-hint">{{hint}}</div>
-    </div>
-    <div class="w3d-chat" [class.collapsed]="!chatOpen">
-      <div class="chat-head" (click)="toggleChat()">
-        <span>💬 聊天 {{chatOpen ? '' : '(' + chatMessages.length + ')'}}</span>
-        <span class="chat-toggle">{{chatOpen ? '▾' : '▸'}}</span>
-      </div>
-      <div class="chat-body" *ngIf="chatOpen">
-        <div class="chat-list" #chatList>
-          <div class="chat-msg" *ngFor="let m of chatMessages">
-            <span class="chat-nick" [class.self]="m.uid === selfUid">{{m.nickname || '玩家'}}：</span>
-            <span class="chat-text">{{m.text}}</span>
-            <span class="chat-time">{{m.timeText}}</span>
-          </div>
-          <div class="chat-empty" *ngIf="chatMessages.length === 0">还没有人说话，来打个招呼吧～</div>
-        </div>
-        <div class="chat-input-row">
-          <input #chatInputEl class="chat-input" type="text" maxlength="200" placeholder="按 Enter 发送"
-                 [(ngModel)]="chatInput" (keyup.enter)="sendChat()" (keyup.escape)="blurChat()" />
-          <button class="chat-send" (click)="sendChat()">发送</button>
-        </div>
-      </div>
+      <div class="hud-run" *ngIf="running">🏃 奔跑中</div>
     </div>
     <!-- 采矿 HUD（M4）：能量 / 等级 / 经验 / 背包售卖 -->
     <div class="w3d-mine" *ngIf="miningReady">
@@ -108,6 +91,7 @@ interface GridData {
       <div class="mine-exp">EXP {{exp}} · 距下级 {{expToNext}}</div>
       <div class="mine-inv" *ngIf="sellOpen">
         <div class="inv-row" *ngFor="let it of inventory">
+          <img class="inv-icon" [src]="'assets/icons/'+it.type+'.svg'" [alt]="it.name" />
           <span class="inv-name">{{it.name}} ×{{it.qty}}</span>
           <span class="inv-price">{{it.sellPrice}}/个</span>
           <button class="inv-sell" (click)="sellItem(it)" [disabled]="it.qty <= 0">卖</button>
@@ -116,51 +100,240 @@ interface GridData {
       </div>
     </div>
     <div class="w3d-toast" *ngIf="miningToast">{{miningToast.text}}</div>
+    <div class="w3d-help" *ngIf="showHelp" (click)="toggleHelp()">
+      <div class="help-card" (click)="$event.stopPropagation()">
+        <div class="help-head">操作指南 <button class="help-close" (click)="toggleHelp()">✕</button></div>
+        <ul class="help-list">
+          <li><b>WASD / 方向键</b>：移动（相对相机方向）</li>
+          <li><b>空格</b>：跳跃（可配合方向键跳起向前）</li>
+          <li><b>双击 W / A / S / D</b>：进入奔跑（速度更快，松开退出）</li>
+          <li><b>Shift</b>：按住也可奔跑</li>
+          <li><b>双击地面</b>：自动寻路跑过去（绕过水 / 树 / 岩）</li>
+          <li><b>左键拖拽</b>：环绕视角；<b>滚轮</b>：缩放</li>
+          <li><b>F</b>：靠近矿脉时开采（或点自动出现的 ⛏️）</li>
+          <li><b>G</b>：靠近水边时钓鱼（或点自动出现的 🎣）</li>
+          <li><b>H</b>：开关本帮助</li>
+          <li>顶栏：🏗️建造 / 🐟养鱼 / ⛏️采矿 / 🗑️拆除 / ⬆️升级 / 🎣收获 / 🌳采集</li>
+          <li>手机：左摇杆移动，右下 ⤴️跳 / 🏃跑；靠近矿/水会自动出现 ⛏️/🎣 按钮</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 连接状态指示（P0-3） -->
+    <div class="hud-conn conn-{{connState}}">
+      <span class="conn-dot"></span><span>{{connLabel}}</span>
+    </div>
+
+    <!-- P1-昼夜：连接状态下方显示游戏内时间 + 阶段图标 -->
+    <div class="hud-time" *ngIf="worldTime">
+      <span class="time-icon">{{phaseIcon}}</span>
+      <span class="time-text">{{timeLabel}}</span>
+      <span class="time-phase">{{worldTime.phase}}</span>
+    </div>
+
+    <!-- P1-小地图：右上角 -->
+    <canvas #minimap class="minimap" width="160" height="160"></canvas>
+
+    <!-- 触屏控制层（P0-1）：仅触屏设备显示 -->
+    <div class="touch-layer" *ngIf="touchActive">
+      <div class="joystick" (pointerdown)="onJoyStart($event)" (pointermove)="onJoyMove($event)" (pointerup)="onJoyEnd($event)" (pointercancel)="onJoyEnd($event)">
+        <div class="joy-knob" [style.transform]="'translate(' + joyKnob.x + 'px,' + joyKnob.y + 'px)'"></div>
+      </div>
+      <div class="touch-btns">
+        <button class="tbtn tbtn-run" [class.on]="running" (pointerdown)="onTouchRun()">🏃</button>
+        <button class="tbtn tbtn-jump" (pointerdown)="onTouchJump()">⬆️</button>
+      </div>
+    </div>
+
+    <!-- P1-引导：上下文动作提示（靠近矿/水自动出现，桌面/触屏通用） -->
+    <div class="ctx-actions" *ngIf="nearestOre || (nearWater && !fishMode)">
+      <button class="cbtn cbtn-mine" *ngIf="nearestOre" (pointerdown)="onCtxMine()">⛏️ 挖矿</button>
+      <button class="cbtn cbtn-fish" *ngIf="nearWater && !fishMode" (pointerdown)="onCtxFish()">🎣 钓鱼</button>
+    </div>
+
+    <!-- P1-新手引导：首次进入分步教学卡片 -->
+    <div class="onboard" *ngIf="showOnboarding">
+      <div class="onboard-card">
+        <div class="onboard-step">第 {{onboardingStep + 1}} / {{onboardingSteps.length}} 步</div>
+        <div class="onboard-title">{{onboardingSteps[onboardingStep]?.title}}</div>
+        <div class="onboard-desc">{{onboardingSteps[onboardingStep]?.desc}}</div>
+        <div class="onboard-actions">
+          <button class="onboard-skip" (pointerdown)="finishOnboarding()">跳过</button>
+          <button class="onboard-next" (pointerdown)="nextOnboarding()">{{onboardingStep === onboardingSteps.length - 1 ? '完成' : '下一步'}}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- P1-养成：图鉴 + 收益曲线 + 解锁里程碑 -->
+    <div class="cult" *ngIf="showCult">
+      <div class="cult-card">
+        <div class="cult-head">
+          <span>📖 养成图鉴</span>
+          <button class="cult-close" (pointerdown)="toggleCult()">✕</button>
+        </div>
+        <div class="cult-prog">
+          <div class="cult-lv">Lv.{{cultivation?.level || 1}}</div>
+          <div class="cult-expwrap">
+            <div class="cult-expbar"><div class="cult-expfill" [style.width.%]="cultExpPercent"></div></div>
+            <div class="cult-exptext">EXP {{cultivation?.exp || 0}} / 距下级 {{cultivation?.expToNext || 100}}</div>
+          </div>
+          <div class="cult-meta">⚡{{cultivation?.energy || 0}}/{{cultivation?.maxEnergy || 100}} · 💰{{cultivation?.coins || 0}}</div>
+        </div>
+        <div class="cult-section">🐟 鱼类图鉴 ({{codex?.fishDiscovered || 0}}/{{codex?.fishTotal || 0}})</div>
+        <div class="codex-grid">
+          <div class="codex-cell" *ngFor="let f of codex?.fish" [class.found]="f.discovered">
+            <div class="codex-ico">{{f.discovered ? '🐟' : '❔'}}</div>
+            <div class="codex-name">{{f.discovered ? f.name : '？？？'}}</div>
+          </div>
+        </div>
+        <div class="cult-section">⛏️ 矿石图鉴 ({{codex?.oreDiscovered || 0}}/{{codex?.oreTotal || 0}})</div>
+        <div class="codex-grid">
+          <div class="codex-cell" *ngFor="let o of codex?.ore" [class.found]="o.discovered">
+            <div class="codex-ico">{{o.discovered ? '💎' : '❔'}}</div>
+            <div class="codex-name">{{o.discovered ? o.name : '？？？'}}</div>
+          </div>
+        </div>
+        <div class="cult-section">🔓 解锁里程碑</div>
+        <div class="unlock-list">
+          <div class="unlock-row" *ngFor="let u of cultivation?.unlocks" [class.on]="u.unlocked">
+            <span class="unlock-lv">Lv.{{u.level}}</span>
+            <span class="unlock-name">{{u.name}}</span>
+            <span class="unlock-state">{{u.unlocked ? '✅' : '🔒'}}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   `,
   styles: [`
-    .world3d-mount { width: 100%; height: 100%; min-height: 480px; border-radius: 20px; overflow: hidden; background: #8FC8F5; position: relative; }
-    .w3d-toolbar { position: absolute; top: 12px; left: 12px; z-index: 5; display: flex; gap: 8px; }
-    .w3d-toolbar button { padding: 6px 14px; border: none; border-radius: 12px; background: rgba(255,255,255,.92); color: #333; font-size: 14px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
-    .w3d-toolbar button.on { background: #FF8C42; color: #fff; }
-    .w3d-hud { position: absolute; left: 12px; bottom: 12px; z-index: 5; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); font-size: 13px; line-height: 1.6; pointer-events: none; }
-    .hud-hint { opacity: .85; max-width: 420px; }
-    .w3d-chat { position: absolute; right: 12px; bottom: 12px; z-index: 6; width: 300px; max-width: 42vw; pointer-events: auto; background: rgba(20,30,45,.82); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.3); color: #eee; font-size: 13px; }
-    .w3d-chat.collapsed { width: auto; }
-    .chat-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; background: rgba(255,255,255,.06); user-select: none; }
-    .chat-toggle { opacity: .7; }
-    .chat-body { display: flex; flex-direction: column; }
-    .chat-list { max-height: 220px; min-height: 80px; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
-    .chat-msg { line-height: 1.5; word-break: break-word; }
-    .chat-nick { color: #8FD3FF; font-weight: 600; }
-    .chat-nick.self { color: #FFD27F; }
-    .chat-text { color: #f0f0f0; }
-    .chat-time { color: rgba(255,255,255,.4); font-size: 11px; margin-left: 6px; }
-    .chat-empty { color: rgba(255,255,255,.45); font-style: italic; padding: 8px 0; }
-    .chat-input-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.08); }
-    .chat-input { flex: 1; border: none; border-radius: 8px; padding: 6px 10px; background: rgba(255,255,255,.92); color: #222; font-size: 13px; outline: none; }
-    .chat-send { border: none; border-radius: 8px; padding: 6px 12px; background: #FF8C42; color: #fff; cursor: pointer; font-size: 13px; }
-    .chat-send:active { background: #e6782e; }
-    .w3d-mine { position: absolute; top: 12px; right: 12px; z-index: 6; width: 240px; max-width: 44vw; background: rgba(20,30,45,.84); border-radius: 12px; color: #eee; font-size: 12px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
-    .mine-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 6px; }
-    .mine-sell-toggle { border: none; border-radius: 8px; padding: 3px 8px; background: #FF8C42; color: #fff; cursor: pointer; font-size: 12px; }
-    .mine-sell-toggle:active { background: #e6782e; }
-    .mine-energy { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-    .energy-bar { flex: 1; height: 10px; background: rgba(255,255,255,.15); border-radius: 6px; overflow: hidden; }
-    .energy-fill { height: 100%; background: linear-gradient(90deg,#FFD27F,#FF8C42); transition: width .25s ease; }
-    .energy-text { white-space: nowrap; }
-    .mine-exp { opacity: .85; margin-bottom: 6px; }
-    .mine-inv { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid rgba(255,255,255,.08); padding-top: 6px; max-height: 180px; overflow-y: auto; }
-    .inv-row { display: flex; align-items: center; gap: 6px; }
-    .inv-name { flex: 1; }
-    .inv-price { opacity: .7; }
-    .inv-sell { border: none; border-radius: 6px; padding: 2px 8px; background: #4CC9F0; color: #08323f; cursor: pointer; font-size: 12px; }
-    .inv-sell:disabled { opacity: .4; cursor: not-allowed; }
+    /* 世界画布：填满容器，自适应分辨率 */
+    .world3d-mount { width: 100%; height: 100%; min-height: 52vh; aspect-ratio: 16/10; border-radius: 16px; overflow: hidden; background: linear-gradient(160deg,#7EC8E8,#A0D8EF); position: relative; }
+    @media (max-width: 768px) {
+      .world3d-mount { min-height: 50vh; aspect-ratio: unset; height: 56vh; border-radius: 14px; }
+    }
+    /* 工具栏：自动换行，小屏紧凑 */
+    .w3d-toolbar { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; }
+    .w3d-toolbar button { padding: 5px 11px; border: none; border-radius: 10px; background: rgba(255,255,255,.90); color: #444; font-size: 13px; cursor: pointer; box-shadow: 0 1px 5px rgba(0,0,0,.14); transition: background .15s, transform .1s; }
+    .w3d-toolbar button:hover { background: rgba(255,255,255,.98); }
+    .w3d-toolbar button.on { background: rgba(80,160,220,.88); color: #fff; box-shadow: 0 1px 8px rgba(80,160,220,.35); }
+    .w3d-hud { position: absolute; left: 10px; bottom: 54px; z-index: 5; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.55); font-size: 12px; line-height: 1.55; pointer-events: none; }
+    .hud-hint { opacity: .82; max-width: 360px; }
+
+    /* 背包面板：桌面加大，移动端全宽 */
+    .w3d-mine { position: absolute; top: 170px; right: 10px; z-index: 6; width: 300px; max-width: 48vw; max-height: 60vh; overflow-y: auto; background: rgba(18,26,40,.90); border-radius: 14px; color: #eee; font-size: 13px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.32); backdrop-filter: blur(6px); }
+    @media (max-width: 768px) {
+      .w3d-mine { top: auto; bottom: 110px; left: 8px; right: 8px; width: auto; max-width: none; max-height: 42vh; }
+    }
+    .mine-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+    .mine-sell-toggle { border: none; border-radius: 8px; padding: 4px 10px; background: rgba(80,160,220,.82); color: #fff; cursor: pointer; font-size: 12px; transition: background .15s; }
+    .mine-sell-toggle:active { background: rgba(60,140,200,.92); }
+    .mine-energy { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+    .energy-bar { flex: 1; height: 11px; background: rgba(255,255,255,.12); border-radius: 6px; overflow: hidden; }
+    .energy-fill { height: 100%; background: linear-gradient(90deg,#7DD3FC,#38BDF8); transition: width .25s ease; border-radius: 6px; }
+    .energy-text { white-space: nowrap; font-size: 12px; }
+    .mine-exp { opacity: .82; margin-bottom: 8px; font-size: 12px; }
+    .mine-inv { display: flex; flex-direction: column; gap: 5px; border-top: 1px solid rgba(255,255,255,.07); padding-top: 8px; max-height: none; }
+    @media (min-width: 769px) { .mine-inv { max-height: 320px; overflow-y: auto; } }
+    .inv-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; background: rgba(255,255,255,.04); transition: background .12s; }
+    .inv-row:hover { background: rgba(255,255,255,.08); }
+    .inv-icon { width: 28px; height: 28px; flex-shrink: 0; image-rendering: pixelated; border-radius: 6px; background: rgba(255,255,255,.08); padding: 3px; box-sizing: content-box; }
+    .inv-name { flex: 1; font-size: 13px; }
+    .inv-price { opacity: .65; font-size: 12px; }
+    .inv-sell { border: none; border-radius: 8px; padding: 3px 10px; background: rgba(76,201,240,.78); color: #063642; cursor: pointer; font-size: 12px; font-weight: 600; transition: background .15s; }
+    .inv-sell:hover { background: #4CC9F0; }
+    .inv-sell:disabled { opacity: .35; cursor: not-allowed; }
     .inv-empty { opacity: .5; font-style: italic; padding: 4px 0; }
     .w3d-toast { position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%); z-index: 9; background: rgba(0,0,0,.72); color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 15px; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+    .hud-run { display: inline-block; margin-top: 4px; padding: 2px 10px; background: rgba(70,130,180,.82); color: #fff; border-radius: 10px; font-weight: 600; font-size: 12px; text-shadow: none; }
+    .w3d-help { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; }
+    .help-card { width: min(420px, 86vw); background: #fff; color: #2a2a2a; border-radius: 14px; padding: 16px 18px; box-shadow: 0 10px 40px rgba(0,0,0,.4); font-size: 14px; }
+    .help-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 16px; margin-bottom: 10px; }
+    .help-close { border: none; background: #eee; border-radius: 8px; width: 28px; height: 28px; cursor: pointer; font-size: 14px; }
+    .help-close:active { background: #ddd; }
+    .help-list { margin: 0; padding-left: 18px; line-height: 1.9; }
+
+    /* P1-新手引导：分步教学卡片（底部居中，不挡操作） */
+    .onboard { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 15; width: min(420px, 88vw); pointer-events: auto; }
+    .onboard-card { background: rgba(255,255,255,.96); color: #2a2a2a; border-radius: 14px; padding: 14px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.4); font-size: 14px; }
+    .onboard-step { font-size: 12px; color: #38BDF8; font-weight: 700; margin-bottom: 4px; }
+    .onboard-title { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
+    .onboard-desc { line-height: 1.7; opacity: .9; margin-bottom: 12px; }
+    .onboard-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    .onboard-skip { border: none; background: #eee; color: #666; border-radius: 10px; padding: 7px 16px; cursor: pointer; font-size: 13px; }
+    .onboard-skip:active { background: #ddd; }
+    .onboard-next { border: none; background: rgba(70,140,200,.88); color: #fff; border-radius: 10px; padding: 7px 18px; cursor: pointer; font-weight: 600; font-size: 13px; transition: background .15s; }
+    .onboard-next:active { background: rgba(55,120,180,.95); }
+
+    /* P1-养成：图鉴 + 养成面板（左下，可滚动） */
+    .cult { position: absolute; left: 12px; bottom: 12px; z-index: 14; width: min(340px, 92vw); max-height: 70vh; overflow-y: auto; pointer-events: auto; }
+    .cult-card { background: rgba(255,255,255,.97); color: #2a2a2a; border-radius: 14px; padding: 12px 14px; box-shadow: 0 8px 30px rgba(0,0,0,.4); font-size: 13px; }
+    .cult-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 15px; margin-bottom: 8px; }
+    .cult-close { border: none; background: #eee; border-radius: 8px; width: 26px; height: 26px; cursor: pointer; font-size: 13px; }
+    .cult-close:active { background: #ddd; }
+    .cult-prog { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .cult-lv { font-weight: 800; font-size: 16px; color: #38BDF8; }
+    .cult-expwrap { flex: 1; min-width: 120px; }
+    .cult-expbar { height: 9px; background: rgba(0,0,0,.1); border-radius: 6px; overflow: hidden; }
+    .cult-expfill { height: 100%; background: linear-gradient(90deg,#7DD3FC,#38BDF8); transition: width .3s ease; }
+    .cult-exptext { font-size: 11px; opacity: .75; margin-top: 2px; }
+    .cult-meta { width: 100%; font-size: 12px; opacity: .85; }
+    .cult-section { font-weight: 700; margin: 10px 0 6px; font-size: 13px; }
+    .codex-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .codex-cell { background: rgba(0,0,0,.05); border-radius: 10px; padding: 6px 4px; text-align: center; }
+    .codex-cell.found { background: linear-gradient(160deg,#E0F4FF,#C8F0FA); box-shadow: inset 0 0 0 1px rgba(56,189,248,.35); }
+    .codex-ico { font-size: 20px; }
+    .codex-name { font-size: 11px; margin-top: 2px; opacity: .9; }
+    .unlock-list { display: flex; flex-direction: column; gap: 4px; }
+    .unlock-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 8px; background: rgba(0,0,0,.04); opacity: .55; }
+    .unlock-row.on { opacity: 1; background: linear-gradient(90deg,#E8F8EE,#C8F0D8); }
+    .unlock-lv { font-weight: 700; color: #38BDF8; min-width: 44px; }
+    .unlock-name { flex: 1; }
+    .unlock-state { font-size: 13px; }
+    .help-list li { margin: 2px 0; }
+    .help-list b { color: #d2691e; }
+
+    /* P0-3：连接状态指示 */
+    .hud-conn { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; background: rgba(0,0,0,.42); pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; box-shadow: 0 0 6px rgba(0,0,0,.3); }
+    .hud-conn.conn-connected { background: rgba(40,150,80,.85); }
+    .hud-conn.conn-connected .conn-dot { background: #6cff9e; }
+    .hud-conn.conn-connecting, .hud-conn.conn-reconnecting { background: rgba(200,140,30,.9); }
+    .hud-conn.conn-connecting .conn-dot, .hud-conn.conn-reconnecting .conn-dot { background: #ffd27f; animation: connPulse 1s infinite; }
+    .hud-conn.conn-disconnected { background: rgba(190,50,50,.9); }
+    .hud-conn.conn-disconnected .conn-dot { background: #ff8c8c; }
+    @keyframes connPulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+    /* P1-昼夜：连接状态下方游戏内时钟 */
+    .hud-time { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; background: rgba(0,0,0,.36); pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+    .hud-time .time-icon { font-size: 14px; }
+    .hud-time .time-phase { opacity: .82; font-weight: 500; }
+
+    /* P0-1：触屏控制层（虚拟摇杆 + 按钮） */
+    .touch-layer { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
+
+    /* P1-小地图：右上角 HUD */
+    .minimap { position: absolute; top: 12px; right: 12px; z-index: 6; width: 160px; height: 160px; border-radius: 10px; border: 2px solid rgba(255,255,255,.4); background: rgba(10,20,30,.5); box-shadow: 0 3px 12px rgba(0,0,0,.35); pointer-events: none; }
+    .joystick { position: absolute; left: 22px; bottom: 26px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.4); pointer-events: auto; touch-action: none; }
+    .joy-knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255,255,255,.8); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+    /* 触屏按钮：低调半透明，不抢戏 */
+    .touch-btns { position: absolute; right: 18px; bottom: 28px; display: flex; gap: 12px; align-items: flex-end; }
+    .tbtn { width: 58px; height: 58px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); background: rgba(40,55,75,.60); color: #fff; font-size: 24px; pointer-events: auto; touch-action: none; box-shadow: 0 2px 8px rgba(0,0,0,.22); transition: transform .1s, background .15s; backdrop-filter: blur(2px); }
+    .tbtn:active { transform: scale(.92); }
+    .tbtn-run { background: rgba(70,130,180,.65); }
+    .tbtn-run.on { background: rgba(70,130,180,.85); box-shadow: 0 0 0 3px rgba(120,180,230,.45); }
+    .tbtn-jump { background: rgba(60,90,70,.60); }
+
+    /* 上下文动作按钮：低调玻璃态，不突兀 */
+    .ctx-actions { position: absolute; right: 18px; bottom: 100px; z-index: 9; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+    .cbtn { width: 66px; height: 66px; border-radius: 16px; border: 2px solid rgba(255,255,255,.45); color: #fff; font-size: 13px; font-weight: 600; pointer-events: auto; touch-action: none; box-shadow: 0 3px 12px rgba(0,0,0,.25); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: transform .1s; }
+    .cbtn:active { transform: scale(.92); }
+    .cbtn-mine { background: rgba(100,90,70,.72); }
+    .cbtn-fish { background: rgba(50,120,150,.72); }
   `]
 })
 export class World3dComponent implements OnInit, OnDestroy {
   @ViewChild('mount') mountRef!: ElementRef;
+  @ViewChild('minimap') minimapRef!: ElementRef;
+  private lastMinimap = 0;
 
   buildMode = false;
   fishMode = false;
@@ -168,7 +341,8 @@ export class World3dComponent implements OnInit, OnDestroy {
   removeMode = false;
   upgradeMode = false;
   harvestMode = false;
-  hint = 'WASD 移动，空格 跳跃，双击地面跑过去，左键拖拽环绕视角';
+  forageMode = false;
+  hint = 'WASD 移动 · 空格跳跃 · 双击 W/A/S/D 奔跑 · 双击地面跑过去 · 左键拖拽转视角 · H 键帮助';
   posText = '';
   coins = 0;
   onlineCount = 1;
@@ -184,21 +358,38 @@ export class World3dComponent implements OnInit, OnDestroy {
   expToNext = 100;           // 距下级经验
   inventory: InventoryItem[] = []; // 背包
   miningToast: { text: string; ts: number } | null = null; // 采矿/售卖提示
-  private nearestOre: { gx: number; gz: number } | null = null; // 最近可采矿（F 键用）
+  nearestOre: { gx: number; gz: number } | null = null; // 最近可采矿（F 键 / 上下文按钮用）
+  /** 最近水域（钓鱼用） */
+  nearestWater: { gx: number; gz: number } | null = null;
+  /** 是否临水（显示钓鱼按钮） */
+  nearWater = false;
   /** 能量百分比（模板条形用） */
   get energyPercent(): number { return this.maxEnergy > 0 ? Math.round((this.energy / this.maxEnergy) * 100) : 0; }
 
-  // 聊天（M3）
-  chatOpen = true;
-  chatInput = '';
-  chatMessages: { uid: number; nickname: string; text: string; ts: number; timeText: string }[] = [];
-  @ViewChild('chatList') chatListRef?: ElementRef;
+  // 聊天（M3）——已移至 app 层级，此处仅通过 ChatService 推送
 
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
   private controls!: OrbitControls;
   private raycaster = new THREE.Raycaster();
+  private _resizeObserver: ResizeObserver | null = null;
+
+  // 昼夜系统（P1 支柱①）：灯光引用 + 相位状态
+  private sunLight!: THREE.DirectionalLight;
+  private fillLightRef!: THREE.DirectionalLight;
+  private hemiLight!: THREE.HemisphereLight;
+  /** 当前昼夜相位（DAY_NIGHT 帧写入），模板 HUD 绑定 */
+  worldTime: { frac: number; hour: number; minute: number; elevation: number; isNight: boolean; phase: string } | null = null;
+  private dayNightBlend = 1;   // 当前天空混合系数 0(夜)..1(昼)，animate 中向 target 插值
+  private targetBlend = 1;     // 目标混合系数
+  private skyDay = new THREE.Color(0x7EC8E8);
+  private skyNight = new THREE.Color(0x0B1026);
+  private fogDay = new THREE.Color(0xA0C8D8);
+  private fogNight = new THREE.Color(0x3D5068);  // 夜霧大幅提亮（保证夜间地形可辨识）
+  /** HUD 时间文案（模板绑定，避免每秒重算） */
+  timeLabel = '--:--';
+  phaseIcon = '☀️';
 
   private config?: WorldConfigResp;
   private viewRadius = 2;
@@ -247,8 +438,58 @@ export class World3dComponent implements OnInit, OnDestroy {
   // P2 双击 A* 寻路：路点队列（世界坐标），依次抵达后清空
   private pathPoints: { x: number; z: number }[] = [];
 
+  // 奔跑状态：双击方向键(WW/AA/SS/DD)或按住 Shift 触发；静止超过 0.4s 自动退出
+  running = false;
+  private runKey: string | null = null;
+  private runIdleSince = 0;
+  private lastTapCode = '';
+  private lastTapTime = 0;
+  // 操作帮助面板（按 H 或点「❓ 帮助」开关）
+  showHelp = false;
+
+  // 新手引导（P1 支柱②）：首次进入分步教学
+  showOnboarding = false;
+  onboardingStep = 0;
+
+  // 养成循环（P1 支柱③）：图鉴 + 养成汇总面板
+  showCult = false;
+  cultivation: any = null;
+  codex: any = null;
+  /** 等级内经验进度百分比（exp % 100） */
+  get cultExpPercent(): number {
+    if (!this.cultivation) return 0;
+    const e = this.cultivation.exp || 0;
+    return Math.round(e % 100);
+  }
+  onboardingSteps: { title: string; desc: string }[] = [
+    { title: '欢迎来到宠物乐园大世界', desc: '用左下角摇杆或键盘 WASD / 方向键移动，探索这片土地吧。' },
+    { title: '采矿', desc: '走到发光的矿石旁，点击 ⛏️挖矿 按钮或按 F 键采集资源。' },
+    { title: '钓鱼', desc: '走到水边，点击 🎣钓鱼 按钮或按 G 键，享受悠闲垂钓。' },
+    { title: '建造农场', desc: '点击左上工具栏「建造」放置小屋与装饰，打造专属农场。' },
+    { title: '开始你的冒险', desc: '随时按 H 查看完整操作帮助。祝你玩得开心！' }
+  ];
+
+  // 连接状态（P0-3）：订阅 WS service 的 connectionState$
+  connState: ConnState = 'disconnected';
+  private wsStateSub: { unsubscribe(): void } | null = null;
+  // 触屏控制（P0-1）：虚拟摇杆 + 跳跃/奔跑按钮
+  touchActive = false;
+  private touchVec = { x: 0, y: 0 };   // 归一化摇杆方向：x=右(+ix) / y=前(+iz)
+  private joystickId: number | null = null;
+  private joyBase = { x: 0, y: 0 };
+  joyKnob = { x: 0, y: 0 };            // 供模板绑定旋钮位移
+  /** 连接状态文案（模板用） */
+  get connLabel(): string {
+    switch (this.connState) {
+      case 'connected': return '已连接';
+      case 'connecting': return '连接中…';
+      case 'reconnecting': return '重连中…';
+      default: return '已断开';
+    }
+  }
+
   // 相机
-  private follow = { yaw: 0.7, pitch: 0.5, dist: 30 };
+  private follow = { yaw: 0.7, pitch: 0.72, dist: 45 }; // 陡俯角(41°)+远距离：群岛世界需俯视才能看到岛屿地面
   private dragging = false;
   private lastX = 0; private lastY = 0;
   private downX = 0; private downY = 0;
@@ -266,7 +507,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     private physics: WorldPhysicsService,
     private auth: AuthService,
     private state: StateService,
-    private assets: AssetService
+    private assets: AssetService,
+    private chatService: ChatService
   ) {}
 
   ngOnInit(): void {
@@ -282,6 +524,11 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 强机放宽到5，窄屏至少4（原值2/3只能看到1-2座岛）
     const baseVR = window.innerWidth >= 1280 ? 5 : 4;
     this.viewRadius = baseVR;
+
+    // P0-1：探测触屏设备（手机/平板），启用虚拟摇杆与触控按钮；?touch=1 可强制开启以便调试
+    this.touchActive = (typeof window !== 'undefined') &&
+      (('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0) ||
+      (typeof location !== 'undefined' && new URLSearchParams(location.search).has('touch'));
 
     this.api.config().subscribe({
       next: cfg => {
@@ -309,6 +556,10 @@ export class World3dComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.disposed = true;
     cancelAnimationFrame(this.rafId);
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
+    this.wsStateSub?.unsubscribe();
+    this.wsStateSub = null;
     this.ws.disconnect();
     this.renderer?.dispose();
     this.scene?.traverse(o => {
@@ -329,22 +580,25 @@ export class World3dComponent implements OnInit, OnDestroy {
 
     this.scene = new THREE.Scene();
     // 天空渐变：晴朗白昼天顶蓝 → 地平线淡青（M4 视觉增强）
-    this.scene.background = new THREE.Color(0x7EC8E8);
-    // 雾效优化：推远近裁面（减少近处泛白），暖化雾色
-    this.scene.fog = new THREE.Fog(0xA0C8D8, 450, 1400);
+    this.scene.background = new THREE.Color(0x87CEEB);
+    // 雾效：推远近裁面，暖化雾色，增加密度隐藏远处水天交界线（消除"无限蓝"感）
+    this.scene.fog = new THREE.Fog(0xB8D4E8, 520, 1200);   // 拉远雾起點(520)與終點(1200)，減少近距霧化吞地形
 
-    // 海面（半透明蓝平面，精确对齐后端 waterLevel；覆盖全视图，渲染于地形之后）
-    // v8: 高细分网格 + 顶点动画波浪（正弦波叠加，模拟海面起伏）
+    // 海面（半透明蓝平面，精确对齐后端 waterLevel=-5；海洋环绕岛屿，
+    // 透明度适中：既能看见岛屿浮出海面、又不会淹没地形——这是改动前「正常」的海洋表现）
     const waterLevel = this.config?.waterLevel ?? -5;
-    const waterGeo = new THREE.PlaneGeometry(12000, 12000, 128, 128);
+    const oceanFloor = waterLevel; // 海平面：岛屿浮出海面，仅深海/湖泊处见水
+    const waterGeo = new THREE.PlaneGeometry(12000, 12000, 96, 96);
     const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x2f7fd6, transparent: true, opacity: 0.65,
-      roughness: 0.1, metalness: 0.3, side: THREE.DoubleSide,
+      color: 0x2f8fd6, // 海蓝
+      transparent: true, opacity: 0.32,
+      roughness: 0.15, metalness: 0.25, side: THREE.DoubleSide,
+      depthWrite: false, // 🔴 关键：半透明水面必须关闭深度写入，否则挡住后面所有地形网格
     });
     // 自定义波浪：顶点着色器做正弦波位移，片元着色器加菲涅尔边缘亮
     waterMat.onBeforeCompile = (shader) => {
         shader.uniforms['uTime'] = { value: 0 };
-        shader.uniforms['uWaterLevel'] = { value: waterLevel };
+        shader.uniforms['uWaterLevel'] = { value: oceanFloor };
         shader.vertexShader = `
           uniform float uTime;
           uniform float uWaterLevel;
@@ -354,11 +608,11 @@ export class World3dComponent implements OnInit, OnDestroy {
         `.replace(
           '#include <begin_vertex>',
           `
-          // 声明 transformed（原 begin_vertex 的职责），再叠加海浪位移
+          // 海浪位移（正弦波叠加，模拟海面起伏；振幅縮小避免視覺太厚）
           vec3 transformed = vec3( position );
-          float wave1 = sin(transformed.x * 0.02 + uTime * 1.2) * 0.35;
-          float wave2 = sin(transformed.y * 0.03 + uTime * 0.8) * 0.25;
-          float wave3 = sin((transformed.x + transformed.y) * 0.01 + uTime * 1.5) * 0.5;
+          float wave1 = sin(transformed.x * 0.02 + uTime * 1.2) * 0.18;
+          float wave2 = sin(transformed.y * 0.03 + uTime * 0.8) * 0.12;
+          float wave3 = sin((transformed.x + transformed.y) * 0.01 + uTime * 1.5) * 0.22;
           float waveSum = wave1 + wave2 + wave3;
           transformed.z += waveSum;
           vWaveHeight = waveSum;
@@ -390,33 +644,48 @@ export class World3dComponent implements OnInit, OnDestroy {
       }
     const waterMesh = new THREE.Mesh(waterGeo, waterMat);
     waterMesh.rotation.x = -Math.PI / 2;
-    waterMesh.position.y = waterLevel;
+    waterMesh.position.y = oceanFloor; // 海平面
     waterMesh.renderOrder = 1;
     this.scene.add(waterMesh);
     // 存储引用供 animate 更新波浪时间
     (this as any).waterMat = waterMat;
 
     this.camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 1500);
-    this.camera.position.set(this.px, this.py + 20, this.pz + 20);
+    // 相机初始位置：高俯视（群岛世界需要更陡的视角才能看到岛屿全貌，避免"全在水上"感）
+    this.camera.position.set(this.px, this.py + 42, this.pz + 32);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(W, H);
+    this.renderer.setSize(W, H, false); // CSS 由后续 100% 覆盖控制
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     // ACES 色调映射：增强对比度与色彩饱和度，解决"白茫茫"问题
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     mount.appendChild(this.renderer.domElement);
 
+    // M6 响应式画布：canvas CSS 100% 填充 + ResizeObserver 追踪容器尺寸变化
+    const canvas = this.renderer.domElement;
+    canvas.style.display = 'block';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    this._resizeObserver = new ResizeObserver(() => this.onResize());
+    this._resizeObserver.observe(mount);
+    // 延迟强制一次 resize（等 Angular 布局稳定后修正初始尺寸）
+    setTimeout(() => this.onResize(), 400);
+
     // 灯光（M5 地图视觉优化：降低总光量避免过曝 + ACES 色调映射）
     const sun = new THREE.DirectionalLight(0xFFF4E0, 1.0); // 暖白日光（降低强度）
     sun.position.set(100, 150, 80);
     this.scene.add(sun);
+    this.sunLight = sun;
     // 补光（填充阴影区，降低强度）
     const fillLight = new THREE.DirectionalLight(0xB8D4E8, 0.2);
     fillLight.position.set(-60, 40, -50);
     this.scene.add(fillLight);
+    this.fillLightRef = fillLight;
     // 半球光：天蓝色 + 地面绿色（降低环境光量，让顶点色更饱和）
-    this.scene.add(new THREE.HemisphereLight(0x9ED4FF, 0x7ABF5A, 0.45));
+    const hemi = new THREE.HemisphereLight(0x9ED4FF, 0x7ABF5A, 0.45);
+    this.scene.add(hemi);
+    this.hemiLight = hemi;
 
     // OrbitControls（默认禁用，跟随模式由自研 rig 控制；建造模式启用）
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -434,24 +703,129 @@ export class World3dComponent implements OnInit, OnDestroy {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('resize', this.onResize);
+
+    // 调试钩子（E2E 昼夜验证用，无害）：强制相位 + 立即应用光照（跳过插值，便于 headless 确定性读取）
+    (window as any).__forcePhase = (frac: number) => {
+      const elevation = Math.sin(2 * Math.PI * frac - Math.PI / 2);
+      this.worldTime = {
+        frac, hour: Math.floor(frac * 24), minute: Math.floor(((frac * 24) % 1) * 60),
+        elevation, isNight: elevation < -0.1, phase: 'debug'
+      };
+      this.targetBlend = Math.max(0, Math.min(1, (elevation + 0.25) / 0.5));
+      this.dayNightBlend = this.targetBlend; // 立即生效（E2E 确定性）
+      this.updateDayNight(1);                // 直接套用目标光照状态
+      this.timeLabel = `${String(this.worldTime.hour).padStart(2, '0')}:${String(this.worldTime.minute).padStart(2, '0')}`;
+      this.phaseIcon = this.worldTime.isNight ? '🌙' : '☀️';
+      (window as any).__petWorldTime = this.worldTime;
+    };
+    (window as any).__petSceneInfo = () => {
+      let chunkMeshes = 0, treeGroups = 0, totalVerts = 0;
+      const boxes: string[] = [];
+      this.scene.traverse(o => {
+        const m = o as THREE.Mesh;
+        const n = m.name || '';
+        if (n.startsWith('chunk_')) {
+          chunkMeshes++;
+          const g = m.geometry as THREE.BufferGeometry;
+          if (g?.attributes?.['position']) totalVerts += (g.attributes['position'] as THREE.BufferAttribute).count;
+          const bb = g?.boundingBox;
+          if (bb) boxes.push(`${n}: y[${bb.min.y.toFixed(1)}~${bb.max.y.toFixed(1)}] verts=${(g.attributes['position'] as THREE.BufferAttribute).count}`);
+        }
+        if (n.startsWith('tree_') || (o as any).type === 'Group') treeGroups++;
+      });
+      return {
+        bg: (this.scene.background as THREE.Color).getHexString(),
+        exposure: this.renderer.toneMappingExposure,
+        sunIntensity: this.sunLight.intensity,
+        blend: this.dayNightBlend,
+        chunkMeshes, totalVerts, treeGroups,
+        sampleBoxes: boxes.slice(0, 4),
+        player: { px: this.px.toFixed(1), py: this.py.toFixed(1), pz: this.pz.toFixed(1) },
+        sceneChildren: this.scene.children.length
+      };
+    };
+    // 首次进入触发新手引导（localStorage 去重）
+    this.maybeStartOnboarding();
+    // 新手引导调试/重置钩子（E2E 用，无害）
+    (window as any).__onboarding = () => ({ show: this.showOnboarding, step: this.onboardingStep });
+    (window as any).__resetOnboarding = () => {
+      try { localStorage.removeItem('pp_onboarded'); } catch (e) {}
+      this.showOnboarding = true; this.onboardingStep = 0;
+    };
+    // 模拟「首入判定」真实逻辑（E2E 去重验证用，无害）：返回是否应显示引导
+    (window as any).__simulateFirstEntry = () => {
+      this.showOnboarding = false;
+      this.maybeStartOnboarding();
+      return this.showOnboarding;
+    };
+  }
+
+  // ================= 新手引导（P1 支柱②） =================
+  private maybeStartOnboarding(): void {
+    try {
+      if (!localStorage.getItem('pp_onboarded')) {
+        this.showOnboarding = true;
+        this.onboardingStep = 0;
+      }
+    } catch (e) { /* localStorage 不可用时忽略 */ }
+  }
+
+  /** 手动「下一步」：末步视为完成 */
+  nextOnboarding(): void {
+    if (this.onboardingStep < this.onboardingSteps.length - 1) {
+      this.onboardingStep++;
+    } else {
+      this.finishOnboarding();
+    }
+  }
+
+  /** 完成/跳过：关闭并标记已引导 */
+  finishOnboarding(): void {
+    this.showOnboarding = false;
+    try { localStorage.setItem('pp_onboarded', '1'); } catch (e) {}
+  }
+
+  /** 自动推进：当玩家完成对应动作且引导停在该步时前进（避免重复触发） */
+  private advanceOnboardingIf(step: number): void {
+    if (this.showOnboarding && this.onboardingStep === step) {
+      this.onboardingStep++;
+      if (this.onboardingStep >= this.onboardingSteps.length) this.finishOnboarding();
+    }
   }
 
   private initPlayer(): void {
+    // 先创建一个临时占位符（小灰人），等 boy/girl GLB 加载完成后替换
     const g = new THREE.Group();
-    // three 0.128 无 CapsuleGeometry（r142 才有），用 圆柱+球 组合近似角色
     const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.3, 0.34, 0.7, 10),
-      new THREE.MeshStandardMaterial({ color: 0xFFC93C })
+      new THREE.CylinderGeometry(0.25, 0.28, 0.6, 8),
+      new THREE.MeshStandardMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.5 })
     );
-    body.position.y = 0.72;
+    body.position.y = 0.62;
     const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.3, 10, 10),
-      new THREE.MeshStandardMaterial({ color: 0xFFB35C })
+      new THREE.SphereGeometry(0.22, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.5 })
     );
-    head.position.y = 1.45;
+    head.position.y = 1.25;
     g.add(body, head);
     this.playerMesh = g;
     this.scene.add(g);
+
+    // 异步加载玩家模型：按性别选 boy.glb（男 M）/ girl.glb（女 F）
+    const modelFile = (this.auth.user?.gender === 'F') ? 'girl.glb' : 'boy.glb';
+    this.assets.loadModel('assets/models/' + modelFile).then(glb => {
+      if (!glb || this.disposed) return;
+      const normalized = this.normalizeModel(glb, 2.0);
+      // 复制当前占位符的位置/旋转
+      normalized.position.copy(this.playerMesh.position);
+      normalized.rotation.copy(this.playerMesh.rotation);
+      // 替换场景中的旧 mesh
+      this.scene.remove(this.playerMesh);
+      this.scene.add(normalized);
+      this.playerMesh = normalized;
+      console.log('[world3d] 玩家角色已替换为 ' + modelFile);
+    }).catch(() => {
+      console.warn('[world3d] ' + modelFile + ' 加载失败，保留占位符');
+    });
   }
 
   // ================= WS =================
@@ -461,20 +835,32 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.hint = '未登录：请先登录后再进入大世界';
       return;
     }
-    this.ws.connect().then(() => {
-      if (this.disposed) return;
-      this.ws.subscribe('/topic/world', f => this.onWorldEvent(f));
-      this.ws.subscribe('/topic/players', f => this.onPlayerEvent(f));
-      this.ws.subscribe('/user/queue/reply', f => this.onReply(f));
-      // 物理快照客户端（POSITION_SNAPSHOT / PHYS_RESTART）
-      this.physics.init();
-      const cx = Math.floor(this.px / CHUNK);
-      const cz = Math.floor(this.pz / CHUNK);
-      this.ws.send('/app/ws.join', { chunkKey: `${cx}_${cz}`, gx: Math.floor(this.px), gz: Math.floor(this.pz) });
-      this.hint = '已接入大世界（服务端物理权威），按 WASD 移动探索';
-    }).catch(() => {
+    // 订阅连接状态：每次「已连接」（含断线自动重连）都重建订阅 + 重新 join
+    if (!this.wsStateSub) {
+      this.wsStateSub = this.ws.connectionState$.subscribe(state => {
+        this.connState = state;
+        if (state === 'connected') {
+          this.setupWorldChannel();
+        }
+      });
+    }
+    this.ws.connect().catch(() => {
       this.hint = 'WebSocket 连接失败（世界事件将不可见）';
     });
+  }
+
+  /** 建立世界频道：订阅主题 + 物理客户端初始化 + 加入房间（断线重连后需重建） */
+  private setupWorldChannel(): void {
+    if (this.disposed) return;
+    this.ws.subscribe('/topic/world', f => this.onWorldEvent(f));
+    this.ws.subscribe('/topic/players', f => this.onPlayerEvent(f));
+    this.ws.subscribe('/user/queue/reply', f => this.onReply(f));
+    // 物理快照客户端（POSITION_SNAPSHOT / PHYS_RESTART）
+    this.physics.init();
+    const cx = Math.floor(this.px / CHUNK);
+    const cz = Math.floor(this.pz / CHUNK);
+    this.ws.send('/app/ws.join', { chunkKey: `${cx}_${cz}`, gx: Math.floor(this.px), gz: Math.floor(this.pz) });
+    this.hint = '已接入大世界（服务端物理权威），按 WASD 移动探索';
   }
 
   private onWorldEvent(frame: { body: string }): void {
@@ -499,6 +885,21 @@ export class World3dComponent implements OnInit, OnDestroy {
       } else if (ev.t === 'OBJECT_UPDATE' && ev.id != null) {
         // P2 升级 / P1 鱼塘收获：刷新网格（等级缩放 / 生长进度）
         this.updateObjectMesh(ev.id, ev.extJson);
+      } else if (ev.t === 'DAY_NIGHT') {
+        // 昼夜相位：写入状态 + 计算目标混合系数（0 夜 / 1 昼）
+        this.worldTime = {
+          frac: ev.frac, hour: ev.hour, minute: ev.minute,
+          elevation: ev.elevation, isNight: ev.isNight, phase: ev.phase
+        };
+        // 混合系数：太阳高度从 -0.25..+0.25 映射到 0..1（地平线附近过渡）
+        const e = typeof ev.elevation === 'number' ? ev.elevation : 1;
+        this.targetBlend = Math.max(0, Math.min(1, (e + 0.25) / 0.5));
+        const hh = String(ev.hour ?? 0).padStart(2, '0');
+        const mm = String(ev.minute ?? 0).padStart(2, '0');
+        this.timeLabel = `${hh}:${mm}`;
+        this.phaseIcon = ev.isNight ? '🌙' : '☀️';
+        // 暴露给 E2E 探针
+        (window as any).__petWorldTime = this.worldTime;
       }
       this.onlineCount = this.remotePlayers.size + 1;
     } catch (e) { /* 忽略坏帧 */ }
@@ -540,46 +941,47 @@ export class World3dComponent implements OnInit, OnDestroy {
         }
       } else if (ev.t === 'BUILD_RESULT') {
         this.hint = ev.code === 0 ? '放置成功' : ('放置失败：' + (ev.msg || '未知错误'));
+        if (ev.code === 0) this.advanceOnboardingIf(3); // 新手引导：完成「建造」步自动前进
         this.refreshCoins();
       } else if (ev.t === 'MINE_RESULT') {
         // 采矿结果回执（/app/ws.mine）：刷新 HUD + 提示 + 本地地形变化
         this.handleMineResult(ev);
+      } else if (ev.t === 'FISH_RESULT') {
+        // 钓鱼结果回执（/app/ws.fish）：刷新 HUD + 提示
+        this.handleFishResult(ev);
       }
     } catch (e) { /* ignore */ }
   }
 
-  // ================= 聊天（M3） =================
+  // ================= 聊天（M3）——已移至 app 层级，此处仅通过 ChatService 推送 =================
   private pushChat(uid: number, nickname: string, text: string, ts: number): void {
     const d = new Date(ts);
     const hh = String(d.getHours()).padStart(2, '0');
     const mm = String(d.getMinutes()).padStart(2, '0');
-    this.chatMessages.push({ uid, nickname, text, ts, timeText: `${hh}:${mm}` });
-    if (this.chatMessages.length > 100) this.chatMessages.shift(); // 仅保留最近 100 条
-    this.scrollChatToBottom();
+    this.chatService.push({ uid, nickname, text, ts, timeText: `${hh}:${mm}` });
   }
 
-  private scrollChatToBottom(): void {
-    setTimeout(() => {
-      const el = this.chatListRef?.nativeElement as HTMLElement | undefined;
-      if (el) el.scrollTop = el.scrollHeight;
-    }, 0);
-  }
+  // ================= 昼夜系统（P1 支柱①） =================
+  /** 据相位平滑插值天空色/雾色/光照强度/曝光；太阳随 frac 绕行 */
+  private updateDayNight(dt: number): void {
+    const speed = Math.min(1, dt / 1.5); // 约 1.5s 过渡
+    this.dayNightBlend += (this.targetBlend - this.dayNightBlend) * speed;
+    const t = this.dayNightBlend;
 
-  sendChat(): void {
-    const text = (this.chatInput || '').trim();
-    if (!text) return;
-    this.ws.send('/app/ws.chat', { text });
-    this.chatInput = '';
-  }
-
-  toggleChat(): void {
-    this.chatOpen = !this.chatOpen;
-    if (this.chatOpen) this.scrollChatToBottom();
-  }
-
-  blurChat(): void {
-    const el = this.chatListRef?.nativeElement as HTMLElement | undefined;
-    if (el) (el as HTMLElement).blur?.();
+    if (this.scene) {
+      (this.scene.background as THREE.Color).copy(this.skyNight).lerp(this.skyDay, t);
+      if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(this.fogNight).lerp(this.fogDay, t);
+    }
+    if (this.sunLight) {
+      this.sunLight.intensity = 0.55 + 0.55 * t;   // 夜间 0.55（模拟月光，保证地形清晰可见）
+      this.sunLight.color.setRGB(0.62 + 0.38 * t, 0.66 + 0.34 * t, 0.88 + 0.12 * t);
+      const frac = this.worldTime ? this.worldTime.frac : 0.5;
+      const ang = frac * Math.PI * 2 - Math.PI / 2; // frac=0.5 → 正午(高)
+      this.sunLight.position.set(Math.cos(ang) * 150, Math.max(8, Math.sin(ang) * 160), 80);
+    }
+    if (this.fillLightRef) this.fillLightRef.intensity = 0.35 + 0.14 * t;   // 夜间 0.35
+    if (this.hemiLight) this.hemiLight.intensity = 0.60 + 0.30 * t;           // 夜间 0.60（环境光地板，保证夜间可见）
+    if (this.renderer) this.renderer.toneMappingExposure = 1.25 + 0.15 * t;   // 夜间 1.25（提亮夜间曝光）
   }
 
   // ================= 主循环 =================
@@ -646,6 +1048,13 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.streamChunks();
       // 邻近矿脉扫描（F 键采矿 + 提示用，仅需玩家附近 chunk）
       this.scanNearbyOre();
+      // 邻近水域扫描（钓鱼按钮 + 提示用）
+      this.scanNearbyWater();
+    }
+    // 小地图（节流 ~200ms）
+    if (now - this.lastMinimap > 200) {
+      this.lastMinimap = now;
+      this.drawMinimap();
     }
     // 轻量位置心跳（保留：UI/调试/兜底；权威位置以 POSITION_SNAPSHOT 为准）
     if (now - this.lastPosSend > 1000 && this.ws.isConnected) {
@@ -665,6 +1074,8 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.controls.enabled = false;
       this.updateFollowCamera();
     }
+    // 昼夜系统：据相位平滑插值天空/雾/灯光/曝光
+    this.updateDayNight(dt);
     this.renderer.render(this.scene, this.camera);
 
     // v8 海浪动画：更新 shader 时间 uniform
@@ -682,6 +1093,43 @@ export class World3dComponent implements OnInit, OnDestroy {
     const cz = this.dpz + d * cp * Math.cos(this.follow.yaw);
     this.camera.position.set(cx, cy, cz);
     this.camera.lookAt(this.dpx, this.dpy + 1.2, this.dpz);
+    // 奔跑时视野轻微拉宽（FOV kick），增强速度感（成熟竞品常见手感）
+    const targetFov = this.running ? 62 : 55;
+    if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+      this.camera.fov += (targetFov - this.camera.fov) * 0.12;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  /** 切换操作帮助面板 */
+  toggleHelp(): void {
+    this.showHelp = !this.showHelp;
+  }
+
+  // ================= 养成循环（P1 支柱③） =================
+  /** 开关养成面板，打开时拉取最新图鉴与养成汇总 */
+  toggleCult(): void {
+    this.showCult = !this.showCult;
+    if (this.showCult) {
+      this.loadCultivation();
+      this.loadCodex();
+    }
+  }
+
+  /** 养成汇总（等级/经验/能量/积分 + 收益曲线 + 解锁里程碑） */
+  private loadCultivation(): void {
+    this.api.cultivation().subscribe({
+      next: r => { if (r && r.code === 0 && r.data) this.cultivation = r.data; },
+      error: () => { /* 忽略 */ }
+    });
+  }
+
+  /** 图鉴（鱼 + 矿石，标已发现） */
+  private loadCodex(): void {
+    this.api.codex().subscribe({
+      next: r => { if (r && r.code === 0 && r.data) this.codex = r.data; },
+      error: () => { /* 忽略 */ }
+    });
   }
 
   // ================= 移动（M2：输入上行 + 服务端物理权威，ADR-W7 候选②） =================
@@ -697,7 +1145,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (this.keys['KeyS'] || this.keys['ArrowDown']) iz -= 1;
     if (this.keys['KeyA'] || this.keys['ArrowLeft']) ix -= 1;
     if (this.keys['KeyD'] || this.keys['ArrowRight']) ix += 1;
-    const run = !!(this.keys['ShiftLeft'] || this.keys['ShiftRight']);
+    // 触屏摇杆叠加（P0-1）：x→右(+ix) / y→前(+iz)
+    ix += this.touchVec.x;
+    iz += this.touchVec.y;
+    const run = !!(this.keys['ShiftLeft'] || this.keys['ShiftRight']) || this.running;
 
     // 世界空间方向（相对相机 yaw：W=相机前方、D=相机右方）
     const yaw = this.follow.yaw;
@@ -706,6 +1157,15 @@ export class World3dComponent implements OnInit, OnDestroy {
     const len = Math.hypot(ix, iz);
     const dx = len > 0 ? (right.x * ix + forward.x * iz) / len : 0;
     const dz = len > 0 ? (right.z * ix + forward.z * iz) / len : 0;
+
+    // 奔跑态空闲超时：双击触发奔跑后，若停止移动超过 0.4s 则自动退出（避免一直跑）
+    const moving = len > 0;
+    if (this.running && !moving) {
+      if (this.runIdleSince === 0) this.runIdleSince = now;
+      else if (now - this.runIdleSince > 400) { this.running = false; this.runKey = null; this.runIdleSince = 0; }
+    } else {
+      this.runIdleSince = 0;
+    }
 
     const keyState = `${ix}_${iz}_${run ? 1 : 0}`;
     const idle = len === 0;
@@ -752,7 +1212,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (this.ws.isConnected) {
       this.ws.send('/app/ws.input', {
         seq: Math.floor(now),
-        move: { dx: ndx, dz: ndz, run: false },
+        move: { dx: ndx, dz: ndz, run: true },
         targetGx: Math.floor(tx),
         targetGz: Math.floor(tz)
       });
@@ -1099,17 +1559,24 @@ export class World3dComponent implements OnInit, OnDestroy {
       for (let lx = 0; lx < N; lx++) {
         const i = lz * N + lx;
         positions[i * 3] = resp.cx * CHUNK + lx;
-        // M3 修复：WATER 语义格（0）的 Y 钳制到海平面，消除"水下山脉"和"蓝色高地"
+        // M3 修复：WATER 语义格（0）的 Y 钳制到海平面
+        // RIVER（10）：略高于水面形成可见河道，颜色深蓝区别于海洋亮青
         const cell = sem[Math.min(lz, CHUNK - 1) * CHUNK + Math.min(lx, CHUNK - 1)];
-        positions[i * 3 + 1] = (cell === 0) ? waterLevel : h[i];
-        positions[i * 3 + 2] = resp.cz * CHUNK + lz;
+        let cellY = (cell === 0) ? waterLevel : h[i];
+        if (cell === 10) { cellY = Math.min(cellY, waterLevel + 0.3); } // 河道微高出水面，可见
+        positions[i * 3 + 1] = cellY;
         const c = CELL_COLORS[cell] ?? CELL_COLORS[2];
         // M5 高度变化着色：谷暗峰亮（±12% 亮度），增加地形层次感
         const hNorm = (h[i] - hMin) / hRange;       // 0~1
         const hBright = 0.88 + hNorm * 0.24;         // 0.88~1.12
-        colors[i * 3] = (((c >> 16) & 255) / 255) * hBright;
-        colors[i * 3 + 1] = (((c >> 8) & 255) / 255) * hBright;
-        colors[i * 3 + 2] = ((c & 255) / 255) * hBright;
+        let finalBright = hBright;
+        if (cell === 10) {
+          // 河流格：流动波光效果（随位置变化模拟水纹）
+          finalBright = 0.92 + 0.12 * Math.sin((lx * 5.1 + lz * 8.3) * 0.7);
+        }
+        colors[i * 3] = (((c >> 16) & 255) / 255) * finalBright;
+        colors[i * 3 + 1] = (((c >> 8) & 255) / 255) * finalBright;
+        colors[i * 3 + 2] = ((c & 255) / 255) * finalBright;
       }
     }
     const indices: number[] = [];
@@ -1199,26 +1666,19 @@ export class World3dComponent implements OnInit, OnDestroy {
   private preloadModels(): void {
     const base = 'assets/models/';
     const norm = (g: THREE.Group | null, h: number) => (g ? this.normalizeModel(g, h) : null);
-    // M7：给定加载后的 gltf 场景 + rig 配置，提取 mesh 并构建骨骼层级后归一化
-    const rigThenNorm = (g: THREE.Group | null, h: number, rig: any): THREE.Group | null => {
-      if (!g) return null;
-      let mesh: THREE.Mesh | null = null;
-      g.traverse(c => { if ((c as THREE.Mesh).isMesh && !mesh) mesh = c as THREE.Mesh; });
-      if (!mesh) return norm(g, h);
-      const rigged = this.buildRiggedModel(mesh, rig);
-      return this.normalizeModel(rigged, h);
-    };
+    // 注意：boy/girl 不再经过 buildRiggedModel 骨骼拆分（拆分导致模型破损变形），
+    // 直接用原始 GLB 归一化，保留完整外观和材质/贴图
     this.assets.loadModel(base + 'tree.glb').then(g => {
       this.treeModel = norm(g, 3.2);
       if (!this.treeModel) console.warn('[world3d] 树模型加载失败，使用程序化树回退');
       else this.tryPlaceCharacters(); // 树就绪后尝试补放角色（若角色已就绪）
     });
     this.assets.loadModel(base + 'boy.glb').then(g => {
-      this.boyModel = rigThenNorm(g, 2.0, BOY_RIG);
+      this.boyModel = norm(g, 2.0);
       this.tryPlaceCharacters();
     });
     this.assets.loadModel(base + 'girl.glb').then(g => {
-      this.girlModel = rigThenNorm(g, 2.0, GIRL_RIG);
+      this.girlModel = norm(g, 2.0);
       this.tryPlaceCharacters();
     });
   }
@@ -1752,8 +2212,22 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.mineMode = false;
     this.removeMode = false;
     this.upgradeMode = false;
+    this.forageMode = false;
     this.controls.enabled = true;
     this.hint = '收获模式：点击金色光环的成熟鱼塘收获，点击「跟随」退出';
+  }
+
+  /** 采集模式：点击树木格砍树得木材 / 摘野果（写入背包） */
+  enterForage(): void {
+    this.forageMode = true;
+    this.buildMode = false;
+    this.fishMode = false;
+    this.mineMode = false;
+    this.removeMode = false;
+    this.upgradeMode = false;
+    this.harvestMode = false;
+    this.controls.enabled = true;
+    this.hint = '采集模式：点击树木（🌳）砍树得木材、摘野果，点击「跟随」退出';
   }
 
   exitInteract(): void {
@@ -1763,6 +2237,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.removeMode = false;
     this.upgradeMode = false;
     this.harvestMode = false;
+    this.forageMode = false;
     this.controls.enabled = false;
     this.hint = '已回到跟随视角，WASD 移动';
   }
@@ -1816,17 +2291,47 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.hint = `⛏️ 采矿中 @(${gx},${gz})...`;
   }
 
+  /** 发送钓鱼意图（/app/ws.fish），服务端校验临水/能量 */
+  private doFishCatch(): void {
+    if (!this.ws.isConnected) {
+      this.hint = '尚未连接，无法钓鱼';
+      return;
+    }
+    if (!this.nearWater) {
+      this.hint = '需要站在水边才能钓鱼';
+      return;
+    }
+    this.ws.send('/app/ws.fish', { gx: Math.floor(this.px), gz: Math.floor(this.pz) });
+    this.hint = '🎣 钓鱼中...';
+  }
+
   /** 处理 MINE_RESULT 回执：刷新 HUD + 提示 + 本地地形变化 */
   private handleMineResult(ev: any): void {
     if (ev.code === 0 && ev.data) {
       const d = ev.data as MineResult;
       this.showToast(`⛏️ 采到 ${this.oreName(d.oreType)} +${d.expGained}EXP（背包 ×${d.itemQty}）`);
       this.hint = `采矿成功：${this.oreName(d.oreType)}`;
+      this.advanceOnboardingIf(1); // 新手引导：完成「采矿」步自动前进
       // 本地立即重着色 + 移除矿模型（与 TERRAIN_CHANGE 广播一致，去重安全）
       this.applyTerrainChange(`${Math.floor(d.gx / CHUNK)}_${Math.floor(d.gz / CHUNK)}`, d.gx, d.gz, d.newType);
     } else {
       this.showToast('❌ ' + (ev.msg || '采矿失败'));
       this.hint = '采矿失败：' + (ev.msg || '未知错误');
+    }
+    this.loadMiningProfile(); // 权威刷新能量/经验/背包
+  }
+
+  /** 处理 FISH_RESULT 回执：刷新 HUD + 提示（钓鱼不改变地形） */
+  private handleFishResult(ev: any): void {
+    if (ev.code === 0 && ev.data) {
+      const d = ev.data;
+      const name = d.fishName || d.fishType || '鱼';
+      this.showToast(`🎣 钓到 ${name} +${d.expGained}EXP（背包 ×${d.itemQty}）`);
+      this.hint = `钓鱼成功：${name}`;
+      this.advanceOnboardingIf(2); // 新手引导：完成「钓鱼」步自动前进
+    } else {
+      this.showToast('❌ ' + (ev.msg || '钓鱼失败'));
+      this.hint = '钓鱼失败：' + (ev.msg || '未知错误');
     }
     this.loadMiningProfile(); // 权威刷新能量/经验/背包
   }
@@ -1890,11 +2395,95 @@ export class World3dComponent implements OnInit, OnDestroy {
       }
     }
     this.nearestOre = best ? { gx: best.gx, gz: best.gz } : null;
-    if (best && !this.mineMode) {
+    if (best && !this.mineMode && !this.nearWater) {
       this.hint = `附近有矿脉（${Math.round(best.d)} 格内），按 F 开采`;
     } else if (!best && this.hint.indexOf('附近有矿脉') === 0) {
-      this.hint = 'WASD 移动，空格 跳跃，双击地面跑过去，左键拖拽环绕视角';
+      this.hint = 'WASD 移动 · 空格跳跃 · 双击 W/A/S/D 奔跑 · 双击地面跑过去 · 左键拖拽转视角 · H 键帮助';
     }
+  }
+
+  /** 扫描玩家附近 chunk 的水域（WATER/RIVER），供钓鱼按钮与提示 */
+  private scanNearbyWater(): void {
+    const R = 4;
+    const pcx = Math.floor(this.dpx / CHUNK);
+    const pcz = Math.floor(this.dpz / CHUNK);
+    let best: { gx: number; gz: number; d: number } | null = null;
+    for (const [key, grid] of this.gridCache) {
+      const [cx, cz] = key.split('_').map(Number);
+      if (Math.abs(cx - pcx) > 1 || Math.abs(cz - pcz) > 1) continue; // 仅邻近 chunk
+      for (let lz = 0; lz < CHUNK; lz++) {
+        for (let lx = 0; lx < CHUNK; lx++) {
+          const cell = grid.semantic[lz * CHUNK + lx];
+          if (cell !== 0 && cell !== 10) continue; // WATER / RIVER
+          const gx = cx * CHUNK + lx;
+          const gz = cz * CHUNK + lz;
+          const d = Math.hypot(this.dpx - gx, this.dpz - gz);
+          if (d <= R && (!best || d < best.d)) best = { gx, gz, d };
+        }
+      }
+    }
+    this.nearestWater = best ? { gx: best.gx, gz: best.gz } : null;
+    this.nearWater = best != null;
+    if (best && !this.fishMode && !this.mineMode && !this.nearestOre) {
+      this.hint = `附近有水（${Math.round(best.d)} 格内），按 G 或点「钓鱼」`;
+    }
+  }
+
+  /** P1-小地图：绘制玩家/资源/其他玩家（节流调用） */
+  private drawMinimap(): void {
+    const cv = this.minimapRef?.nativeElement as HTMLCanvasElement | undefined;
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const W = cv.width, H = cv.height;
+    const span = 110; // 半幅世界单位
+    const scale = W / (span * 2);
+    const toX = (wx: number) => W / 2 + (wx - this.dpx) * scale;
+    const toY = (wz: number) => H / 2 + (wz - this.dpz) * scale;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(10,20,30,.55)';
+    ctx.fillRect(0, 0, W, H);
+    // 资源标记（玩家邻近 chunk）
+    const pcx = Math.floor(this.dpx / CHUNK), pcz = Math.floor(this.dpz / CHUNK);
+    for (const [key, grid] of this.gridCache) {
+      const [cx, cz] = key.split('_').map(Number);
+      if (Math.abs(cx - pcx) > 1 || Math.abs(cz - pcz) > 1) continue;
+      for (let lz = 0; lz < CHUNK; lz++) {
+        for (let lx = 0; lx < CHUNK; lx++) {
+          const cell = grid.semantic[lz * CHUNK + lx];
+          let color: string | null = null;
+          if (cell === 0 || cell === 10) color = '#3aa0d8';       // water / river
+          else if (cell === 6 || cell === 7 || cell === 8) color = '#ffb347'; // ore
+          if (!color) continue;
+          const gx = cx * CHUNK + lx, gz = cz * CHUNK + lz;
+          const x = toX(gx + 0.5), y = toY(gz + 0.5);
+          if (x < 0 || x > W || y < 0 || y > H) continue;
+          ctx.fillStyle = color;
+          ctx.fillRect(x - 1, y - 1, 2, 2);
+        }
+      }
+    }
+    // 其他在线玩家
+    ctx.fillStyle = '#ff6b6b';
+    for (const g of this.remotePlayers.values()) {
+      const x = toX(g.position.x), y = toY(g.position.z);
+      if (x < 0 || x > W || y < 0 || y > H) continue;
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+    // 玩家 + 朝向箭头
+    const px = W / 2, py = H / 2;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(-this.dprot);
+    ctx.fillStyle = '#6cff9e';
+    ctx.beginPath();
+    ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    // 边框
+    ctx.strokeStyle = 'rgba(255,255,255,.4)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
   }
 
   /** 顶部居中提示（自动消失） */
@@ -1952,7 +2541,8 @@ export class World3dComponent implements OnInit, OnDestroy {
               if (r.code === 0 && r.data) {
                 if (r.data.ready) {
                   this.hint = `收获成功！获得 ${r.data.reward} 金币`;
-                  this.showToast(`🎣 收获 +${r.data.reward} 金币`);
+                  this.showToast(`🎣 收获 +${r.data.reward} 金币，鱼已入背包`);
+                  this.loadMiningProfile(); // 刷新背包列表（鱼已写入 world_inventory）
                   if (r.data && this.worldObjects) {
                     // 通过 OBJECT_UPDATE 已刷新；兜底：本地刷新对应鱼塘
                   }
@@ -1995,6 +2585,20 @@ export class World3dComponent implements OnInit, OnDestroy {
           this.refreshCoins();
         },
         error: () => { this.hint = '养鱼请求失败'; }
+      });
+    } else if (this.forageMode) {
+      this.api.forage(gx, gz).subscribe({
+        next: r => {
+          if (r.code === 0 && r.data) {
+            const extra = r.data.berry ? ` 野果 +${r.data.berry}` : '';
+            this.hint = `采集成功！木材 +${r.data.wood}${extra}`;
+            this.showToast(`🌳 木材 +${r.data.wood}${extra}`);
+            this.loadMiningProfile(); // 刷新背包列表
+          } else {
+            this.hint = '采集失败：' + (r.msg || '这里没有可采集的树木');
+          }
+        },
+        error: () => { this.hint = '采集请求失败'; }
       });
     }
   }
@@ -2082,13 +2686,13 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
   };
 
-  /** 发送移动目标到服务端 */
+  /** 发送移动目标到服务端（双击地图 → 跑过去） */
   private sendMoveTarget(): void {
     if (!this.moveTarget || !this.ws.isConnected) return;
     const t = this.moveTarget;
     this.ws.send('/app/ws.input', {
       seq: Math.floor(performance.now()),
-      move: { dx: 0, dz: 0, run: false },
+      move: { dx: 0, dz: 0, run: true },
       targetGx: Math.floor(t.x),
       targetGz: Math.floor(t.z)
     });
@@ -2101,8 +2705,23 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     this.keys[e.code] = true;
-    // 按 WASD/方向键时取消双击自动移动（手动优先）
     const code = e.code ?? '';
+    // H 键开关操作帮助面板（成熟竞品标配：不必逐个试功能）
+    if (code === 'KeyH') {
+      this.showHelp = !this.showHelp;
+      return;
+    }
+    // 双击方向键触发奔跑（忽略系统按住自动重复 e.repeat）
+    if (!e.repeat && this.isMoveKey(code)) {
+      const now = performance.now();
+      if (code === this.lastTapCode && now - this.lastTapTime < 320) {
+        this.running = true;
+        this.runKey = code;
+      }
+      this.lastTapCode = code;
+      this.lastTapTime = now;
+    }
+    // 按 WASD/方向键时取消双击自动移动（手动优先）
     if ((code.startsWith('Key') || code.startsWith('Arrow')) && (this.moveTarget || this.pathPoints.length)) {
       this.moveTarget = null;
       this.pathPoints = [];
@@ -2118,14 +2737,41 @@ export class World3dComponent implements OnInit, OnDestroy {
       e.preventDefault();
       this.doMine(this.nearestOre.gx, this.nearestOre.gz);
     }
+    // G 键钓鱼（靠近水边，自动钓最近水域）
+    if (code === 'KeyG' && this.nearWater && !this.fishMode) {
+      e.preventDefault();
+      this.doFishCatch();
+    }
   };
 
-  /** 发送跳跃意图到服务端 */
+  /** 是否为移动方向键（WASD / 方向键） */
+  private isMoveKey(code: string): boolean {
+    return code === 'KeyW' || code === 'KeyA' || code === 'KeyS' || code === 'KeyD' ||
+      code === 'ArrowUp' || code === 'ArrowDown' || code === 'ArrowLeft' || code === 'ArrowRight';
+  }
+
+  /** 发送跳跃意图到服务端（带上当前 WASD 方向 → 跳起向前） */
   private sendJump(): void {
     if (!this.ws.isConnected) return;
+    // 取当前按键方向（与 sendInputIfNeeded 同算法），让 W+空格 = 跳起向前
+    let ix = 0, iz = 0;
+    if (this.keys['KeyW'] || this.keys['ArrowUp']) iz += 1;
+    if (this.keys['KeyS'] || this.keys['ArrowDown']) iz -= 1;
+    if (this.keys['KeyA'] || this.keys['ArrowLeft']) ix -= 1;
+    if (this.keys['KeyD'] || this.keys['ArrowRight']) ix += 1;
+    // 触屏摇杆叠加（P0-1）
+    ix += this.touchVec.x;
+    iz += this.touchVec.y;
+    const yaw = this.follow.yaw;
+    const forward = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+    const right = { x: Math.cos(yaw), z: -Math.sin(yaw) };
+    const len = Math.hypot(ix, iz);
+    const dx = len > 0 ? (right.x * ix + forward.x * iz) / len : 0;
+    const dz = len > 0 ? (right.z * ix + forward.z * iz) / len : 0;
+    const run = !!(this.keys['ShiftLeft'] || this.keys['ShiftRight']) || this.running;
     this.ws.send('/app/ws.input', {
       seq: Math.floor(performance.now()),
-      move: { dx: 0, dz: 0, run: false },
+      move: { dx, dz, run },
       action: 'jump'
     });
     this.hint = '⬆️ 跳跃！';
@@ -2133,6 +2779,8 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   private onKeyUp = (e: KeyboardEvent): void => {
     this.keys[e.code] = false;
+    // 奔跑退出由「静止超时」统一处理（见 sendInputIfNeeded），不在 keyup 立即清除，
+    // 否则双击 W（第二次 tap 的 keyup）会立刻取消奔跑，导致双击跑失效。
   };
 
   private onResize = (): void => {
@@ -2141,6 +2789,56 @@ export class World3dComponent implements OnInit, OnDestroy {
     const H = mount.clientHeight || 520;
     this.camera.aspect = W / H;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(W, H);
+    // 仅更新绘图缓冲区，不覆盖 canvas 的 width:100%/height:100% CSS
+    this.renderer.setSize(W, H, false);
+  };
+
+  // ================= 触屏控制（P0-1） =================
+  onJoyStart = (e: PointerEvent): void => {
+    this.joystickId = e.pointerId;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    this.joyBase = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    this.onJoyMove(e);
+  };
+  onJoyMove = (e: PointerEvent): void => {
+    if (this.joystickId !== e.pointerId) return;
+    const max = 50;
+    let dx = e.clientX - this.joyBase.x;
+    let dy = e.clientY - this.joyBase.y;
+    const len = Math.hypot(dx, dy);
+    if (len > max) { dx = dx / len * max; dy = dy / len * max; }
+    this.joyKnob = { x: dx, y: dy };
+    this.touchVec = { x: dx / max, y: -dy / max }; // 屏幕 y 向下为正，推向"上"=前进
+    // 手动优先：取消双击自动移动
+    if (this.moveTarget || this.pathPoints.length) { this.moveTarget = null; this.pathPoints = []; }
+  };
+  onJoyEnd = (e: PointerEvent): void => {
+    if (this.joystickId !== e.pointerId) return;
+    this.joystickId = null;
+    this.joyKnob = { x: 0, y: 0 };
+    this.touchVec = { x: 0, y: 0 };
+    // 发一次停止指令，避免残影移动
+    if (this.ws.isConnected) {
+      this.ws.send('/app/ws.input', { seq: Math.floor(performance.now()), move: { dx: 0, dz: 0, run: false } });
+    }
+  };
+  onTouchJump = (): void => {
+    if (!this.buildMode && !this.fishMode && !this.mineMode) this.sendJump();
+  };
+  onTouchRun = (): void => {
+    this.running = !this.running;
+    if (this.running) { this.runKey = null; this.runIdleSince = 0; }
+    this.hint = this.running ? '🏃 奔跑已开启' : '🚶 行走';
+  };
+
+  // ================= 上下文动作按钮（P1-引导） =================
+  /** 上下文「挖矿」按钮：开采最近矿脉 */
+  onCtxMine = (): void => {
+    if (this.nearestOre) this.doMine(this.nearestOre.gx, this.nearestOre.gz);
+  };
+  /** 上下文「钓鱼」按钮：钓最近水域 */
+  onCtxFish = (): void => {
+    if (!this.fishMode) this.doFishCatch();
   };
 }

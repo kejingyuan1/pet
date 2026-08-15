@@ -56,6 +56,7 @@ public class UserService {
         user.setCoins(0);                       // 新用户积分独立：初始 0，不继承任何值
         user.setVersion(7);
         user.setEducation(req.getEducation() == null || req.getEducation().isBlank() ? "PRIMARY_1" : req.getEducation());
+        user.setGender(req.getGender() == null || req.getGender().isBlank() ? "M" : req.getGender());
         user.setCreatedAt(LocalDateTime.now());
         userMapper.insert(user);
 
@@ -80,6 +81,7 @@ public class UserService {
         resp.setRole(user.getRole() == null ? "user" : user.getRole());
         resp.setCoins(user.getCoins() == null ? 0 : user.getCoins());
         resp.setEducation(user.getEducation() == null ? "PRIMARY_1" : user.getEducation());
+        resp.setGender(user.getGender() == null ? "M" : user.getGender());
         return resp;
     }
 
@@ -93,6 +95,7 @@ public class UserService {
         resp.setRole(user.getRole() == null ? "user" : user.getRole());
         resp.setCoins(user.getCoins() == null ? 0 : user.getCoins());
         resp.setEducation(user.getEducation() == null ? "PRIMARY_1" : user.getEducation());
+        resp.setGender(user.getGender() == null ? "M" : user.getGender());
         resp.setCreatedAt(user.getCreatedAt());
         return resp;
     }

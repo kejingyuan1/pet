@@ -38,4 +38,9 @@ public class RegisterReq {
     @Pattern(regexp = "^(PRIMARY_[1-6]|JUNIOR_[1-3]|SENIOR_[1-3]|UNIVERSITY_[1-4])$",
              message = "学历取值非法")
     private String education;
+
+    /** 性别：M 男 / F 女（必选，决定建模） */
+    @NotBlank(message = "请选择性别")
+    @Pattern(regexp = "^[MF]$", message = "性别只能为 M 或 F")
+    private String gender;
 }

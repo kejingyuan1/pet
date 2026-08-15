@@ -26,6 +26,11 @@
       <option value="UNIVERSITY_1">大学一年级</option><option value="UNIVERSITY_2">大学二年级</option>
       <option value="UNIVERSITY_3">大学三年级</option><option value="UNIVERSITY_4">大学四年级</option>
     </select>
+    <div class="reg-gender" *ngIf="loginMode==='register'">
+      <span class="reg-gender-label">性别：</span>
+      <label class="reg-gender-opt"><input type="radio" name="regGender" [(ngModel)]="regGender" value="M"> 男孩</label>
+      <label class="reg-gender-opt"><input type="radio" name="regGender" [(ngModel)]="regGender" value="F"> 女孩</label>
+    </div>
     <p class="login-msg" *ngIf="loginMsg">{{ loginMsg }}</p>
     <button class="btn-login" (click)="loginMode==='login' ? doLogin() : doRegister()" [disabled]="loginBusy">
       {{ loginBusy ? '请稍候…' : (loginMode==='login' ? '登 录' : '注册并登录') }}
@@ -76,7 +81,7 @@
     <!-- 欢迎横幅：引导进入真正的「大世界」地图 -->
     <div class="home-hero">
       <div class="home-hero-text">
-        <div class="home-greet">欢迎回家，{{ pet.name }} 🏡</div>
+        <div class="home-greet">欢迎回家{{ auth.user?.nickname ? '，' + (auth.user?.nickname ?? '') : '' }} 🏡</div>
         <div class="home-sub">
           <span class="home-weather" (click)="weatherTip()" title="天气会自动变化，点我了解">
             {{ state.state.weather==='rain' ? '🌧️ 今天下雨' : '☀️ 天气晴朗' }}
@@ -90,35 +95,43 @@
       </button>
     </div>
 
-    <!-- 宠物卡片 -->
+    <!-- 学习系统内容区（错题集 + 系统安排的学习内容） -->
     <div class="card">
-      <div class="pet-card">
-        <div class="pet-avatar" [style.background]="pet.sick ? '#E24B4A' : '#FFD166'">
-          <span class="pet-emoji">{{ pet.stage >= 3 ? '🦋' : '🐤' }}</span>
+      <div class="learn-zone">
+        <h3>📚 今日学习</h3>
+        <!-- 错题集预览：最近答错的题目 -->
+        <div class="learn-section" *ngIf="failures && failures.length > 0">
+          <div class="learn-label">📕 错题回顾（{{ failures.length }} 道）</div>
+          <div class="fail-preview" *ngFor="let f of failures.slice(0, 3)">
+            <span class="fp-q">{{ f.prompt?.slice(0, 40) }}{{ f.prompt?.length > 40 ? '…' : '' }}</span>
+            <button class="fp-btn" (click)="openFailBook()">复习</button>
+          </div>
+          <button class="fp-more" (click)="openFailBook()" *ngIf="failures.length > 3">查看全部 {{ failures.length }} 道错题 →</button>
         </div>
-        <div class="pet-info">
-          <h3>{{ pet.name }} <small>Lv.{{ pet.level }}</small></h3>
-          <div class="meter"><label>饱食</label><div class="bar"><i [style.width.%]="pet.satiety"></i></div><b>{{ pet.satiety }}</b></div>
-          <div class="meter"><label>心情</label><div class="bar"><i [style.width.%]="pet.mood"></i></div><b>{{ pet.mood }}</b></div>
-          <div class="meter"><label>体力</label><div class="bar"><i [style.width.%]="pet.energy"></i></div><b>{{ pet.energy }}</b></div>
+        <div class="learn-empty" *ngIf="!failures || failures.length === 0">
+          <div class="le-icon">✨</div>
+          <p>暂无错题，继续保持！</p>
+          <p class="le-hint">完成学习后，错题会自动收录到这里</p>
         </div>
-        <div class="pet-actions">
-          <button (click)="state.feed('carrot')" [disabled]="(pet.foods['carrot']||0)<=0">喂胡萝卜 {{ pet.foods['carrot']||0 }}</button>
-          <button (click)="state.feed('tomato')" [disabled]="(pet.foods['tomato']||0)<=0">喂番茄 {{ pet.foods['tomato']||0 }}</button>
-          <button (click)="state.playWithPet()">陪玩 +3</button>
-          <button (click)="state.watchFarm()">看护菜地 +2</button>
-          <button (click)="togglePetOut()" class="primary">{{ outBtnText }}</button>
-          <button *ngIf="pet.sick" (click)="state.buyMedicine()">喂药 20 金</button>
+        <!-- 系统安排的学习内容提示 -->
+        <div class="learn-scheduled" *ngIf="studySubjects?.length">
+          <div class="learn-label">📖 推荐学习</div>
+          <div class="sched-list">
+            <button class="sched-item" *ngFor="let s of studySubjects.slice(0, 3); let si = index"
+                    [class.done]="state.studySubjectAllDone(s)"
+                    (click)="switchMod('study'); state.switchStudySubject(si);">
+              <span class="sched-emoji">{{ studySubjIcon(s) }}</span>
+              <span class="sched-name">{{ s.name }}</span>
+              <span *ngIf="state.studySubjectAllDone(s)" class="sched-done">✓</span>
+            </button>
+          </div>
         </div>
       </div>
-      <div class="tips" *ngIf="isNight">🌙 天黑啦，注意体力消耗</div>
+      <div class="tips" *ngIf="isNight">🌙 天黑啦，注意休息，明天继续！</div>
     </div>
 
-    <!-- 快捷入口：一键直达各玩法 -->
+    <!-- 快捷入口：一键直达各玩法（菜地/鱼塘/牧场已移至大世界地图入口） -->
     <div class="home-quick">
-      <button class="quick-card" (click)="switchMod('farm')"><span class="qc-emoji">🥕</span><span class="qc-label">菜地</span></button>
-      <button class="quick-card" (click)="switchMod('pond')"><span class="qc-emoji">🐟</span><span class="qc-label">鱼塘</span></button>
-      <button class="quick-card" (click)="switchMod('ranch')"><span class="qc-emoji">🐔</span><span class="qc-label">牧场</span></button>
       <button class="quick-card" (click)="switchMod('study')"><span class="qc-emoji">📚</span><span class="qc-label">学习</span></button>
     </div>
   </section>
@@ -192,7 +205,7 @@
             <div class="bar"><i [style.width.%]="(a.grownDays/(state.catByCode(a.type)?.grow_days||1)*100)"></i></div>
             <span>{{ a.productReady ? '有' + (state.catByCode(a.type)?.product ?? '产出') + '可收！' : (a.grownDays >= (state.catByCode(a.type)?.grow_days ?? 0) ? '成年啦' : '长大中') }}</span>
             <div class="plot-btns">
-              <button *ngIf="a.productReady" (click)="state.collectProduct(a.id)">收{{ state.catByCode(a.type)?.product }}(+{{ state.catByCode(a.type)?.prod_price }})</button>
+              <button *ngIf="a.productReady" (click)="state.collectProduct(a.id)">收{{ state.catByCode(a.type)?.product }}→背包</button>
               <button *ngIf="a.grownDays >= (state.catByCode(a.type)?.grow_days ?? 0) && !a.productReady" (click)="state.sellAnimal(a.id)">卖掉({{ state.catByCode(a.type)?.sell_price }}金)</button>
               <button *ngIf="a.grownDays < (state.catByCode(a.type)?.grow_days ?? 0)" (click)="state.feedAnimal(a.id)">喂食</button>
             </div>
@@ -375,9 +388,6 @@
 <nav class="nav">
   <button [class.on]="mod==='home'" (click)="switchMod('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>家园</button>
   <button [class.on]="mod==='world'" (click)="switchMod('world')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.6 3.8 9S14.5 18.5 12 21c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3z"/></svg>大世界</button>
-  <button [class.on]="mod==='farm'" (click)="switchMod('farm')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6m0 0c-3 0-5 2-5 5h2c0-2 1-3 3-3s3 1 3 3h2c0-3-2-5-5-5zM12 14v7M3 21h18"/></svg>菜地</button>
-  <button [class.on]="mod==='pond'" (click)="switchMod('pond')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="9" ry="7"/><path d="M3 12h18M12 5c-1.5 2-1.5 9 0 14M12 5c1.5 2 1.5 9 0 14"/></svg>鱼塘</button>
-  <button [class.on]="mod==='ranch'" (click)="switchMod('ranch')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2m-8 0l1 14h8l1-14M10 11v6M14 11v6"/></svg>牧场</button>
   <button [class.on]="mod==='study'" (click)="switchMod('study')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>学习</button>
   <button *ngIf="isAdmin" [class.on]="showUserAdmin" (click)="showUserAdmin ? closeUserAdmin() : openUserAdmin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>用户管理</button>
 </nav>
@@ -459,6 +469,31 @@
         </div>
       </div>
       <div *ngIf="!failures.length" class="fail-empty">暂无错题记录，继续加油！🎉</div>
+    </div>
+  </div>
+</div>
+
+<!-- 全局聊天面板（仅大世界页面显示，fixed 定位脱离 3D 容器，避免 HMR 破坏 WebGL） -->
+<div class="world-chat-bar" *ngIf="auth.isLoggedIn && mod==='world'">
+  <div class="w3d-chat" [class.collapsed]="!chatOpen">
+    <div class="chat-head" (click)="toggleChat()">
+      <span>💬 聊天 {{chatOpen ? '' : '(' + (chatMessages?.length || 0) + ')'}}</span>
+      <span class="chat-toggle">{{chatOpen ? '▾' : '▸'}}</span>
+    </div>
+    <div class="chat-body" *ngIf="chatOpen">
+      <div class="chat-list" #appChatList>
+        <div class="chat-msg" *ngFor="let m of chatMessages">
+          <span class="chat-nick" [class.self]="m.uid === auth.user?.userId">{{m.nickname || '玩家'}}：</span>
+          <span class="chat-text">{{m.text}}</span>
+          <span class="chat-time">{{m.timeText}}</span>
+        </div>
+        <div class="chat-empty" *ngIf="!chatMessages || chatMessages.length === 0">还没有人说话，来打个招呼吧～</div>
+      </div>
+      <div class="chat-input-row">
+        <input #appChatInput class="chat-input" type="text" maxlength="200" placeholder="按 Enter 发送"
+               [(ngModel)]="chatInput" (keyup.enter)="sendChat()" (keyup.escape)="chatInput=''" />
+        <button class="chat-send" (click)="sendChat()">发送</button>
+      </div>
     </div>
   </div>
 </div>

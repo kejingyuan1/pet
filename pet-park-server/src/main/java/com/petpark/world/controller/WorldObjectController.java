@@ -6,8 +6,10 @@ import com.petpark.config.JwtAuthFilter;
 import com.petpark.world.dto.BuildReq;
 import com.petpark.world.dto.CellReq;
 import com.petpark.world.dto.FishReq;
+import com.petpark.world.dto.ForageResult;
 import com.petpark.world.dto.HarvestResult;
 import com.petpark.world.dto.WorldObjectResp;
+import com.petpark.world.service.WorldMiningService;
 import com.petpark.world.service.WorldObjectService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -23,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorldObjectController {
 
     private final WorldObjectService objectService;
+    private final WorldMiningService miningService;
 
-    public WorldObjectController(WorldObjectService objectService) {
+    public WorldObjectController(WorldObjectService objectService, WorldMiningService miningService) {
         this.objectService = objectService;
+        this.miningService = miningService;
     }
 
     /** POST /api/world/build {gx, gz, objectType, rot?} */
@@ -69,6 +73,14 @@ public class WorldObjectController {
                                          @RequestAttribute(JwtAuthFilter.ATTR_USER_ID) Long uid) {
         requireCoords(req.getGx(), req.getGz());
         return objectService.harvestFish(uid, req.getGx(), req.getGz());
+    }
+
+    /** POST /api/world/forage {gx, gz} 砍树/摘野果（写入背包 world_inventory） */
+    @PostMapping("/forage")
+    public Result<ForageResult> forage(@RequestBody CellReq req,
+                                       @RequestAttribute(JwtAuthFilter.ATTR_USER_ID) Long uid) {
+        requireCoords(req.getGx(), req.getGz());
+        return miningService.forage(uid, req.getGx(), req.getGz());
     }
 
     private static void requireCoords(Integer gx, Integer gz) {

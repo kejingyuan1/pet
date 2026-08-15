@@ -14,6 +14,7 @@ import com.petpark.world.entity.WorldObject;
 import com.petpark.world.geo.CellType;
 import com.petpark.world.geo.ChunkKey;
 import com.petpark.world.mapper.WorldObjectMapper;
+import com.petpark.world.mapper.WorldInventoryMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +53,7 @@ public class WorldObjectService {
     private final TerrainService terrain;
     private final RegionBroker broker;
     private final PhysicsGatewayService physicsGateway;
+    private final WorldInventoryMapper inventoryMapper;
     private final ObjectMapper json;
 
     public WorldObjectService(WorldObjectMapper objectMapper,
@@ -60,6 +62,7 @@ public class WorldObjectService {
                               TerrainService terrain,
                               RegionBroker broker,
                               PhysicsGatewayService physicsGateway,
+                              WorldInventoryMapper inventoryMapper,
                               ObjectMapper json) {
         this.objectMapper = objectMapper;
         this.userMapper = userMapper;
@@ -67,6 +70,7 @@ public class WorldObjectService {
         this.terrain = terrain;
         this.broker = broker;
         this.physicsGateway = physicsGateway;
+        this.inventoryMapper = inventoryMapper;
         this.json = json;
     }
 
@@ -261,6 +265,8 @@ public class WorldObjectService {
         if (reward > 0) {
             userMapper.addCoins(uid, reward);
         }
+        // 收获的鱼进背包（与金币奖励并存，world_inventory 持久化）
+        inventoryMapper.addQty(uid, fishType, 1);
         ext.put("plantedAt", System.currentTimeMillis());
         objectMapper.updateExtJson(obj.getId(), toJson(ext));
         r.setReady(true);
