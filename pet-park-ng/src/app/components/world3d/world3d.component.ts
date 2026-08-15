@@ -446,8 +446,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   private starMaterial!: THREE.ShaderMaterial; // 星星材质（透明度随昼夜变化）
   private cloudGroup!: THREE.Group;           // 云朵容器
 
-  // 独立光滑水面（解决锯齿水岸线）
-  private waterPlane!: THREE.Mesh;              // 大平面覆盖所有水域
+  // （已移除 waterPlane — 大平面穿透地形导致蓝色三角碎片）
   private static readonly STAR_COUNT = 1800;   // 星星数量
   private static readonly CLOUD_COUNT = 12;    // 云朵数量
 
@@ -616,8 +615,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 清理天空装饰
     if (this.starField) { this.scene?.remove(this.starField); this.starField.geometry.dispose(); this.starMaterial.dispose(); }
     if (this.cloudGroup) { this.scene?.remove(this.cloudGroup); }
-    // 清理水面
-    if (this.waterPlane) { this.scene?.remove(this.waterPlane); this.waterPlane.geometry.dispose(); (this.waterPlane.material as THREE.Material).dispose(); }
+    // （waterPlane 已移除）
     this.renderer?.dispose();
     this.scene?.traverse(o => {
       if (o.userData?.['shared']) return; // 共享 GLB 模板实例，几何复用不释放
@@ -693,8 +691,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     // ====== 云朵（昼夜均可见） ======
     this.createClouds();
 
-    // ====== 独立光滑水面（覆盖所有水域，消除锯齿水岸线） ======
-    this.createWaterPlane();
+    // （已移除 waterPlane — 地形 WATER 语义格自身渲染蓝色即可）
 
     // OrbitControls（默认禁用，跟随模式由自研 rig 控制；建造模式启用）
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -1107,30 +1104,6 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.scene.add(this.cloudGroup);
   }
 
-  /** 创建独立光滑水面：大平面覆盖所有水域，消除锯齿水岸线 */
-  private createWaterPlane(): void {
-    const wl = this.config?.waterLevel ?? -5;
-    // 水面尺寸：覆盖整个可见世界（岛屿分布在 ±1300 范围）
-    const size = 4000;
-    const geo = new THREE.PlaneGeometry(size, size, 1, 1);
-    // 旋转到水平面（PlaneGeometry 默认竖直）
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x2EAFCF,        // 亮青蓝色（匹配天空+水面）
-      transparent: true,
-      opacity: 0.72,          // 半透明，能看到水下地形过渡
-      roughness: 0.12,        // 光滑水面，有高光反射
-      metalness: 0.25,
-      fog: false,             // 不受雾影响（水应在雾层之下清晰可见）
-      side: THREE.DoubleSide,
-    });
-    this.waterPlane = new THREE.Mesh(geo, mat);
-    this.waterPlane.position.y = wl - 0.08; // 略低于水位线，避免 Z-fighting
-    this.waterPlane.name = 'water_plane';
-    this.waterPlane.renderOrder = -1;       // 先于地形渲染（底层）
-    this.scene.add(this.waterPlane);
-  }
-
   /** 构建单朵云：由 4~8 个不同大小的球体组成 */
   private buildCloudPuff(mat: THREE.Material): THREE.Group {
     const group = new THREE.Group();
@@ -1370,11 +1343,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 天空装饰：星星闪烁 + 云朵漂移
     this.updateStars(now * 0.001);
     this.updateClouds(dt, now * 0.001);
-    // 水面微动：正弦波模拟轻微起伏
-    if (this.waterPlane) {
-      const wl = this.config?.waterLevel ?? -5;
-      this.waterPlane.position.y = wl - 0.08 + Math.sin(now * 0.0008) * 0.06;
-    }
+    // （waterPlane 微动已移除）
     this.renderer.render(this.scene, this.camera);
 
     // v8 海浪动画：更新 shader 时间 uniform
