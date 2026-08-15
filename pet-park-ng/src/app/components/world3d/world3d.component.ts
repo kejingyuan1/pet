@@ -441,6 +441,13 @@ export class World3dComponent implements OnInit, OnDestroy {
   private animalsSpawned = false;
   private decorPlaced = false; // 男孩/女孩是否已放置（仅放一次）
 
+  // ====== 天空装饰（星星 + 云朵） ======
+  private starField!: THREE.Points;          // 夜晚星空粒子
+  private starMaterial!: THREE.ShaderMaterial; // 星星材质（透明度随昼夜变化）
+  private cloudGroup!: THREE.Group;           // 云朵容器
+  private static readonly STAR_COUNT = 1800;   // 星星数量
+  private static readonly CLOUD_COUNT = 12;    // 云朵数量
+
   // 🔴 水域调试钩子：记录所有已放置对象的世界坐标，供 playwright 断言"无对象在水中"
   private treeList: { x: number; z: number }[] = [];
   private charList: { x: number; y: number; z: number }[] = [];
@@ -603,6 +610,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.wsStateSub?.unsubscribe();
     this.wsStateSub = null;
     this.ws.disconnect();
+    // 清理天空装饰
+    if (this.starField) { this.scene?.remove(this.starField); this.starField.geometry.dispose(); this.starMaterial.dispose(); }
+    if (this.cloudGroup) { this.scene?.remove(this.cloudGroup); }
     this.renderer?.dispose();
     this.scene?.traverse(o => {
       if (o.userData?.['shared']) return; // 共享 GLB 模板实例，几何复用不释放
@@ -672,6 +682,11 @@ export class World3dComponent implements OnInit, OnDestroy {
     const hemi = new THREE.HemisphereLight(0x9ED4FF, 0x7ABF5A, 0.45);
     this.scene.add(hemi);
     this.hemiLight = hemi;
+
+    // ====== 星空（夜晚可见，白天淡出） ======
+    this.createStarField();
+    // ====== 云朵（昼夜均可见） ======
+    this.createClouds();
 
     // OrbitControls（默认禁用，跟随模式由自研 rig 控制；建造模式启用）
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -965,6 +980,183 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.chatService.push({ uid, nickname, text, ts, timeText: `${hh}:${mm}` });
   }
 
+  // ================= 天空装饰（星星 + 云朵） =================
+
+  /** 创建星空粒子球：~1800 颗星分布在半径 R 的球壳上，用 ShaderMaterial 控制闪烁 + 昼夜淡入淡出 */
+  private createStarField(): void {
+    const COUNT = World3dComponent.STAR_COUNT;
+    const R = 900; // 星空球半径（远大于视距，跟随相机无需移动）
+    const positions = new Float32Array(COUNT * 3);
+    const sizes = new Float32Array(COUNT);     // 每颗星随机大小
+    const phases = new Float32Array(COUNT);     // 闪烁相位（随机偏移）
+    const twinkleSpeeds = new Float32Array(COUNT); // 闪烁速度
+
+    for (let i = 0; i < COUNT; i++) {
+      // 均匀分布球面（避免极地密集：用 sqrt 校正）
+      const u = Math.random();
+      const v = Math.random();
+      const theta = 2 * Math.PI * u;
+      const phi = Math.acos(2 * v - 1);
+      // 只在上半球（略过地平线下方）
+      const phiTop = Math.min(phi, Math.PI / 2 - 0.05);
+      positions[i * 3] = R * Math.sin(phiTop) * Math.cos(theta);
+      positions[i * 3 + 1] = Math.max(R * Math.cos(phiTop), 30); // 确保高度 > 0
+      positions[i * 3 + 2] = R * Math.sin(phiTop) * Math.sin(theta);
+      sizes[i] = 1.5 + Math.random() * 3.5;       // 大小变化
+      phases[i] = Math.random() * Math.PI * 2;      // 随机初始相位
+      twinkleSpeeds[i] = 0.8 + Math.random() * 2.4; // 闪烁频率
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+    geo.setAttribute('aTwinkleSpeed', new THREE.BufferAttribute(twinkleSpeeds, 1));
+
+    this.starMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uOpacity: { value: 0 },        // 由 dayNightBlend 控制（夜=1,昼=0）
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+      },
+      vertexShader: `
+        attribute float aSize;
+        attribute float aPhase;
+        attribute float aTwinkleSpeed;
+        uniform float uTime;
+        uniform float uPixelRatio;
+        varying float vBrightness;
+        void main() {
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          // 闪烁：正弦调制亮度
+          vBrightness = 0.5 + 0.5 * sin(uTime * aTwinkleSpeed + aPhase);
+          gl_PointSize = aSize * uPixelRatio * (250.0 / -mvPos.z); // 距离衰减
+          gl_Position = projectionMatrix * mvPos;
+        }
+      `,
+      fragmentShader: `
+        uniform float uOpacity;
+        varying float vBrightness;
+        void main() {
+          // 圆形星点 + 柔和边缘
+          float d = length(gl_PointCoord - 0.5);
+          if (d > 0.5) discard;
+          float alpha = smoothstep(0.5, 0.15, d) * vBrightness * uOpacity;
+          // 星心白色 + 微蓝光晕
+          vec3 col = mix(vec3(0.85, 0.92, 1.0), vec3(1.0, 1.0, 1.0), smoothstep(0.35, 0.0, d));
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    this.starField = new THREE.Points(geo, this.starMaterial);
+    this.starField.renderOrder = -999; // 最先渲染（背景层）
+    this.scene.add(this.starField);
+  }
+
+  /** 创建程序化云朵：12 朵云由多个球体簇组成，漂浮在天空 Y=120~180 */
+  private createClouds(): void {
+    this.cloudGroup = new THREE.Group();
+    this.cloudGroup.name = 'clouds';
+
+    // 云朵材质：半透明白色，无深度写入（避免遮挡问题）
+    const cloudMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.88,
+      roughness: 1.0,
+      metalness: 0.0,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+
+    for (let i = 0; i < World3dComponent.CLOUD_COUNT; i++) {
+      const cloud = this.buildCloudPuff(cloudMat);
+      // 散布在场景上方大片区域
+      const angle = (i / World3dComponent.CLOUD_COUNT) * Math.PI * 2;
+      const radius = 200 + Math.random() * 500;
+      cloud.position.set(
+        Math.cos(angle) * radius,
+        110 + Math.random() * 90,
+        Math.sin(angle) * radius
+      );
+      // 缩放随机化
+      const s = 0.7 + Math.random() * 1.0;
+      cloud.scale.setScalar(s);
+      // 存储漂移参数
+      cloud.userData['driftSpeed'] = 0.15 + Math.random() * 0.25;
+      cloud.userData['driftAngle'] = angle;
+      cloud.userData['driftRadius'] = radius;
+      cloud.userData['baseY'] = cloud.position.y;
+      cloud.userData['floatPhase'] = Math.random() * Math.PI * 2;
+      cloud.userData['floatSpeed'] = 0.08 + Math.random() * 0.12;
+      this.cloudGroup.add(cloud);
+    }
+
+    this.scene.add(this.cloudGroup);
+  }
+
+  /** 构建单朵云：由 4~8 个不同大小的球体组成 */
+  private buildCloudPuff(mat: THREE.Material): THREE.Group {
+    const group = new THREE.Group();
+    const puffs = 4 + Math.floor(Math.random() * 4); // 4~7 个球体
+    for (let j = 0; j < puffs; j++) {
+      const r = 10 + Math.random() * 22; // 球体半径 10~32
+      const sphere = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mat);
+      // 相对位置聚集在中心附近
+      sphere.position.set(
+        (Math.random() - 0.5) * r * 2.5,
+        (Math.random() - 0.5) * r * 0.6,
+        (Math.random() - 0.5) * r * 2.5
+      );
+      // 共享几何/材质（dispose 时仅清理 group）
+      sphere.userData['shared'] = true;
+      group.add(sphere);
+    }
+    return group;
+  }
+
+  /** 更新星空透明度（每帧调用）：根据昼夜混合系数调整星星可见性 */
+  private updateStars(time: number): void {
+    if (!this.starMaterial) return;
+    // 夜晚 (t→0): opacity→1；白天 (t→1): opacity→0
+    // 用平滑阶梯函数：t<0.35 全亮，t>0.65 全灭，中间过渡
+    const t = this.dayNightBlend;
+    let opacity = 0;
+    if (t < 0.35) opacity = 1;
+    else if (t < 0.55) opacity = 1 - (t - 0.35) / 0.2;
+    else opacity = 0;
+    this.starMaterial.uniforms['uOpacity'].value = opacity;
+    this.starMaterial.uniforms['uTime'].value = time;
+  }
+
+  /** 更新云朵漂移（每帧调用）：缓慢绕场景旋转 + 上下浮动 */
+  private updateClouds(dt: number, time: number): void {
+    if (!this.cloudGroup) return;
+    // 昼夜影响云的亮度和颜色
+    const t = this.dayNightBlend;
+    const nightDarken = 0.55 + 0.45 * t; // 夜间稍暗但不消失
+    this.cloudGroup.children.forEach((cloud) => {
+      const ud = cloud.userData;
+      // 缓慢绕 Y 轴漂移
+      ud['driftAngle'] = ud['driftAngle'] + ud['driftSpeed'] * dt * 0.04;
+      cloud.position.x = Math.cos(ud['driftAngle']) * ud['driftRadius'];
+      cloud.position.z = Math.sin(ud['driftAngle']) * ud['driftRadius'];
+      // 正弦浮动
+      cloud.position.y = ud['baseY'] + Math.sin(time * ud['floatSpeed'] + ud['floatPhase']) * 4;
+      // 云整体明暗随昼夜
+      cloud.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.material && !(m as any).userData?.shared !== false) {
+          (m.material as THREE.MeshStandardMaterial).opacity = 0.82 * nightDarken;
+        }
+      });
+    });
+  }
+
   // ================= 昼夜系统（P1 支柱①） =================
   /** 据相位平滑插值天空色/雾色/光照强度/曝光；太阳随 frac 绕行 */
   private updateDayNight(dt: number): void {
@@ -1143,6 +1335,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
     // 昼夜系统：据相位平滑插值天空/雾/灯光/曝光
     this.updateDayNight(dt);
+    // 天空装饰：星星闪烁 + 云朵漂移
+    this.updateStars(now * 0.001);
+    this.updateClouds(dt, now * 0.001);
     this.renderer.render(this.scene, this.camera);
 
     // v8 海浪动画：更新 shader 时间 uniform
@@ -1843,12 +2038,14 @@ export class World3dComponent implements OnInit, OnDestroy {
       for (let lx = 0; lx < N; lx++) {
         const i = lz * N + lx;
         positions[i * 3] = resp.cx * CHUNK + lx;
-        positions[i * 3 + 2] = resp.cz * CHUNK + lz; // 🔴🔴 修复：Z 坐标此前漏赋值，导致整个地形塌缩在 z=0 平面（树用真实 x,z 散开故飘在空中）
+        positions[i * 3 + 2] = resp.cz * CHUNK + lz;
         // M3 修复：WATER 语义格（0）的 Y 钳制到海平面
         // RIVER（10）：略高于水面形成可见河道，颜色深蓝区别于海洋亮青
         const cell = sem[Math.min(lz, CHUNK - 1) * CHUNK + Math.min(lx, CHUNK - 1)];
         let cellY = (cell === 0) ? waterLevel : h[i];
         if (cell === 10) { cellY = Math.min(cellY, waterLevel + 0.3); } // 河道微高出水面，可见
+        // 🔴🔴 NaN/Infinity 防护：服务端高度数据异常时钳制到 waterLevel，避免黑色三角洞
+        if (!Number.isFinite(cellY)) { cellY = waterLevel; }
         positions[i * 3 + 1] = cellY;
         const c = CELL_COLORS[cell] ?? CELL_COLORS[2];
         // M5 高度变化着色：谷暗峰亮（±12% 亮度），增加地形层次感
@@ -1864,14 +2061,29 @@ export class World3dComponent implements OnInit, OnDestroy {
         colors[i * 3 + 2] = ((c & 255) / 255) * finalBright;
       }
     }
+
+    // 🔴🔴 水岸线平滑：对水陆边界顶点做一次邻域平均，消除锯齿阶梯
+    // 仅对 WATER(0)/RIVER(10) 语义格及其陆地邻居做平滑
+    this.smoothWaterEdges(positions, sem, waterLevel);
+
     const indices: number[] = [];
     for (let lz = 0; lz < CHUNK; lz++) {
       for (let lx = 0; lx < CHUNK; lx++) {
         const a = lz * N + lx;
         const b = a + 1;
-        const c = (lz + 1) * N + lx;
-        const d = c + 1;
-        indices.push(a, c, b, c, d, b);
+        const cIdx = (lz + 1) * N + lx;
+        const d = cIdx + 1;
+        // 🔴🔴 退化三角形过滤：跳过面积为零或法线异常的三角形
+        // 通过检查三个顶点 Y 值差异是否极端来过滤
+        const yA = positions[a * 3 + 1], yB = positions[b * 3 + 1];
+        const yC = positions[cIdx * 3 + 1], yD = positions[d * 3 + 1];
+        const maxY = Math.max(yA, yB, yC, yD);
+        const minY = Math.min(yA, yB, yC, yD);
+        // 如果同一三角形的 Y 跨度 > 200 单位（正常地形 < 80），视为退化/异常
+        const isDegenerate = (maxY - minY > 200) || !Number.isFinite(maxY - minY);
+        if (!isDegenerate) {
+          indices.push(a, cIdx, b, cIdx, d, b);
+        }
       }
     }
     const geo = new THREE.BufferGeometry();
@@ -1886,6 +2098,51 @@ export class World3dComponent implements OnInit, OnDestroy {
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
     mesh.frustumCulled = false;
     return mesh;
+  }
+
+  /** 水岸线平滑：对水陆边界顶点做邻域平均，减少锯齿 */
+  private smoothWaterEdges(positions: Float32Array, sem: number[], waterLevel: number): void {
+    // 创建语义快查（N×N）：标记每个顶点是否水域
+    const isWater = new Uint8Array(N * N);
+    for (let lz = 0; lz < CHUNK; lz++) {
+      for (let lx = 0; lx < CHUNK; lx++) {
+        const cell = sem[lz * CHUNK + lx];
+        if (cell === 0 || cell === 10) {
+          isWater[lz * N + lx] = 1;
+          isWater[(lz + 1) * N + lx] = 1;     // 边界行也标记
+          isWater[lz * N + (lx + 1)] = 1;       // 边界列也标记
+        }
+      }
+    }
+    // 对水陆边界上的陆地顶点：如果相邻有水域顶点，则将 Y 向 waterLevel 平滑
+    const smoothed = new Set<number>();
+    for (let lz = 1; lz < N - 1; lz++) {
+      for (let lx = 1; lx < N - 1; lx++) {
+        const i = lz * N + lx;
+        const y = positions[i * 3 + 1];
+        // 只处理陆地顶点（高于水面）且靠近水域的
+        if (y <= waterLevel + 0.5) continue;
+        // 检查 4-邻域是否有水域
+        let hasWaterNeighbor = false;
+        let waterCount = 0;
+        const nIdx = [
+          (lz - 1) * N + lx, (lz + 1) * N + lx,
+          lz * N + (lx - 1), lz * N + (lx + 1)
+        ];
+        for (const ni of nIdx) {
+          if (positions[ni * 3 + 1] <= waterLevel + 0.8) {
+            hasWaterNeighbor = true;
+            waterCount++;
+          }
+        }
+        if (hasWaterNeighbor && !smoothed.has(i)) {
+          smoothed.add(i);
+          // 将该顶点 Y 向 waterLevel 拉近 30%（温和过渡，不破坏地形）
+          const blend = 0.30 * (waterCount / 4); // 邻域水域越多，平滑越强
+          positions[i * 3 + 1] = y + (waterLevel - y) * blend;
+        }
+      }
+    }
   }
 
   // ================= 树木渲染（TREE 语义 → 3D 树） =================
