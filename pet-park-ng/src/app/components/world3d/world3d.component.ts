@@ -421,6 +421,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   // 世界数据
   private gridCache = new Map<string, GridData>();
   private chunkMeshes = new Map<string, THREE.Mesh>();
+  private _lastWaterPushTs = 0;           // 水域推回冷却锁（防止每帧与服务端快照打架导致抖动）
   private inFlight = new Set<string>();
   private objectMeshes = new Map<number, THREE.Object3D>();
   private worldObjects = new Map<number, WorldObjectResp>();
@@ -1279,17 +1280,25 @@ export class World3dComponent implements OnInit, OnDestroy {
       if (groundY != null && groundY < safeLine) { inWater = true; } // 地面低于安全线≈在水里/低洼
     }
 
-    // 推回陆地
+    // 推回陆地（带 3 秒冷却锁，防止每帧与服务端快照打架导致抖动）
     if (inWater) {
-      console.warn('[WATER] 玩家落水！推回陆地', { gx: pgx, gz: pgz, px: this.dpx.toFixed(1), pz: this.dpz.toFixed(1) });
-      const land = this.nearestWalkable(pgx, pgz);
-      if (land) {
-        this.px = land.gx + 0.5; this.pz = land.gz + 0.5;
-        this.dpx = this.px; this.dpz = this.pz; // 立即同步插值目标（避免 lerp 延迟导致持续渲染水下位置）
-        // 同时取消自动导航（避免 AI 继续往水里走）
-        this.pathPoints = []; this.moveTarget = null; this.navGoal = null;
-        if (this.ws.isConnected) {
-          this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
+      const nowMs = Date.now();
+      if (nowMs - this._lastWaterPushTs > 3000) {
+        this._lastWaterPushTs = nowMs;
+        console.warn('[WATER] 玩家落水！推回陆地（单次）', { gx: pgx, gz: pgz, px: this.dpx.toFixed(1), pz: this.dpz.toFixed(1) });
+        const land = this.nearestWalkable(pgx, pgz);
+        if (land) {
+          // 🔴 只设显示位置（dpx/dpz），不覆盖 px/pz（px/pz 由服务端快照驱动，
+          //   覆盖后下一帧又被服务端改回 → 死循环抖动）
+          const newPx = land.gx + 0.5, newPz = land.gz + 0.5;
+          this.dpx = newPx; this.dpz = newPz;
+          this.dpy = (this.heightAt(newPx, newPz) ?? 0) + 0.35;
+          // 取消自动导航
+          this.pathPoints = []; this.moveTarget = null; this.navGoal = null;
+          // 通知服务端停止移动
+          if (this.ws.isConnected) {
+            this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
+          }
         }
       }
     }
@@ -1734,10 +1743,9 @@ export class World3dComponent implements OnInit, OnDestroy {
       const land = this.nearestWalkable(pgx, pgz);
       if (land) {
         const newPx = land.gx + 0.5, newPz = land.gz + 0.5;
-        this.px = newPx; this.pz = newPz;
+        // 只设显示插值目标，不覆盖服务端权威 px/pz（避免 animate 抖动）
         this.dpx = newPx; this.dpz = newPz;
-        this.py = (this.heightAt(newPx, newPz) ?? 0) + 0.35;
-        this.dpy = this.py;
+        this.dpy = (this.heightAt(newPx, newPz) ?? 0) + 0.35;
         // 同步到服务器
         if (this.ws.isConnected) {
           this.ws.send('/app/ws.input', { seq: Date.now(), move: { dx: 0, dz: 0, run: false } });
@@ -2387,28 +2395,30 @@ export class World3dComponent implements OnInit, OnDestroy {
       .then((templates: (THREE.Group | null)[]) => {
         const valid = templates.filter((t): t is THREE.Group => !!t);
         if (valid.length === 0 || !this.scene || this.disposed) return;
-        // 预计算每个模板的水平半径与底座/顶高度
+        // 预计算每个模板的水平半径与高度范围
         const meta = valid.map(tpl => {
           const box = new THREE.Box3().setFromObject(tpl);
           const sx = box.max.x - box.min.x;
           const sz = box.max.z - box.min.z;
-          return { radius: Math.max(sx, sz) / 2, baseY: box.min.y, topY: box.max.y };
+          const sy = box.max.y - box.min.y;
+          return { radius: Math.max(sx, sz) / 2, baseY: box.min.y, height: sy };
         });
         const group = new THREE.Group();
         group.name = 'hy3d_terrain';
-        const wl = this.config?.waterLevel ?? -5;
         for (let i = 0; i < this.islandCenters.length; i++) {
           const c = this.islandCenters[i];
           const idx = i % valid.length;
           const tpl = valid[idx];
           const m = meta[idx];
           const inst = tpl.clone(true);
-          const scale = (c.r * 1.18) / m.radius; // 略放大覆盖块状岛边缘
-          inst.scale.setScalar(scale);
-          // 底座（模型 min.y）对齐到水位线下方 0.3，避免与程序化海洋 z-fighting
-          inst.position.set(c.cx, wl - m.baseY - 0.3, c.cz);
-          inst.rotation.y = (i * 2.39996) % (Math.PI * 2); // 黄金角散布朝向，避免雷同
-          inst.traverse(o => { o.userData['shared'] = true; }); // 共享模板几何，销毁时不重复释放
+          // 缩小到原大小的 1/3（避免巨大实心模型包裹摄像机）
+          const horizScale = (c.r * 0.4) / m.radius;  // 水平缩放：覆盖岛核心区域
+          inst.scale.set(horizScale, horizScale * 0.08, horizScale);  // Y 压扁到 8%（薄地形贴片）
+          // 位置：底座放在该岛中心的地形高度上（坐在程序化地形表面，而非水位线）
+          const groundH = this.heightAt(c.cx, c.cz) ?? 0;
+          inst.position.set(c.cx, groundH - m.baseY * horizScale * 0.08, c.cz);
+          inst.rotation.y = (i * 2.39996) % (Math.PI * 2);
+          inst.traverse(o => { o.userData['shared'] = true; });
           group.add(inst);
         }
         this.hy3dTerrainGroup = group;
