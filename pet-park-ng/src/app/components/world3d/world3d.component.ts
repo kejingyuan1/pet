@@ -487,7 +487,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   // 🔴🔴 跳跃防护（2026-08-16 修复连按空格飞天）
   private _lastJumpTs = 0;                          // 上次跳跃时间戳
   private static readonly JUMP_COOLDOWN_MS = 800;   // 跳跃冷却（ms），防止连按叠加
-  private static readonly MAX_ABOVE_GROUND = 5.0;   // 允许离地最大高度（超过则强制压回）
+  private static readonly MAX_ABOVE_GROUND = 2.5;   // 允许离地最大高度（正常跳最高2m，超过则强制压回）
   // 障碍网格（静态：树/矿/建筑）chunkKey -> set("gx,gz")，与 gridCache 同生命周期
   private obstacleGrid: Map<string, Set<string>> = new Map();
   // 导航卡住检测 / 重寻路
@@ -1247,14 +1247,24 @@ export class World3dComponent implements OnInit, OnDestroy {
     const st = this.physics.getState(this.uid);
     if (st) {
       this.px = st.gx; this.pz = st.gz; this.prot = st.rot;
-      // 🔴 y 值异常 guard：服务端可能广播极端值（如 MySQL 脏数据 y=-798）
-      //   → 前端每帧吃 -798 → 落水保护触发 → 推回 → 下一帧又 -798 → 死循环打转
-      //   正常地形高度约 [-20, 30]，留余量；异常时用本地 heightAt 兜底
+      // 🔴🔴🔴 坐标系变换（2026-08-16 彻底修复飞天根因）：
+      //   服务端物理引擎运行在旧网格坐标系（地面 y≈-0.2~1）
+      //   客户端渲染在 HY3D 视觉坐标系（岛屿表面 y≈4+）
+      //   直接用服务端 py → 要么被判定"在地下"反复上推（正反馈），要么追着服务端的跳跃高值飞走
+      //   正确做法：算出"离服务端地面的高度"，叠加到 HY3D 视觉地面上
+      const serverGround = this.heightAt(st.gx, st.gz);           // 服务端认为的地面
+      const visualGround = this.hy3dSurfaceHeightAt(st.gx, st.gz); // 客户端可见的 HY3D 地面
+      const vG = (visualGround != null ? visualGround : (serverGround ?? 0)); // 视觉地面优先
+      const sG = (serverGround ?? -0.2); // 服务端地面 fallback
       if (st.y < -50 || st.y > 100 || !Number.isFinite(st.y)) {
-        const safeY = this.heightAt(st.gx, st.gz);
-        this.py = (safeY ?? 0) + 0.35;
+        // 异常值：直接用视觉地面 + 脚底偏移
+        this.py = vG + 0.35;
       } else {
-        this.py = st.y;
+        // 正常值：高度差 = 服务端py - 服务端地面 → 叠加到视觉地面上
+        const heightAboveGround = st.y - sG;
+        // 钳制：不允许离视觉地面超过 3m（正常跳最高约 2m）
+        const clampedHeight = Math.min(Math.max(heightAboveGround, -2), 3.0);
+        this.py = vG + clampedHeight;
       }
     }
     // 平滑插值：水平方向纯 lerp（无地面冲突）
@@ -1323,31 +1333,40 @@ export class World3dComponent implements OnInit, OnDestroy {
     //   空中 → 纯 lerp 追踪物理跳跃弧线（丝滑）
     //   地面 → 加速收敛到地面高度（防止下陷/悬空）
     let groundY = this.heightAt(this.dpx, this.dpz);
-    // 🔴 HY3D 岛屿表面修正（2026-08-16：旧网格隐藏后玩家可能被岛屿实体遮挡）
+    // 🔴🔴🔴 HY3D 岛屿表面修正（2026-08-16 彻底修复：旧网格已隐藏，其高度值对视觉定位无意义）
+    //   当 HY3D 高度有效时，始终使用 HY3D 视觉地面（不再取 max，因为旧网格值在此位置可能虚高）
     const hy3dY = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
-    if (hy3dY != null && (groundY == null || hy3dY > groundY)) {
-      groundY = hy3dY; // 用可见的 HY3D 岛屿表面替代不可见的旧网格高度
+    if (hy3dY != null) {
+      groundY = hy3dY; // 强制用可见的 HY3D 岛屿表面作为唯一地面基准
     }
     // ⚠️ heightAt 返回 undefined 时（chunk 未加载），必须用 server 权威 py 做 fallback，
     //    绝不能用 this.dpy —— 否则 targetY=dpy+0.35 导致每帧 +0.14 的正反馈循环 → 玩家无限上升！
     const baseY = groundY ?? this.py;
     const targetY = baseY + 0.35; // 脚底偏移
-    const airborne = this.py > targetY + 0.5;       // 降低阈值（原0.8），更快响应起跳/落地
+        // 🔴🔴 判断是否真的在空中：不仅看 py 高度，还要看最近是否有跳跃输入
+    const timeSinceJump = performance.now() - this._lastJumpTs;
+    const recentlyJumped = timeSinceJump < 1500; // 跳跃后1.5秒内允许离地
+    const airborne = recentlyJumped && (this.py > targetY + 0.3);
+
     if (airborne) {
       // 空中：lerp 平滑追踪物理权威 Y（跳跃弧线丝滑）
       this.dpy += (this.py - this.dpy) * k;
     } else if (groundY != null) {
-      // 着地且有地形数据：加速贴地（比水平 lerp 快，防止陷入地形但不过度生硬）
-      this.dpy += (targetY - this.dpy) * Math.min(k * 2.5, 0.40);
+      // 🔴🔴 着地状态：强力贴地（不管服务端发了什么值，必须在地面附近）
+      this.dpy += (targetY - this.dpy) * Math.min(k * 4.0, 0.60);
     } else {
       // chunk 未加载时：纯 lerp 追踪服务器权威 Y，不自我加速（防上升/下降漂移）
       this.dpy += (this.py - this.dpy) * k;
     }
 
-    // 🔴🔴 2026-08-16 防飞天最终钳制：即使服务端叠加了过多跳跃力，
-    //   客户端也坚决不允许玩家离地超过 MAX_ABOVE_GROUND
+    // 🔴🔴🔴 2026-08-16 防飞天最终钳制（三重保险）：
     const maxY = baseY + World3dComponent.MAX_ABOVE_GROUND;
-    if (this.dpy > maxY) this.dpy = maxY;
+    if (this.dpy > maxY) {
+      this.dpy = maxY;
+      if (!recentlyJumped && this.dpy > targetY + 0.5) {
+        this.dpy = targetY; // 触发钳制且最近没跳跃 → 直接压到地面
+      }
+    }
 
     // 统一一次性设置玩家位置（不再有第二处覆写）
     this.playerMesh.position.set(this.dpx, this.dpy, this.dpz);
@@ -1860,6 +1879,16 @@ export class World3dComponent implements OnInit, OnDestroy {
         animalsInWater: animals.filter(a => a.inWater).length,
         oresInWater: ores.filter(o => o.inWater).length,
         playerInWater: player.inWater ? 1 : 0
+      },
+      // 🔴🔴 Y轴坐标诊断（2026-08-16 飞天修复）
+      yCoord: {
+        serverPy: this.py,           // 服务端原始Y（变换前）
+        displayY: this.dpy,          // 实际渲染Y（变换后+钳制）
+        gridGround: this.heightAt(this.dpx, this.dpz),   // 旧网格地面
+        hy3dGround: this.hy3dSurfaceHeightAt(this.dpx, this.dpz), // HY3D视觉地面
+        maxAboveGround: World3dComponent.MAX_ABOVE_GROUND,
+        recentlyJumped: (performance.now() - this._lastJumpTs) < 1500,
+        lastJumpAgo: ((performance.now() - this._lastJumpTs) / 1000).toFixed(1) + 's'
       },
       // 🔴 地形诊断
       terrain: {
@@ -3888,7 +3917,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 🔴 离地太高时不允许再跳（防止空中无限连跳）
     let groundY = this.heightAt(this.dpx, this.dpz);
     const hy3dY = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
-    if (hy3dY != null && (groundY == null || hy3dY > groundY)) groundY = hy3dY;
+    if (hy3dY != null) groundY = hy3dY; // 🔴 强制优先HY3D
     const baseY = groundY ?? this.py;
     if (this.dpy > baseY + World3dComponent.MAX_ABOVE_GROUND) return;
 
