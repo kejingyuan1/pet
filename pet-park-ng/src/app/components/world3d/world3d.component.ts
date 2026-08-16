@@ -425,6 +425,9 @@ export class World3dComponent implements OnInit, OnDestroy {
   private gridCache = new Map<string, GridData>();
   private chunkMeshes = new Map<string, THREE.Mesh>();
   private _lastWaterPushTs = 0;           // 水域推回冷却锁（防止每帧与服务端快照打架导致抖动）
+  // 🔴 P1 真3D 水系统：游泳状态（离开 HY3D 视觉岛屿 = 处于水中）
+  private swimMode = false;               // 是否处于游泳模式（驱动动画/速度/浮力视觉）
+  private isInWater = false;              // 当前帧是否在水里（playwright 断言用）
   private inFlight = new Set<string>();
   private objectMeshes = new Map<number, THREE.Object3D>();
   private worldObjects = new Map<number, WorldObjectResp>();
@@ -1292,98 +1295,81 @@ export class World3dComponent implements OnInit, OnDestroy {
     while (dr < -Math.PI) dr += 2 * Math.PI;
     this.dprot += dr * k;
 
-    // 🔴 水域保护（三层检测，任一触发即推回陆地）：
-    //   Layer 1: 语义格检测（WATER=0 / RIVER=10）
-    //   Layer 2: 高度检测（y < waterLevel → 必在水下/水面，无论语义如何）
-    //   Layer 3: 服务端 canEnter 已阻挡 WATER+RIVER，但浮点精度/插值延迟/旧快照可能导致短暂落水
+    // 🔴🔴🔴🔴 P1 真3D 水系统：水域检测 → 游泳模式（取代旧"推回陆地"）
+    //   2026-08-16 之前：玩家离开 HY3D 视觉岛屿即被"推回陆地"（假3D，不能下水）。
+    //   P1：离开视觉岛屿（hy3dGroundHere==null，视觉上即处于海面）即进入 swimMode——
+    //   浮在水面自由游动，永不再推回陆地。服务端已放行水格 + 浮力，玩家可真正游进海里。
     const pgx = Math.floor(this.dpx);
     const pgz = Math.floor(this.dpz);
-    let inWater = false;
-
-    // 🔴🔴🔴 Layer 0（2026-08-16 修复"双击走不过去/WASD 橡皮筋"根因）：
-    //   玩家脚下 raycast 命中 HY3D 视觉岛屿表面 → 绝不在水里，直接跳过 Layer 1/2。
-    //   旧逻辑用旧网格语义/高度判水：HY3D 世界视觉地面 y≈4+，而旧网格大量格子高度 <0
-    //   → 出生点/岛上永久误报"落水"，每 3 秒打断自动导航（清空 pathPoints/moveTarget）
-    //   并把人瞬移回去 → 用户看到"双击不移动、按键没效果"。Layer 1/2 仅对岛外海域生效。
+    const wl = this.config?.waterLevel ?? -5;
     const hy3dGroundHere = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
-    if (hy3dGroundHere == null) {
-      // Layer 1: 语义格检测
-      const cc = this.cellChunk(pgx, pgz);
-      if (cc) {
-        const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
-        if (g) {
-          const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
-          if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
-            const sem = g.semantic[lz * CHUNK + lx];
-            if (sem === 0 || sem === 10) { inWater = true; } // WATER or RIVER
-          }
-        }
-      }
-
-      // Layer 2: 高度 fallback（语义数据未加载时也能保护）
+    // 🔴 P1 游泳判定：离开"可行走岛屿圆环"(onIslandCircle, 1.2r) 且离开 HY3D 视觉岛面 → 真在海中。
+    //   圆环内(1.1r~1.2r)是可走沙滩（即便 HY3D 视觉岛仅覆盖 1.1r），不算水；
+    //   出生点/沙滩都在此圆环内 → 不会误触发游泳（修复"出生即游泳"回归）。
+    const onIsl = this.onIslandCircle(this.dpx + 0.5, this.dpz + 0.5);
+    let inWater = false;
+    if (!onIsl) {
+      inWater = (hy3dGroundHere == null);
       if (!inWater) {
-        const groundY = this.heightAt(this.dpx, this.dpz);
-        const wl = this.config?.waterLevel ?? -5;
-        const safeLine = Math.max(wl + 0.5, 0); // 🔴🔴 安全线=海平面以上
-        if (groundY != null && groundY < safeLine) { inWater = true; } // 地面低于安全线≈在水里/低洼
-      }
-    }
-
-    // 推回陆地（带 3 秒冷却锁，防止每帧与服务端快照打架导致抖动）
-    if (inWater) {
-      const nowMs = Date.now();
-      if (nowMs - this._lastWaterPushTs > 3000) {
-        this._lastWaterPushTs = nowMs;
-        console.warn('[WATER] 玩家落水！推回陆地（单次）', { gx: pgx, gz: pgz, px: this.dpx.toFixed(1), pz: this.dpz.toFixed(1) });
-        const land = this.nearestWalkable(pgx, pgz);
-        if (land) {
-          // 🔴 只设显示位置（dpx/dpz），不覆盖 px/pz（px/pz 由服务端快照驱动，
-          //   覆盖后下一帧又被服务端改回 → 死循环抖动）
-          const newPx = land.gx + 0.5, newPz = land.gz + 0.5;
-          this.dpx = newPx; this.dpz = newPz;
-          // 🔴 2026-08-16：Y 优先用 HY3D 视觉地面（旧网格高度比岛面低 4m+ → 瞬移坠崖观感）
-          const hyLand = this.hy3dSurfaceHeightAt(newPx, newPz);
-          this.dpy = (hyLand != null ? hyLand : (this.heightAt(newPx, newPz) ?? 0)); // 脚底贴地
-          // 取消自动导航
-          this.pathPoints = []; this.moveTarget = null; this.navGoal = null; this.miniTarget = null;
-          // 通知服务端停止移动
-          if (this.ws.isConnected) {
-            this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
+        // 兜底：语义/高度判水（HY3D 射线偶发未命中的情况）
+        const cc = this.cellChunk(pgx, pgz);
+        if (cc) {
+          const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+          if (g) {
+            const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
+            if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
+              const sem = g.semantic[lz * CHUNK + lx];
+              if (sem === 0 || sem === 10) inWater = true; // WATER or RIVER
+            }
           }
         }
+        const groundY = this.heightAt(this.dpx, this.dpz);
+        const safeLine = Math.max(wl + 0.5, 0); // 🔴🔴 安全线=海平面以上
+        if (groundY != null && groundY < safeLine) inWater = true; // 高度低于安全线≈在水里
+      }
+    }
+    this.isInWater = inWater;
+    this.swimMode = inWater; // 游泳模式 = 在水里
+
+    if (inWater) {
+      // ===================== 游泳模式 =====================
+      // 玩家浮在水面（waterLevel 略上方），自由游动，永不被推回陆地。
+      const floatY = wl + 0.15; // 脚底略沉入水面，呈现"浮在水上"观感
+      const swimLerp = Math.min(1.0, dt * 6);
+      this.dpy += (floatY - this.dpy) * swimLerp;
+      // 蹬水（跳跃键）：在水面做小幅上下起伏，幅度限制在 ±0.4m，不真正离开水面
+      const msSinceJump = performance.now() - this._lastJumpTs;
+      const jumpDurMs = (2 * World3dComponent.JUMP_VEL / World3dComponent.JUMP_GRAVITY) * 1000;
+      if (msSinceJump < jumpDurMs) {
+        const jt = msSinceJump / 1000;
+        const rise = World3dComponent.JUMP_VEL * jt - 0.5 * World3dComponent.JUMP_GRAVITY * jt * jt;
+        this.dpy += Math.max(-0.15, Math.min(0.4, rise * 0.25));
+      }
+      this.py = this.dpy; // 逻辑 Y 同步水面（心跳/小地图坐标合理）
+      this._lastWaterPushTs = Date.now(); // 抑制旧推回冷却（swimMode 下永不推回）
+    } else {
+      // ===================== 陆地 / 坡地（原"核弹级防飞天"逻辑，保持不变）=====================
+      // 🔴🔴🔴🔴 核弹级防飞天修复（2026-08-16 第三轮）：
+      //   不再信任服务端 py / dpy 的任何累积值。每帧根据 HY3D 地面高度直接计算正确 Y，仅跳跃时允许临时离地。
+      const gridGround = this.heightAt(this.dpx, this.dpz);
+      // 有 HY3D 就用 HY3D（视觉地面），否则用旧网格兜底
+      const effectiveGround = (hy3dGroundHere != null) ? hy3dGroundHere : (gridGround ?? 0);
+      const GROUND_Y = effectiveGround;
+      // 🔴🔴🔴 跳跃本地抛物线（2026-08-16 修复"最后几帧卡顿"根因）
+      const msSinceJump = performance.now() - this._lastJumpTs;
+      const jumpDurMs = (2 * World3dComponent.JUMP_VEL / World3dComponent.JUMP_GRAVITY) * 1000; // ≈680ms 滞空
+      const inJumpWindow = msSinceJump < jumpDurMs;
+      if (inJumpWindow) {
+        const jt = msSinceJump / 1000; // 跳跃经过秒数
+        const rise = World3dComponent.JUMP_VEL * jt - 0.5 * World3dComponent.JUMP_GRAVITY * jt * jt;
+        this.dpy = GROUND_Y + Math.max(0, rise); // 抛物线：0 → 1.44m → 0，单调平滑无突跳
+      } else {
+        // 🔴🔴 平滑落地（2026-08-16）：抛物线终点恰好=地面，此快速 lerp 仅兜底台阶/地形突变
+        const landLerp = Math.min(1.0, dt * 20);
+        this.dpy += (GROUND_Y - this.dpy) * landLerp;
       }
     }
 
-    // 🔴🔴🔴🔴 核弹级防飞天修复（2026-08-16 第三轮）：
-    //   不再信任服务端 py / dpy 的任何累积值。
-    //   每帧根据 HY3D 地面高度直接计算正确 Y，仅跳跃时允许临时离地。
-    //   （hy3dGroundHere 已在本帧上方水域保护处算好，直接复用，避免二次 raycast）
-    const gridGround = this.heightAt(this.dpx, this.dpz);
-    // 有 HY3D 就用 HY3D（视觉地面），否则用旧网格兜底
-    const effectiveGround = (hy3dGroundHere != null) ? hy3dGroundHere : (gridGround ?? 0);
-    const FOOT_OFFSET = 0; // 脚底贴地，无偏移
-    const GROUND_Y = effectiveGround + FOOT_OFFSET;
-    
-    // 🔴🔴🔴 跳跃本地抛物线（2026-08-16 修复"最后几帧卡顿"根因）：
-    //   旧实现：跳跃窗口内 lerp 追服务端 py → 快照抖动 + 1.2s 窗口到期瞬间从
-    //   "追服务端高度"硬切到"落地 lerp" → 落地前几帧视觉突跳/卡顿。
-    //   新实现：完全本地抛物线 y = v0*t - ½g*t²（参数与服务端 JUMP_VEL=8.5/GRAVITY=25 一致），
-    //   t=0.68s 精确回到地面 → 落地零突跳、丝滑；地面每帧重算，斜坡/移动中跳跃自然贴合。
-    const msSinceJump = performance.now() - this._lastJumpTs;
-    const jumpDurMs = (2 * World3dComponent.JUMP_VEL / World3dComponent.JUMP_GRAVITY) * 1000; // ≈680ms 滞空
-    const inJumpWindow = msSinceJump < jumpDurMs;
-
-    if (inJumpWindow) {
-      const jt = msSinceJump / 1000; // 跳跃经过秒数
-      const rise = World3dComponent.JUMP_VEL * jt - 0.5 * World3dComponent.JUMP_GRAVITY * jt * jt;
-      this.dpy = GROUND_Y + Math.max(0, rise); // 抛物线：0 → 1.44m → 0，单调平滑无突跳
-    } else {
-      // 🔴🔴 平滑落地（2026-08-16）：抛物线终点恰好=地面，此快速 lerp 仅兜底台阶/地形突变
-      const landLerp = Math.min(1.0, dt * 20);
-      this.dpy += (GROUND_Y - this.dpy) * landLerp;
-    }
-
-    // [Y-DEBUG removed 2026-08-16] 飞天问题已修复，不再需要每帧日志
     // 统一一次性设置玩家位置（不再有第二处覆写）
     this.playerMesh.position.set(this.dpx, this.dpy, this.dpz);
     this.playerMesh.rotation.y = this.dprot;
@@ -1732,8 +1718,9 @@ export class World3dComponent implements OnInit, OnDestroy {
       const s = getSem(gx, gz);
       if (s == null) return false;
       // 🔴 2026-08-16 坡地修复：岛内豁免旧网格语义（MOUNTAIN=3 等误判）——HY3D 视觉岛面
-      //   平滑可走，旧网格在下方起伏会把坡地判成"山"→ A* 无路可走。岛内只挡水（海岸错配环带）。
-      if (s === 0 || s === 10) return false;
+      //   平滑可走，旧网格在下方起伏会把坡地判成"山"→ A* 无路可走。
+      // 🔴 P1：放行水格（0/10）——玩家可游泳穿越海域；代价由 A* 评分惩罚（见下方 costMul），
+      //   让自动导航优先走陆地，仅在目标在水中/必须下水时才游过去。
       if (this.isObstacle(gx, gz)) return false;       // 树/矿/建筑占位 → 绕行
       return true;
     };
@@ -1779,7 +1766,10 @@ export class World3dComponent implements OnInit, OnDestroy {
         const nk = key(ngx, ngz);
         if (closed.has(nk)) continue;
         const step = (dx !== 0 && dz !== 0) ? 1.4142 : 1;
-        const tentative = (gScore.get(curK) ?? 0) + step;
+        // 🔴 P1：水格高代价，自动导航优先走陆地但可游泳穿越（double-click 到水中目标时可游泳前往）
+        const nSem = getSem(ngx, ngz);
+        const costMul = (nSem === 0 || nSem === 10) ? 6 : 1;
+        const tentative = (gScore.get(curK) ?? 0) + step * costMul;
         if (tentative < (gScore.get(nk) ?? Infinity)) {
           came.set(nk, curK);
           gScore.set(nk, tentative);
@@ -1839,7 +1829,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return false;
     if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) return false; // 🔴 岛外（视觉海/虚空）不可走
     const s = grid.semantic[lz * CHUNK + lx];
-    if (s === 0 || s === 10) return false; // 🔴 岛内只挡水（与 walk() 同步放宽坡地语义）
+    // 🔴 P1：放行水格（0/10）——玩家可游泳进入海中（与 walk() 同步）
     if (this.isObstacle(gx, gz)) return false; // 树/矿/建筑占位 → 不可走
     return true;
   }
@@ -1917,7 +1907,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     const animals = this.animalList.map(a => { const s = sample(a.x, a.z); return { x: +a.x.toFixed(2), z: +a.z.toFixed(2), y: +a.y.toFixed(2), ...s }; });
     const ores = this.oreList.map(o => { const s = sample(o.x, o.z); return { x: +o.x.toFixed(2), z: +o.z.toFixed(2), y: +o.y.toFixed(3), type: o.type, ...s }; });
     const ps = sample(this.dpx, this.dpz);
-    const player = { x: +this.dpx.toFixed(2), z: +this.dpz.toFixed(2), y: +this.dpy.toFixed(2), ...ps };
+    const player = { x: +this.dpx.toFixed(2), z: +this.dpz.toFixed(2), y: +this.dpy.toFixed(2), ...ps, swimMode: this.swimMode, inWater: this.isInWater };
     // 🔴🔴 chunk mesh 诊断（2026-08-15：地形消失排查）—— 深挖"mesh 在 scene 里却不渲染"的根因
     const chunkMeshDiag: { key: string; visible: boolean; worldVisible: boolean; verts: number; indexCount: number; drawCount: number; materialVisible: boolean; materialOpacity: number; materialType: string; renderOrder: number; parentIsScene: boolean; sphereR: number; yRange: [number, number] }[] = [];
     let totalChunkVerts = 0, chunkYMin = Infinity, chunkYMax = -Infinity;
@@ -1967,7 +1957,8 @@ export class World3dComponent implements OnInit, OnDestroy {
         charsInWater: chars.filter(c => c.inWater).length,
         animalsInWater: animals.filter(a => a.inWater).length,
         oresInWater: ores.filter(o => o.inWater).length,
-        playerInWater: player.inWater ? 1 : 0
+        playerInWater: player.inWater ? 1 : 0,
+        playerSwimMode: player.swimMode ? 1 : 0
       },
       // 🔴🔴🔴 Y轴坐标诊断（2026-08-16 核弹级修复后）
       yCoord: {
@@ -2000,6 +1991,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         loaded: !!this.hy3dTerrainGroup,
         islands: this.hy3dTerrainGroup ? this.hy3dTerrainGroup.children.length : 0,
         centers: this.islandCenters.length,
+        centerList: this.islandCenters.map(c => ({ cx: c.cx, cz: c.cz, r: c.r })),
         childCount: this.scene.children.length
       },
       waterPlane: !!this.waterPlane,
@@ -2035,6 +2027,28 @@ export class World3dComponent implements OnInit, OnDestroy {
         moveTarget: this.moveTarget ? { x: +this.moveTarget.x.toFixed(1), z: +this.moveTarget.z.toFixed(1) } : null,
         playerDp: { x: +this.dpx.toFixed(1), z: +this.dpz.toFixed(1) }
       }
+    };
+    // 🔴 P1：暴露游泳判定探针（playwright 验证用——给定世界坐标，返回是否处于水中）
+    (window as any).__isSwimAt = (x: number, z: number): boolean => {
+      if (this.onIslandCircle(x + 0.5, z + 0.5)) return false; // 可走岛屿圆环内 = 陆地
+      const hy3d = this.hy3dSurfaceHeightAt(x, z);
+      if (hy3d == null) return true; // 离开视觉岛 + 离岛圆环 = 水
+      const pgx = Math.floor(x), pgz = Math.floor(z);
+      const wl = this.config?.waterLevel ?? -5;
+      const cc = this.cellChunk(pgx, pgz);
+      if (cc) {
+        const grid = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+        if (grid) {
+          const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
+          if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
+            const sem = grid.semantic[lz * CHUNK + lx];
+            if (sem === 0 || sem === 10) return true;
+          }
+        }
+      }
+      const gy = this.heightAt(x, z);
+      if (gy != null && gy < Math.max(wl + 0.5, 0)) return true;
+      return false;
     };
   }
 

@@ -44,6 +44,7 @@ public class WorldPhysicsService {
         double rot;
         double vx, vz, vy;  // vy = 垂直速度（跳跃用）
         boolean grounded;     // 是否着地（防止连跳）
+        boolean inWater;      // 🔴 P1 游泳：是否处于水中（浮力模式）
         long lastTick;
     }
     private final Map<Long, Player> players = new ConcurrentHashMap<>();
@@ -54,6 +55,8 @@ public class WorldPhysicsService {
     private static final double FIXED_DT = 1.0 / 60.0;
     /** 重力加速度（世界单位/s²） */
     private static final double GRAVITY = 25.0;
+    /** 🔴 P1 游泳浮力重力：水中大幅削弱（仅用于把玩家稳稳压在水面附近，避免无限下沉/飞出） */
+    private static final double GRAVITY_BUOY = 6.0;
     /** 跳跃初速度 */
     private static final double JUMP_VEL = 8.5;
     /** 自动上台阶的最大高度差（世界单位/格）：着地时邻格高度差 ≤ 此值即可走上去
@@ -189,7 +192,19 @@ public class WorldPhysicsService {
                 p.vy = JUMP_VEL;
                 p.grounded = false;
             }
+            // 🔴🔴 P1 真3D 水系统：水域判定（当前格为水，或岛外地形低于水面 → 处于水中）
+            int cgx = (int) Math.floor(p.gx), cgz = (int) Math.floor(p.gz);
+            CellType curT = terrain.semanticAt(cgx, cgz);
+            double wl = terrain.getWaterLevel();
+            boolean onIsland = terrain.onIslandCore(cgx, cgz);
+            boolean inWater = terrain.inWorld(cgx, cgz)
+                    && ((curT == CellType.WATER || curT == CellType.RIVER)
+                        || (!onIsland && terrain.heightAt(cgx, cgz) < wl));
+            p.inWater = inWater;
+
             double speed = (runScale > 0.5) ? 9.0 : 4.0;
+            if (inWater) speed *= 0.5; // 🔴 P1 游泳速度减半（浮力阻力）
+
             // 🔴 2026-08-16 修复（WASD 几乎不动的根因）：着地行走时，若本 tick 没有新输入帧
             //   绝不能清零速度——否则输入频率(≈30Hz)低于物理 tick(60Hz)时，约一半 tick 把速度归零，
             //   玩家只在"恰好含输入帧"的 tick 挪一小步 → 行走又慢又卡，相机跟随下看起来"按了没反应"。
@@ -212,19 +227,35 @@ public class WorldPhysicsService {
                 p.gz = ngz;
             }
             if (Math.abs(p.vx) > 0.01 || Math.abs(p.vz) > 0.01) p.rot = Math.atan2(p.vx, p.vz);
-            // 垂直物理：重力 + 地面碰撞
-            double groundY = terrain.heightAt((int)Math.floor(p.gx), (int)Math.floor(p.gz)) + 0.7;
-            if (!p.grounded) {
-                p.vy -= GRAVITY * dt; // 重力
-                p.y += p.vy * dt;
-                // 落地检测
-                if (p.y <= groundY) {
-                    p.y = groundY;
-                    p.vy = 0;
-                    p.grounded = true;
+            // 🔴🔴 P1 垂直物理：分水中浮力 / 陆地重力两套
+            if (inWater) {
+                // 浮力：玩家浮在水面 (waterLevel 略上方)，平滑贴合，弱重力把人稳稳压在水面。
+                double floatY = wl + 0.3;
+                if (p.grounded) {
+                    p.y = floatY;
+                } else {
+                    // 蹬水/跳跃：弱重力，钳制在水面附近 ±0.4m，并防止无限下沉
+                    p.vy -= GRAVITY_BUOY * dt;
+                    p.y += p.vy * dt;
+                    if (p.y > floatY + 0.4) { p.y = floatY + 0.4; if (p.vy > 0) p.vy = 0; }
+                    if (p.y < wl - 4) { p.y = wl - 4; p.vy = 0; }
+                    if (p.y <= floatY) { p.y = floatY; p.vy = 0; p.grounded = true; } // 落回水面=贴面着地
                 }
             } else {
-                p.y = groundY; // 着地时始终贴地
+                // 垂直物理：重力 + 地面碰撞
+                double groundY = terrain.heightAt(cgx, cgz) + 0.7;
+                if (!p.grounded) {
+                    p.vy -= GRAVITY * dt; // 重力
+                    p.y += p.vy * dt;
+                    // 落地检测
+                    if (p.y <= groundY) {
+                        p.y = groundY;
+                        p.vy = 0;
+                        p.grounded = true;
+                    }
+                } else {
+                    p.y = groundY; // 着地时始终贴地
+                }
             }
         }
         // 10Hz 广播：批量 POSITION_SNAPSHOT 到 /topic/world（前端 WorldPhysicsService 订阅此 topic）
@@ -264,8 +295,9 @@ public class WorldPhysicsService {
         if (!terrain.inWorld(gx, gz)) return false;
         CellType t = terrain.semanticAt(gx, gz);
 
-        // 水域永远不可进入（无论着地还是空中都不能跳过河/海）
-        if (t == CellType.WATER || t == CellType.RIVER) return false;
+        // 🔴 P1 真3D 水系统：水域允许进入（游泳）。仅放行碰撞，运动学/浮力由 tick 单独处理，
+        //   玩家会被浮力稳稳压在水面（waterLevel 附近），而非"踏水行走"或沉底。
+        if (t == CellType.WATER || t == CellType.RIVER) return true;
 
         double curH = terrain.heightAt((int) Math.floor(p.gx), (int) Math.floor(p.gz));
         double targetH = terrain.heightAt(gx, gz);
