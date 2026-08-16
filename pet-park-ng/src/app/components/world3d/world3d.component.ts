@@ -453,6 +453,10 @@ export class World3dComponent implements OnInit, OnDestroy {
   // 🔴 水域调试钩子：记录所有已放置对象的世界坐标，供 playwright 断言"无对象在水中"
   private treeList: { x: number; z: number }[] = [];
   private charList: { x: number; y: number; z: number }[] = [];
+
+  // HY3D 地图地形：实例化的岛屿视觉层（覆盖程序化块状岛屿，保留网格做物理）
+  private hy3dTerrainGroup: THREE.Group | null = null;
+  private islandCenters: { cx: number; cz: number; r: number }[] = [];
   private animalList: { x: number; y: number; z: number }[] = [];
   private oreList: { x: number; y: number; z: number; type: string }[] = []; // 🔴 矿石坐标跟踪（用于调试+水域校验）
   private _dbgTick = 0;
@@ -598,6 +602,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         this.connectWs();
         this.loadMiningProfile();
         this.preloadModels();   // M5：加载男孩/女孩/树 GLB 模板
+        this.loadHy3dTerrain(); // HY3D 岛屿视觉层（覆盖程序化块状岛屿）
         this.animate();
       },
       error: () => { this.hint = '世界配置加载失败：请确认后端已启动'; }
@@ -615,6 +620,17 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 清理天空装饰
     if (this.starField) { this.scene?.remove(this.starField); this.starField.geometry.dispose(); this.starMaterial.dispose(); }
     if (this.cloudGroup) { this.scene?.remove(this.cloudGroup); }
+    // 清理 HY3D 地形岛屿层
+    if (this.hy3dTerrainGroup) {
+      this.scene?.remove(this.hy3dTerrainGroup);
+      this.hy3dTerrainGroup.traverse(o => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && !o.userData?.['shared']) {
+          // 几何/材质由模板共享，traverse 仅移除引用；模板清理交由 asset.service 缓存管理
+        }
+      });
+      this.hy3dTerrainGroup = null;
+    }
     // （waterPlane 已移除）
     this.renderer?.dispose();
     this.scene?.traverse(o => {
@@ -1825,6 +1841,12 @@ export class World3dComponent implements OnInit, OnDestroy {
         bg: this.scene.background ? ('#' + (this.scene.background as any).color?.getHexString?.() || String(this.scene.background)) : 'none',
         fog: !!this.scene.fog,
         childCount: this.scene.children.length
+      },
+      hy3dTerrain: {
+        loaded: !!this.hy3dTerrainGroup,
+        islands: this.hy3dTerrainGroup ? this.hy3dTerrainGroup.children.length : 0,
+        centers: this.islandCenters.length,
+        childCount: this.scene.children.length
       }
     };
   }
@@ -2308,6 +2330,94 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
     g.add(trunk);
     return g;
+  }
+
+  // ================= HY3D 地图地形（实例化为 22 岛视觉层） =================
+
+  /** 复算 22 岛中心 + 半径（与后端 TerrainService.buildIslands 确定性一致）
+   *  用 BigInt 精确复刻 Java long 位运算，避免前端浮点/移位差异导致岛屿错位 */
+  private computeIslandCenters(): void {
+    const seedText = this.config?.seed || 'dudu2019';
+    const MASK = 0xFFFFFFFFFFFFFFFFn;
+    let base = 1125899906842597n;
+    for (let i = 0; i < seedText.length; i++) {
+      base = (31n * base + BigInt(seedText.charCodeAt(i))) & MASK;
+    }
+    const SALT_ISLAND = 0x1B873593n;
+    const scatterHash = (gx: number, gz: number, salt: bigint): number => {
+      let h = (base ^ salt) & MASK;
+      h = (h * 6364136223846793005n + BigInt(gx) * 0x9E3779B97F4A7C15n) & MASK;
+      h = (((h ^ (h >> 13n)) & MASK) * 0xBF58476D1CE4E5B9n) & MASK;
+      h = (h ^ (h >> 16n)) & MASK;
+      h = (h * 0x94D049BB133111EBn) & MASK;
+      h = h ^ (h >> 31n);
+      // Java: gz 为 int，gz<<32 因 int 移位掩码(0x1F) ≡ gz；long 提升后 XOR
+      h = (h + ((BigInt(gz) * 0x9E3779B97F4A7C15n) ^ BigInt(gz))) & MASK;
+      h = (((h ^ (h >> 13n)) & MASK) * 0xBF58476D1CE4E5B9n) & MASK;
+      h = h ^ (h >> 16n);
+      const low32 = h & 0xFFFFFFFFn;
+      return Number(low32) / 4294967296.0;
+    };
+    const ISLAND_COUNT = 22, SPREAD = 2600, BASE_R = 115, R_VAR = 75;
+    this.islandCenters = [];
+    for (let i = 0; i < ISLAND_COUNT; i++) {
+      const hx = scatterHash(i * 3 + 1, 777, SALT_ISLAND);
+      const hz = scatterHash(i * 3 + 2, 888, SALT_ISLAND);
+      const hr = scatterHash(i * 3 + 3, 999, SALT_ISLAND);
+      this.islandCenters.push({
+        cx: (hx - 0.5) * SPREAD,
+        cz: (hz - 0.5) * SPREAD,
+        r: BASE_R + hr * R_VAR,
+      });
+    }
+  }
+
+  /** 加载 HY3D 岛屿变体并实例化为 22 座岛的视觉层（覆盖程序化块状岛屿）
+   *  保留程序化网格用于物理/碰撞/采矿/钓鱼逻辑；HY3D 仅作视觉覆盖 */
+  private loadHy3dTerrain(): void {
+    if (this.hy3dTerrainGroup) return;
+    this.computeIslandCenters();
+    const variantPaths = [
+      'assets/3d_build/terrain-hy3d/hy3_island_draco.glb',
+      'assets/3d_build/terrain-hy3d/hy3_island_lake_draco.glb',
+      'assets/3d_build/terrain-hy3d/hy3_island_peninsula_draco.glb',
+      'assets/3d_build/terrain-hy3d/hy3_island_mountain_draco.glb',
+    ];
+    Promise.all(variantPaths.map(p => this.assets.loadModel(p)))
+      .then((templates: (THREE.Group | null)[]) => {
+        const valid = templates.filter((t): t is THREE.Group => !!t);
+        if (valid.length === 0 || !this.scene || this.disposed) return;
+        // 预计算每个模板的水平半径与底座/顶高度
+        const meta = valid.map(tpl => {
+          const box = new THREE.Box3().setFromObject(tpl);
+          const sx = box.max.x - box.min.x;
+          const sz = box.max.z - box.min.z;
+          return { radius: Math.max(sx, sz) / 2, baseY: box.min.y, topY: box.max.y };
+        });
+        const group = new THREE.Group();
+        group.name = 'hy3d_terrain';
+        const wl = this.config?.waterLevel ?? -5;
+        for (let i = 0; i < this.islandCenters.length; i++) {
+          const c = this.islandCenters[i];
+          const idx = i % valid.length;
+          const tpl = valid[idx];
+          const m = meta[idx];
+          const inst = tpl.clone(true);
+          const scale = (c.r * 1.18) / m.radius; // 略放大覆盖块状岛边缘
+          inst.scale.setScalar(scale);
+          // 底座（模型 min.y）对齐到水位线下方 0.3，避免与程序化海洋 z-fighting
+          inst.position.set(c.cx, wl - m.baseY - 0.3, c.cz);
+          inst.rotation.y = (i * 2.39996) % (Math.PI * 2); // 黄金角散布朝向，避免雷同
+          inst.traverse(o => { o.userData['shared'] = true; }); // 共享模板几何，销毁时不重复释放
+          group.add(inst);
+        }
+        this.hy3dTerrainGroup = group;
+        this.scene.add(group);
+        const dbg = (window as any).__worldDebug || ((window as any).__worldDebug = {});
+        dbg.hy3dIslands = this.islandCenters.length;
+        dbg.hy3dVariants = valid.length;
+      })
+      .catch(err => console.warn('[hy3d-terrain] 加载失败', err));
   }
 
   // ================= M5 角色/树 GLB 模板（HY3D 生成） =================
