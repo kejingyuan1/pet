@@ -66,6 +66,10 @@ public class WorldPhysicsService {
     private static final double STEP_HEIGHT_ISLAND = 6.0;
     /** 🔴 岛内可走坡度（°）——同上，旧网格 slopeAt 在岛内不可信 */
     private static final double SLOPE_WALK_DEG_ISLAND = 55.0;
+    /** 🔴 2026-08-16 空气墙根治：岛内坡地/山体不再按坡度或台阶高差拦截。
+     *   仅当单格向上攀爬超过 CLIMB_HEIGHT（真正的垂直绝壁）才视为不可走；
+     *   正常地形/山体的单格高差远小于此，玩家可自由行走，由 tick 把 y 贴到地面高度。 */
+    private static final double CLIMB_HEIGHT = 9.0;
     private long lastSnapshotAt = System.currentTimeMillis();
     /** 上一帧 tick 的真实时间戳（纳秒），用于计算与帧率无关的 dt（2026-08-16 修复行走过慢） */
     private long lastTickNanos = 0;
@@ -285,8 +289,9 @@ public class WorldPhysicsService {
     }
 
     /** 移动可达判定（替代原 canStand）：
-     *  - 水永远不可进入（不能跳过河）
-     *  - 着地：不可行走格(矿脉/山)/障碍(树/岩) 挡住；坡度可走 或 高度差≤STEP_HEIGHT → 可进入
+     *  - 水域允许进入（游泳，P1 真3D 水系统：浮力把玩家稳稳压在水面附近）
+     *  - 着地：仅硬障碍(树/岩) 与"真正垂直绝壁"(单格向上攀爬>CLIMB_HEIGHT) 挡路；
+     *          坡地/山体/缓坡/下坡一律放行（🔴 2026-08-16 空气墙根治，不再按坡度角或台阶高差拦截）
      *  - 空中：飞越所有非水格（矿脉/树/岩均可跳过），实现"跳过障碍"
      */
     private static final double JUMP_CLEARANCE = 0.6; // 离地超过此高度视为"在飞越"
@@ -303,21 +308,18 @@ public class WorldPhysicsService {
         double targetH = terrain.heightAt(gx, gz);
 
         if (p.grounded) {
-            // 着地状态：硬障碍(树/岩)挡住；矿脉可走（小矿石堆，能踩上去采矿）
+            // 🔴 2026-08-16 空气墙根治（用户随机走动撞墙）：岛内坡地/山体一律可走，
+            //   不再按坡度角或台阶高差拦截。原 onIslandCore/slopeAt/step 三重判定会把
+            //   HY3D 平滑岛面上的"假陡坡"误判成绝壁 → WASD 走不动（只能跳着走）。
+            //   现在仅两种情形挡路：
+            //     1) 硬障碍(树/岩)：t.isObstacle() → 实体占位，必须绕行；
+            //     2) 真正的垂直绝壁：单格向上攀爬 > CLIMB_HEIGHT（正常地形/山体单格高差远小于此，
+            //        平滑地形里永远不会触发，仅作安全护栏防止"一步登天"）。
+            //   下坡/平路/缓坡/山体全部放行；垂直 y 由 tick 把玩家贴到目标格地面高度。
             if (t.isObstacle()) return false;
-            // 🔴 2026-08-16 坡地移动修复：HY3D 视觉岛面平滑可走，但旧数学网格在岛内起伏，
-            //   会把坡地误判成 MOUNTAIN 语义/陡坡 → 岛内坡地 WASD 完全走不动（只能空格+方向跳着走）。
-            //   岛内（islandFalloff≥0.35）：豁免旧网格语义限制 + 台阶/坡度大幅放宽；
-            //   岛外（旧网格大海区）：保持原有语义与坡度规则（台阶已放宽到 3.0）。
-            boolean onIsland = terrain.onIslandCore(gx, gz);
-            if (!onIsland) {
-                if (!t.isWalkable() && !t.isOre()) return false;
-            }
-            double stepLimit = onIsland ? STEP_HEIGHT_ISLAND : STEP_HEIGHT;
-            double slopeDeg = onIsland ? SLOPE_WALK_DEG_ISLAND : world.slopeWalkDeg();
-            boolean slopeOk = terrain.slopeAt(gx, gz) < Math.tan(Math.toRadians(slopeDeg));
-            boolean stepOk = Math.abs(targetH - curH) <= stepLimit;
-            return slopeOk || stepOk;
+            double climb = targetH - curH; // 仅向上的台阶需要护栏，向下永远放行
+            if (climb > CLIMB_HEIGHT) return false;
+            return true;
         }
 
         // 空中状态：只要不是水就可以飞越（上面已排除 WATER）

@@ -2050,6 +2050,47 @@ export class World3dComponent implements OnInit, OnDestroy {
       if (gy != null && gy < Math.max(wl + 0.5, 0)) return true;
       return false;
     };
+    // 🔴 空气墙验证探针（playwright 用）：复用既有 moveTarget 世界空间自动驾驶 + A* 寻路，
+    //   让玩家朝"最近的 MOUNTAIN(sem===3) 格"行走，端到端验证服务端 canEnter 不再把坡地/山体判成空气墙。
+    (window as any).__goto = (x: number, z: number): void => { this.moveTarget = { x, z }; };
+    (window as any).__clearGoto = (): void => { this.moveTarget = null; };
+    (window as any).__pathTo = (x: number, z: number): any => {
+      return this.findPath(Math.floor(this.dpx), Math.floor(this.dpz), Math.floor(x), Math.floor(z));
+    };
+    (window as any).__nearestMountain = (maxR = 320, minR = 0): any => {
+      const px = Math.floor(this.dpx), pz = Math.floor(this.dpz);
+      let best: any = null, bestD = Infinity;
+      for (const [key, grid] of (this.gridCache as Map<string, any>)) {
+        const parts = key.split('_'); const cx = +parts[0], cz = +parts[1];
+        const sem = grid.semantic as Int8Array | number[];
+        for (let lz = 0; lz < CHUNK; lz++) {
+          for (let lx = 0; lx < CHUNK; lx++) {
+            if (sem[lz * CHUNK + lx] !== 3) continue; // MOUNTAIN
+            const gx = cx * CHUNK + lx, gz = cz * CHUNK + lz;
+            const d = Math.hypot(gx - px, gz - pz);
+            if (d > maxR || d < minR) continue;
+            if (d < bestD) { bestD = d; best = { gx, gz, x: gx + 0.5, z: gz + 0.5, sem: 3, dist: +d.toFixed(1) }; }
+          }
+        }
+      }
+      return best;
+    };
+    (window as any).__playerCell = (): any => {
+      const gx = Math.floor(this.dpx), gz = Math.floor(this.dpz);
+      const cc = this.cellChunk(gx, gz);
+      let sem = -1;
+      if (cc) { const g = this.gridCache.get(`${cc.cx}_${cc.cz}`); if (g) { const lx = gx - cc.cx * CHUNK, lz = gz - cc.cz * CHUNK; if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) sem = (g.semantic as any)[lz * CHUNK + lx]; } }
+      return { gx, gz, x: +this.dpx.toFixed(2), z: +this.dpz.toFixed(2), y: +this.dpy.toFixed(2), sem };
+    };
+    (window as any).__cellSem = (gx: number, gz: number): number => {
+      const cc = this.cellChunk(gx, gz);
+      if (!cc) return -1;
+      const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+      if (!g) return -1;
+      const lx = gx - cc.cx * CHUNK, lz = gz - cc.cz * CHUNK;
+      if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return -1;
+      return (g.semantic as any)[lz * CHUNK + lx];
+    };
   }
 
   /** 从 (gx,gz) 就近找最近可走格（搜索半径内螺旋） */
