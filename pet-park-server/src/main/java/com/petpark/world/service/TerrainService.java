@@ -167,13 +167,12 @@ public class TerrainService {
         return h * (1 - rm) + targetH * rm;
     }
 
-    /** 🔴 是否在岛屿核心区 —— 2026-08-16 坡地移动修复用：
-     *  HY3D 视觉岛面平滑可走，但旧数学网格在岛内起伏，会把坡地误判成 MOUNTAIN/陡坡，
-     *  物理移动判定在岛内必须豁免旧网格语义/坡度限制（否则坡地 WASD 完全走不动）。
-     *  🔴 阈值 0.05 ≈ 0.85r：必须与客户端 A* 的 ISLAND_WALK_FACTOR=0.85 圆判定对齐，
-     *  否则出现"客户端判可走、服务端挡"的错配环带 → 双击导航最后一步永远走不进、不收尾 */
+    /** 🔴 是否在岛屿核心区 —— 2026-08-16 沙滩空气墙修复：
+     *  HY3D 视觉岛屿含沙滩/浅滩延伸到 ~1.05r，旧阈值 0.05(≈0.85r) 把沙滩误判为岛外→空气墙。
+     *  🔴 阈值 -0.15 ≈ 1.05r：与客户端 ISLAND_WALK_FACTOR=1.05 对齐，
+     *  允许玩家走到沙滩/浅滩区域（视觉上明显是陆地） */
     public boolean onIslandCore(int gx, int gz) {
-        return islandFalloff(gx, gz) >= 0.05;
+        return islandFalloff(gx, gz) >= -0.15;
     }
 
     /** 岛屿径向衰减：最近岛心的平滑衰减（中心 1 → 边缘 0），岛外返回 0
@@ -192,11 +191,12 @@ public class TerrainService {
             // 半径也加轻微噪声变化（同岛不同方向粗细不同）
             double angleNoise = noise.noise2(Math.atan2(dz, dx) * 2.5 + i * 50, d * 0.02);
             double r = islandR[i] * (1.0 + angleNoise * 0.25);
-            if (d >= r) {
+            double margin = r * 0.10; // 允许边缘外 10% 范围返回负值（沙滩延伸区）
+            if (d >= r + margin) {
                 continue;
             }
-            double t = 1.0 - d / r;          // 1 at center → 0 at edge
-            double f = t * t * (3 - 2 * t);  // smoothstep 平滑
+            double t = 1.0 - d / r;          // 1 at center → 0 at edge → negative beyond
+            double f = t * t * (3 - 2 * t);  // smoothstep 平滑（超出时为负）
             if (f > best) {
                 best = f;
             }
