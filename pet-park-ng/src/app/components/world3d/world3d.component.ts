@@ -1815,9 +1815,10 @@ export class World3dComponent implements OnInit, OnDestroy {
   /** 🔴 位置是否在某 HY3D 岛屿覆盖范围内（圆判定，与视觉岛屿同源 islandCenters）
    *  2026-08-16：A* 寻路/可走判定必须叠加此约束——旧网格可在岛屿边缘外判"可走"，
    *  但那里视觉上是海/虚空 → 玩家走过去触发水域推回 → 导航被打断。
-   *  🔴 用 1.05r 覆盖：HY3D 视觉岛屿含沙滩/浅滩延伸到 ~1.0r+，0.85r 会把沙滩误判为"岛外"→空气墙
-   *  （2026-08-16 用户反馈：沙滩可见但走不过去 → 放宽到 1.05r 覆盖全部视觉陆地） */
-  private static readonly ISLAND_WALK_FACTOR = 1.05;
+   *  🔴 用 1.2r 覆盖：HY3D 视觉岛屿水平缩放 = r×1.1（updateHy3dIslandLOD 中 horizScale），
+   *  即实际渲染半径 ≈ 1.1r + vertScale 变形延伸。1.05 仍 < 1.1 → 边缘环带空气墙。
+   *  （2026-08-16 用户二次反馈：陆地上仍有空气墙 → 必须覆盖 1.1r+ 余量） */
+  private static readonly ISLAND_WALK_FACTOR = 1.20;
   private onIslandCircle(wx: number, wz: number): boolean {
     for (let i = 0; i < this.islandCenters.length; i++) {
       const c = this.islandCenters[i];

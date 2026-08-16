@@ -167,12 +167,11 @@ public class TerrainService {
         return h * (1 - rm) + targetH * rm;
     }
 
-    /** 🔴 是否在岛屿核心区 —— 2026-08-16 沙滩空气墙修复：
-     *  HY3D 视觉岛屿含沙滩/浅滩延伸到 ~1.05r，旧阈值 0.05(≈0.85r) 把沙滩误判为岛外→空气墙。
-     *  🔴 阈值 -0.15 ≈ 1.05r：与客户端 ISLAND_WALK_FACTOR=1.05 对齐，
-     *  允许玩家走到沙滩/浅滩区域（视觉上明显是陆地） */
+    /** 🔴 是否在岛屿核心区 —— 2026-08-16 沙滩空气墙二次修复：
+     *  HY3D 视觉岛屿 horizScale = r×1.1（实际渲染半径≈1.1r），ISLAND_WALK_FACTOR=1.20。
+     *  阈值必须 ≤ falloff(1.2r) ≈ -0.25，否则客户端可走、服务端挡 → 错配空气墙 */
     public boolean onIslandCore(int gx, int gz) {
-        return islandFalloff(gx, gz) >= -0.15;
+        return islandFalloff(gx, gz) >= -0.30;
     }
 
     /** 岛屿径向衰减：最近岛心的平滑衰减（中心 1 → 边缘 0），岛外返回 0
