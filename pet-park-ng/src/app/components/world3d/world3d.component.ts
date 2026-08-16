@@ -131,8 +131,10 @@ interface GridData {
       <span class="time-phase">{{worldTime.phase}}</span>
     </div>
 
-    <!-- P1-小地图：右上角（可点击导航到该位置） -->
-    <canvas #minimap class="minimap" width="160" height="160" (pointerdown)="onMinimapClick($event)"></canvas>
+    <!-- P1-小地图：右上角（左键走过去/右键查看位置） -->
+    <canvas #minimap class="minimap" width="160" height="160"
+      (pointerdown)="onMinimapClick($event)"
+      (contextmenu)="$event.preventDefault()"></canvas>
 
     <!-- 触屏控制层（P0-1）：仅触屏设备显示 -->
     <div class="touch-layer" *ngIf="touchActive">
@@ -493,6 +495,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   // 双击移动目标（世界坐标），null 表示无目标
   private moveTarget: { x: number; z: number } | null = null;
   private miniTarget: { x: number; z: number } | null = null;  // 小地图点击的目标点（绘制红圈标记）
+  private viewTarget: { x: number; y: number; z: number } | null = null; // 小地图右键查看目标（相机飞过去）
   // P2 双击 A* 寻路：路点队列（世界坐标），依次抵达后清空
   private pathPoints: { x: number; z: number }[] = [];
 
@@ -1389,11 +1392,15 @@ export class World3dComponent implements OnInit, OnDestroy {
   private updateFollowCamera(): void {
     const d = this.follow.dist;
     const cp = Math.cos(this.follow.pitch);
-    const cx = this.dpx + d * cp * Math.sin(this.follow.yaw);
-    const cy = this.dpy + d * Math.sin(this.follow.pitch);
-    const cz = this.dpz + d * cp * Math.cos(this.follow.yaw);
+    // 🔴 右键查看模式：相机围绕 viewTarget 而非玩家
+    const tx = this.viewTarget ? this.viewTarget.x : this.dpx;
+    const ty = this.viewTarget ? this.viewTarget.y : this.dpy;
+    const tz = this.viewTarget ? this.viewTarget.z : this.dpz;
+    const cx = tx + d * cp * Math.sin(this.follow.yaw);
+    const cy = ty + d * Math.sin(this.follow.pitch);
+    const cz = tz + d * Math.cos(this.follow.yaw);
     this.camera.position.set(cx, cy, cz);
-    this.camera.lookAt(this.dpx, this.dpy + 1.2, this.dpz);
+    this.camera.lookAt(tx, ty + 1.2, tz);
     // 奔跑时视野轻微拉宽（FOV kick），增强速度感（成熟竞品常见手感）
     const targetFov = this.running ? 62 : 55;
     if (Math.abs(this.camera.fov - targetFov) > 0.05) {
@@ -1892,6 +1899,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       // 🔴 小地图点击导航诊断（2026-08-16）
       minimap: {
         miniTarget: this.miniTarget ? { x: +this.miniTarget.x.toFixed(1), z: +this.miniTarget.z.toFixed(1) } : null,
+        viewTarget: this.viewTarget ? { x: +this.viewTarget.x.toFixed(1), y: +this.viewTarget.y.toFixed(1), z: +this.viewTarget.z.toFixed(1) } : null,
         pathPoints: this.pathPoints.length,
         moveTarget: this.moveTarget ? { x: +this.moveTarget.x.toFixed(1), z: +this.moveTarget.z.toFixed(1) } : null,
         playerDp: { x: +this.dpx.toFixed(1), z: +this.dpz.toFixed(1) }
@@ -1946,7 +1954,15 @@ export class World3dComponent implements OnInit, OnDestroy {
       const st = this.physics.getState(uid);
       const g = this.remotePlayers.get(uid);
       if (g && st) {
-        g.position.set(st.gx, st.y, st.gz);
+        // 🔴 远端玩家也需 HY3D 表面高度修正（2026-08-16 修复穿模）：
+        //   physics st.y 基于旧隐藏网格（y≈-0.2），但视觉上 HY3D 岛屿在 y≈4+
+        //   不修正 → 下半身埋进草地
+        let ry = st.y;
+        const hy3dY = this.hy3dSurfaceHeightAt(st.gx, st.gz);
+        if (hy3dY != null && hy3dY > ry) {
+          ry = hy3dY + 0.35; // 脚底贴岛屿表面
+        }
+        g.position.set(st.gx, ry, st.gz);
         g.rotation.y = st.rot;
       }
     }
@@ -3682,26 +3698,39 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
   };
 
-  /** 点击小地图：反算世界坐标 → A* 寻路移动角色过去（查看该位置） */
+  /** 小地图点击：左键走过去 / 右键查看大地图位置（相机飞过去） */
   onMinimapClick(e: PointerEvent): void {
+    // 阻止右键菜单
+    if (e.button === 2) { e.preventDefault(); }
     // 交互模式下不响应（避免与建造/钓鱼/采矿/拆除/升级/收获冲突）
     if (this.buildMode || this.fishMode || this.mineMode || this.removeMode || this.upgradeMode || this.harvestMode) {
-      this.hint = '当前模式不可用，退出后点击小地图移动';
+      this.hint = '当前模式不可用，退出后点击小地图操作';
       return;
     }
     const cv = this.minimapRef?.nativeElement as HTMLCanvasElement | undefined;
     if (!cv) return;
     const rect = cv.getBoundingClientRect();
-    // canvas 内像素坐标（CSS 尺寸可能不等于分辨率，按比例换算）
     const lx = (e.clientX - rect.left) / rect.width * cv.width;
     const ly = (e.clientY - rect.top) / rect.height * cv.height;
     const W = cv.width, H = cv.height;
-    const span = 110;                 // 必须与 drawMinimap 中的 span 一致
-    const scale = W / (span * 2);     // 像素/世界单位（drawMinimap 的 toX/toY 逆运算）
+    const span = 110;
+    const scale = W / (span * 2);
     const wx = this.dpx + (lx - W / 2) / scale;
     const wz = this.dpz + (ly - H / 2) / scale;
 
-    // 复用双击大地图的导航逻辑：清空旧目标 → 设 navGoal → A* 寻路
+    if (e.button === 2) {
+      // ===== 右键：查看大地图位置（相机飞到该位置上方） =====
+      const hy3dY = this.hy3dSurfaceHeightAt(wx, wz);
+      const vy = (hy3dY ?? this.heightAt(wx, wz) ?? 0) + 0.5;
+      this.viewTarget = { x: wx, y: vy, z: wz };
+      this.miniTarget = { x: wx, z: wz }; // 也画红圈标记
+      this.hint = `🔭 查看位置: (${Math.floor(wx)}, ${Math.floor(wz)})`;
+      // 1.5s 后自动取消查看模式（回到跟随玩家）
+      setTimeout(() => { if (this.viewTarget) { this.viewTarget = null; this.miniTarget = null; } }, 1500);
+      return;
+    }
+
+    // ===== 左键：移动角色到目标点（原有逻辑） =====
     this.moveTarget = null;
     this.miniTarget = { x: wx, z: wz };
     this.navGoal = { x: wx, z: wz };
