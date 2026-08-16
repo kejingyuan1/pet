@@ -2740,8 +2740,13 @@ export class World3dComponent implements OnInit, OnDestroy {
     const models = [this.boyModel, this.girlModel];
     const boneNames = ['torso', 'head', 'armL', 'armR', 'legL', 'legR'];
     spots.forEach((sp, i) => {
-      const y = this.heightAt(sp.gx, sp.gz);
+      let y = this.heightAt(sp.gx, sp.gz);
       if (y === undefined) return;
+      // 🔴🔴 NPC 也需 HY3D 表面高度修正（2026-08-16 修复穿模）：
+      //   heightAt 返回旧隐藏网格高度（y≈-0.2），但视觉上 HY3D 岛屿在 y≈4+
+      //   不修正 → boy/girl 模型下半身埋进草地
+      const hy3dY = this.hy3dSurfaceHeightAt(sp.gx, sp.gz);
+      if (hy3dY != null && hy3dY > y) y = hy3dY;
       // 🔴🔴 水域防护（2026-08-15 修复）：NPC 必须在海平面以上
       const safeY = Math.max((this.config?.waterLevel ?? -5) + 0.6, 0);
       if (y < safeY) return;
@@ -2838,7 +2843,10 @@ export class World3dComponent implements OnInit, OnDestroy {
         const ang = t * speed;
         const nx = c.cx + Math.cos(ang) * c.radius;
         const nz = c.cz + Math.sin(ang) * c.radius;
-        const gy = this.heightAt(nx, nz) ?? c.baseY;
+        let gy = this.heightAt(nx, nz) ?? c.baseY;
+        // NPC 巡逻也需 HY3D 表面高度修正（防止巡逻到旧网格低洼处穿模）
+        const hy3dWalkY = this.hy3dSurfaceHeightAt(nx, nz);
+        if (hy3dWalkY != null && hy3dWalkY > gy) gy = hy3dWalkY;
         const bob = Math.sin(t * freq) * amp;          // 迈步上下
         g.position.set(nx, gy + bob, nz);
         // 朝向运动切线方向（root 仅负责朝向，lean 交给躯干骨骼）
@@ -3125,7 +3133,11 @@ export class World3dComponent implements OnInit, OnDestroy {
     );
     head.position.y = 1.32;
     g.add(body, head);
-    g.position.set((p.gx ?? 0) + 0.5, (p.y ?? 0) + 0.3, (p.gz ?? 0) + 0.5);
+    // 🔴 远端玩家初始位置也需 HY3D 修正（2026-08-16 修复穿模）
+    let initY = (p.y ?? 0) + 0.3;
+    const hy3dInitY = this.hy3dSurfaceHeightAt((p.gx ?? 0) + 0.5, (p.gz ?? 0) + 0.5);
+    if (hy3dInitY != null && hy3dInitY > initY) initY = hy3dInitY + 0.35;
+    g.position.set((p.gx ?? 0) + 0.5, initY, (p.gz ?? 0) + 0.5);
     this.scene.add(g);
     this.remotePlayers.set(p.uid, g);
   }
