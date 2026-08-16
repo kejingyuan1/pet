@@ -453,8 +453,9 @@ export class World3dComponent implements OnInit, OnDestroy {
   private cloudGroup!: THREE.Group;           // 云朵容器
 
   // （已移除旧 waterPlane — 大平面穿透地形导致蓝色三角碎片）
-  // 新版水面：半透明波浪平面，填充 chunk 网格中过滤掉的水域空洞
+  // 新版水面：自定义 ShaderMaterial 着色器水面（Gerstner 波浪 + 颜色渐变 + 泡沫 + 高光）
   private waterPlane!: THREE.Mesh;
+  private waterUniforms!: { [key: string]: THREE.IUniform };
   private static readonly STAR_COUNT = 1800;   // 星星数量
   private static readonly CLOUD_COUNT = 12;    // 云朵数量
 
@@ -2001,6 +2002,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         childCount: this.scene.children.length
       },
       waterPlane: !!this.waterPlane,
+      waterShader: !!(this.waterUniforms),  // true = 着色器水面已激活
       // 🔴 玩家角色诊断（2026-08-16：排查角色不可见）
       playerMesh: (() => {
         const pm = this.playerMesh;
@@ -2294,61 +2296,157 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** 创建半透明水面：大平面覆盖整个世界，填充 chunk 网格过滤掉的水域空洞
-   *  关键：chunk 网格已不渲染水三角（Fix 1），所以水面从下方填补，不会穿透陆地 */
+  /** 🔴🔴 创建统一着色器水面（2026-08-16 重写）：
+   *   - Gerstner 多向波浪（比正弦波真实：尖峰宽谷 + 水平位移）
+   *   - 颜色渐变：岸边热带青(#30B4FF) → 远海深蓝(#0A3D62)，与 HY3D 岛屿自带水面融合
+   *   - 岸边白沫（距离衰减 + 波峰泡沫）
+   *   - 太阳镜面高光（Blinn-Phong）
+   *   - 半透明 + 双面渲染
+   */
   private createWaterPlane(): void {
     const wl = this.config?.waterLevel ?? -5;
-    // 水面尺寸：覆盖所有可能的岛屿范围（±1500）
     const size = 3200;
-    const geo = new THREE.PlaneGeometry(size, size, 64, 64);
+    // 高细分以支持 GPU 顶点波浪位移（128×128 = 16384 顶点，GPU 完全无压力）
+    const geo = new THREE.PlaneGeometry(size, size, 128, 128);
     geo.rotateX(-Math.PI / 2);
 
-    // 给顶点加正弦位移 → 渲染时自动形成波浪
-    const posAttr = geo.getAttribute('position');
-    const waveData = new Float32Array(posAttr.count); // 存每顶点的随机相位
-    for (let i = 0; i < posAttr.count; i++) {
-      waveData[i] = Math.random() * Math.PI * 2;
-    }
-    geo.userData['wavePhase'] = waveData;
+    // ===== 着色器源码 =====
+    const vertexShader = `
+      uniform float uTime;
+      uniform vec3  uSunDir;
+      // Gerstner 波参数：方向(xy归一化)、波长(越小波越密)、陡度(0~1)、振幅
+      uniform vec4  uWaveA; // direction.x, direction.y, steepness, wavelength
+      uniform vec4  uWaveB;
+      uniform vec4  uWaveC;
 
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x1a8cd4,        // 海洋蓝（比之前的 0x2EAFCF 更深更自然）
+      varying vec3 vWorldPos;
+      varying vec3 vNormal;
+      varying float vFoamFactor;  // 波峰泡沫因子
+      varying float vDistToShore; // 到岛屿中心的近似距离
+
+      vec3 gerstner(vec4 wave, vec3 p) {
+        float k = 2.0 * 3.14159 / wave.z;           // 波数
+        float c = sqrt(9.8 / k);                     // 相速度（深水近似）
+        vec2  d = normalize(wave.xy);                // 方向
+        float f = k * (dot(d, p.xz) - c * uTime);   // 相位
+        float a = wave.w * wave.z * 0.15;            // 振幅 = 陡度 × 波长 × 缩放
+        return vec3(
+          d.x * (a * cos(f)),       // x 水平位移
+          a * sin(f),                 // y 垂直位移
+          d.y * (a * cos(f))         // z 水平位移
+        );
+      }
+
+      void main() {
+        vec3 p = position;
+
+        // 三层 Gerstner 波叠加（不同方向/波长/陡度 → 真实海面）
+        vec3 g1 = gerstner(uWaveA, p);
+        vec3 g2 = gerstner(uWaveB, p);
+        vec3 g3 = gerstner(uWaveC, p);
+        p += g1 + g2 * 0.6 + g3 * 0.35;
+
+        // 用位移梯度算法线（有限差分）
+        float eps = 0.5;
+        vec3 px = position + vec3(eps, 0.0, 0.0);
+        vec3 pz = position + vec3(0.0, 0.0, eps);
+        px += gerstner(uWaveA, px) + gerstner(uWaveB, px) * 0.6 + gerstner(uWaveC, px) * 0.35;
+        pz += gerstner(uWaveA, pz) + gerstner(uWaveB, pz) * 0.6 + gerstner(uWaveC, pz) * 0.35;
+        vNormal = normalize(cross(pz - p, px - p));
+
+        vWorldPos = (modelMatrix * vec4(p, 1.0)).xyz;
+
+        // 泡沫因子：波峰处 y 位移大 → 白沫多
+        vFoamFactor = smoothstep(0.12, 0.55, (g1.y + g2.y + g3.y) / 1.95);
+
+        // 近似到中心距离（用于岸边颜色过渡）
+        vDistToShore = length(position.xz) * 0.0018;
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      uniform float uTime;
+      uniform vec3  uSunDir;
+      uniform vec3  uCameraPos;
+      uniform vec3  uShallowColor;   // 岸边浅水色（与 HY3D 岛屿水面融合）
+      uniform vec3  uDeepColor;      // 远海深色
+      uniform vec3  uFoamColor;      // 泡沫白
+      uniform float uWaterLevel;
+
+      varying vec3  vWorldPos;
+      varying vec3  vNormal;
+      varying float vFoamFactor;
+      varying float vDistToShore;
+
+      void main() {
+        vec3 viewDir = normalize(uCameraPos - vWorldPos);
+        vec3 normal  = normalize(vNormal);
+
+        // ---- 颜色混合：按距离/深度渐变（近岸青 → 远海蓝）----
+        float depthBlend = smoothstep(0.08, 0.55, vDistToShore);
+        vec3 waterColor = mix(uShallowColor, uDeepColor, depthBlend);
+
+        // Fresnel 效应（视角越低反射越多）
+        float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0);
+        waterColor = mix(waterColor, vec3(0.65, 0.82, 0.95), fresnel * 0.35);
+
+        // ---- 太阳高光（Blinn-Phong）----
+        vec3 halfVec = normalize(uSunDir + viewDir);
+        float spec = pow(max(dot(normal, halfVec), 0.0), 256.0);
+        waterColor += vec3(1.0, 0.95, 0.82) * spec * 0.85;
+
+        // ---- 岸边泡沫（波峰 + 近岸）----
+        float shoreFoam = (1.0 - depthBlend) * 0.45;     // 近岸基础泡沫
+        float peakFoam  = vFoamFactor * 0.55;             // 波峰额外泡沫
+        float foam = clamp(shoreFoam + peakFoam, 0.0, 1.0);
+        foam *= smoothstep(0.0, 0.15, foam);              // 软化边缘
+        waterColor = mix(waterColor, uFoamColor, foam * 0.7);
+
+        // ---- 半透明 ----
+        float alpha = 0.78 - depthBlend * 0.18;            // 近岸更透明（能看到水下过渡）
+        alpha = clamp(alpha, 0.55, 0.90);
+
+        gl_FragColor = vec4(waterColor, alpha);
+      }
+    `;
+
+    this.waterUniforms = {
+      uTime: { value: 0 },
+      uSunDir: { value: new THREE.Vector3(0.5, 0.35, 0.7).normalize() },
+      uCameraPos: { value: new THREE.Vector3() },
+      uShallowColor: { value: new THREE.Color(0x30B4FF) },  // 热带青（匹配 HY3D 岛屿水面）
+      uDeepColor: { value: new THREE.Color(0x0A3D62) },     // 深海蓝
+      uFoamColor: { value: new THREE.Color(0xE8F4FC) },     // 泡沫白
+      uWaterLevel: { value: wl },
+      // Gerstner 波：方向(x,y), 陡度, 波长
+      uWaveA: { value: new THREE.Vector4( 1.0,  0.2, 0.25, 18.0) },  // 主浪（长波，东北方向）
+      uWaveB: { value: new THREE.Vector4(-0.6,  0.8, 0.20, 10.0) },  // 二次浪（西北）
+      uWaveC: { value: new THREE.Vector4( 0.3, -1.0, 0.15,  5.5) },  // 涟漪（短波）
+    };
+
+    const mat = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms: this.waterUniforms,
       transparent: true,
-      opacity: 0.68,          // 半透明，能看到水下地形过渡
-      roughness: 0.18,        // 光滑水面有高光
-      metalness: 0.35,        // 轻微金属感（反射天空）
-      fog: false,             // 不受雾影响
       side: THREE.DoubleSide,
+      fog: false,
     });
 
     this.waterPlane = new THREE.Mesh(geo, mat);
-    this.waterPlane.position.y = wl - 0.15; // 略低于水位线，避免与海岸线 z-fighting
-    this.waterPlane.name = 'ocean_surface';
-    this.waterPlane.renderOrder = -999;       // 最先渲染（底层）
+    this.waterPlane.position.y = wl - 0.08;  // 微低于水位线避免 z-fighting
+    this.waterPlane.name = 'ocean_surface_shader';
+    this.waterPlane.renderOrder = -999;
     this.scene.add(this.waterPlane);
-
-    // 保存引用供动画使用
-    (this as any).waterMat = mat;
   }
 
-  /** 更新水面波浪动画 */
+  /** 更新水面着色器 uniform（时间 + 相机位置），波浪由 GPU Gerstner 算法驱动 */
   private updateWaterPlane(now: number): void {
-    if (!this.waterPlane) return;
-    const t = now * 0.0006; // 波浪速度
-    const posAttr = this.waterPlane.geometry.getAttribute('position');
-    const waveData = this.waterPlane.geometry.userData['wavePhase'] as Float32Array;
-    if (!waveData) return;
-
-    for (let i = 0; i < posAttr.count; i++) {
-      const x = posAttr.getX(i);
-      const z = posAttr.getZ(i);
-      // 双波叠加：大波长缓浪 + 小波长涟漪
-      const w1 = Math.sin(t * 1.2 + x * 0.008 + z * 0.006 + waveData[i]) * 0.25;
-      const w2 = Math.sin(t * 2.8 + x * 0.022 + z * 0.018 + waveData[i] * 1.7) * 0.08;
-      posAttr.setY(i, w1 + w2);
-    }
-    posAttr.needsUpdate = true;
-    this.waterPlane.geometry.computeVertexNormals();
+    if (!this.waterPlane || !this.waterUniforms) return;
+    (this.waterUniforms['uTime'] as { value: number }).value = now * 0.0008;   // 波浪时间（控制速度）
+    (this.waterUniforms['uCameraPos'] as { value: THREE.Vector3 }).value.copy(this.camera.position);
   }
 
   private buildChunkMesh(resp: ChunkResp): THREE.Mesh {
@@ -2754,6 +2852,8 @@ export class World3dComponent implements OnInit, OnDestroy {
         inst.rotation.y = (i * 2.39996) % (Math.PI * 2);
         inst.traverse(o => { o.userData['shared'] = true; });
         inst.userData['islandIdx'] = i; // 标记索引，方便后续查找移除
+        // 🔴🔴 隐藏 HY3D 岛屿模型自带的水面 mesh（避免与着色器水面双层叠加 + 颜色冲突）
+        this.hideHy3dWaterMeshes(inst);
         this.hy3dTerrainGroup.add(inst);
         this._activeIslands.add(i);
       } else if (dist2 > unloadR2 && isActive) {
@@ -2768,6 +2868,49 @@ export class World3dComponent implements OnInit, OnDestroy {
         this._activeIslands.delete(i);
       }
     }
+  }
+
+  /** 🔴 隐藏 HY3D 岛屿 GLB 模型自带的水面 mesh（避免与着色器水面双层叠加 + 颜色冲突）
+   *  检测策略（按优先级）：
+   *  1. mesh 名称含 water/ocean/sea/lake/river/oceano/mar/agua
+   *  2. 材料高透明(>0.35) + 蓝色主色(B通道最高)
+   *  3. 大平面几何(顶点数>6 且 AABB 扁平 ratio<0.08)
+   */
+  private hideHy3dWaterMeshes(inst: THREE.Group): void {
+    let hidden = 0;
+    inst.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const name = (o.name || '').toLowerCase();
+      // 策略 1：名称匹配
+      if (/water|ocean|sea|lake|river|oceano|mar|agua|sui/.test(name)) {
+        o.visible = false; hidden++; return;
+      }
+      // 策略 2：材料特征
+      const mat = o.material as THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+      if (mat && 'opacity' in mat && mat.opacity > 0.35) {
+        const c = new THREE.Color();
+        if ('color' in mat && mat.color) c.copy(mat.color as THREE.Color);
+        // 蓝色判定：B 通道最大且饱和度够
+        const maxCh = Math.max(c.r, c.g, c.b);
+        if (c.b === maxCh && c.b > 0.25 && (c.b - Math.min(c.r, c.g)) > 0.1) {
+          o.visible = false; hidden++; return;
+        }
+      }
+      // 策略 3：大扁平平面（排除角色/树等立体模型）
+      const geo = o.geometry;
+      if (geo && !geo.index && geo.attributes.position) {
+        const pos = geo.attributes.position;
+        if (pos.count > 9) { // 至少 3 个三角以上
+          const bb = new THREE.Box3().setFromBufferAttribute(pos);
+          const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
+          const maxDim = Math.max(sx, sy, sz);
+          if (maxDim > 0 && sy / maxDim < 0.08) {
+            o.visible = false; hidden++;
+          }
+        }
+      }
+    });
+    if (hidden > 0) console.log(`[water] 隐藏 HY3D 岛屿自带水面 mesh ${hidden} 个`);
   }
 
   // ================= M5 角色/树 GLB 模板（HY3D 生成） =================
@@ -4153,3 +4296,4 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (!this.fishMode) this.doFishCatch();
   };
 }
+
