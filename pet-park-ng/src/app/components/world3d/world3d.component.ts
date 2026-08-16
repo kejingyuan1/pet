@@ -465,6 +465,13 @@ export class World3dComponent implements OnInit, OnDestroy {
   // HY3D 地图地形：实例化的岛屿视觉层（覆盖程序化块状岛屿，保留网格做物理）
   private hy3dTerrainGroup: THREE.Group | null = null;
   private islandCenters: { cx: number; cz: number; r: number }[] = [];
+  // 🔴🔴 HY3D 岛屿 LOD：模板缓存 + 已实例化索引集合（性能优化，只加载100m内）
+  private _hy3dTemplates: THREE.Group[] = [];           // 4 个变体模板
+  private _hy3dMeta: { radius: number; baseY: number; height: number }[] = [];
+  private _hy3dLoaded = false;                           // 模板是否已加载完
+  private _activeIslands = new Set<number>();            // 当前已实例化的岛屿索引
+  private readonly ISLAND_LOD_RADIUS = 100;              // 加载半径（米）
+  private readonly ISLAND_UNLOAD_BUFFER = 130;           // 卸载缓冲区（避免频繁增删）
   private animalList: { x: number; y: number; z: number }[] = [];
   private oreList: { x: number; y: number; z: number; type: string }[] = []; // 🔴 矿石坐标跟踪（用于调试+水域校验）
   private _dbgTick = 0;
@@ -1369,6 +1376,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (now - this.lastStream > 250) {
       this.lastStream = now;
       this.streamChunks();
+      // 🔴🔴 HY3D 岛屿 LOD：只保留玩家周围 100m 内的岛屿实例（性能优化）
+      this.updateHy3dIslandLOD();
       // 邻近矿脉扫描（F 键采矿 + 提示用，仅需玩家附近 chunk）
       this.scanNearbyOre();
       // 邻近水域扫描（钓鱼按钮 + 提示用）
@@ -2578,10 +2587,11 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** 加载 HY3D 岛屿变体并实例化为 22 座岛的视觉层（覆盖程序化块状岛屿）
+  /** 加载 HY3D 岛屿变体模板（4 个变体 GLB），不立即实例化
+   *  实例化由 updateHy3dIslandLOD() 按玩家距离动态管理（100m 内加载，130m 外卸载）
    *  保留程序化网格用于物理/碰撞/采矿/钓鱼逻辑；HY3D 仅作视觉覆盖 */
   private loadHy3dTerrain(): void {
-    if (this.hy3dTerrainGroup) return;
+    if (this._hy3dLoaded) return;
     this.computeIslandCenters();
     const variantPaths = [
       'assets/3d_build/terrain-hy3d/hy3_island_draco.glb',
@@ -2592,44 +2602,74 @@ export class World3dComponent implements OnInit, OnDestroy {
     Promise.all(variantPaths.map(p => this.assets.loadModel(p)))
       .then((templates: (THREE.Group | null)[]) => {
         const valid = templates.filter((t): t is THREE.Group => !!t);
-        if (valid.length === 0 || !this.scene || this.disposed) return;
+        if (valid.length === 0 || this.disposed) return;
         // 预计算每个模板的水平半径与高度范围
-        const meta = valid.map(tpl => {
+        this._hy3dMeta = valid.map(tpl => {
           const box = new THREE.Box3().setFromObject(tpl);
           const sx = box.max.x - box.min.x;
           const sz = box.max.z - box.min.z;
           const sy = box.max.y - box.min.y;
           return { radius: Math.max(sx, sz) / 2, baseY: box.min.y, height: sy };
         });
+        this._hy3dTemplates = valid;
+        this._hy3dLoaded = true;
+        // 创建空 Group（后续动态添加岛屿实例）
         const group = new THREE.Group();
         group.name = 'hy3d_terrain';
-        for (let i = 0; i < this.islandCenters.length; i++) {
-          const c = this.islandCenters[i];
-          const idx = i % valid.length;
-          const tpl = valid[idx];
-          const m = meta[idx];
-          const inst = tpl.clone(true);
-          // 水平缩放：让 HY3D 岛屿略大于程序化岛半径（完整覆盖块状地形）
-          // HY3D 模型直径~300单位，程序化岛半径115-190 → scale ≈ 0.9~1.3
-          const horizScale = (c.r * 1.1) / m.radius;
-          // Y 压缩到 35%（原0.18把烘焙树压成饼，用户反馈"树完全被压扁"）
-          // HY3D 原模型有高山~100单位，压后最高~35单位
-          const vertScale = horizScale * 0.35;
-          inst.scale.set(horizScale, vertScale, horizScale);
-          // 底座对齐到地表高度（坐在程序化地形上）
-          const groundH = this.heightAt(c.cx, c.cz) ?? 0;
-          inst.position.set(c.cx, groundH - m.baseY * vertScale, c.cz);
-          inst.rotation.y = (i * 2.39996) % (Math.PI * 2);
-          inst.traverse(o => { o.userData['shared'] = true; });
-          group.add(inst);
-        }
         this.hy3dTerrainGroup = group;
         this.scene.add(group);
+        // 立即执行一次 LOD 初始化（玩家出生位置附近的岛屿）
+        this.updateHy3dIslandLOD();
         const dbg = (window as any).__worldDebug || ((window as any).__worldDebug = {});
         dbg.hy3dIslands = this.islandCenters.length;
         dbg.hy3dVariants = valid.length;
+        dbg.hy3dLOD = 'radius=' + this.ISLAND_LOD_RADIUS + 'm';
       })
       .catch(err => console.warn('[hy3d-terrain] 加载失败', err));
+  }
+
+  /** 🔴🔴 动态岛屿 LOD：根据玩家位置增删岛屿实例（100m 内显示，130m 外隐藏）
+   *  在 animate() 中以 ~500ms 节流调用，避免每帧开销 */
+  private updateHy3dIslandLOD(): void {
+    if (!this._hy3dLoaded || !this.hy3dTerrainGroup || !this.islandCenters.length) return;
+    const px = this.dpx, pz = this.dpz;
+    const loadR2 = this.ISLAND_LOD_RADIUS * this.ISLAND_LOD_RADIUS;
+    const unloadR2 = this.ISLAND_UNLOAD_BUFFER * this.ISLAND_UNLOAD_BUFFER;
+
+    for (let i = 0; i < this.islandCenters.length; i++) {
+      const c = this.islandCenters[i];
+      const dx = c.cx - px, dz = c.cz - pz;
+      const dist2 = dx * dx + dz * dz;
+      const isActive = this._activeIslands.has(i);
+
+      if (dist2 <= loadR2 && !isActive) {
+        // 进入加载范围 → 实例化并添加到场景
+        const idx = i % this._hy3dTemplates.length;
+        const tpl = this._hy3dTemplates[idx];
+        const m = this._hy3dMeta[idx];
+        const inst = tpl.clone(true);
+        const horizScale = (c.r * 1.1) / m.radius;
+        const vertScale = horizScale * 0.35;
+        inst.scale.set(horizScale, vertScale, horizScale);
+        const groundH = this.heightAt(c.cx, c.cz) ?? 0;
+        inst.position.set(c.cx, groundH - m.baseY * vertScale, c.cz);
+        inst.rotation.y = (i * 2.39996) % (Math.PI * 2);
+        inst.traverse(o => { o.userData['shared'] = true; });
+        inst.userData['islandIdx'] = i; // 标记索引，方便后续查找移除
+        this.hy3dTerrainGroup.add(inst);
+        this._activeIslands.add(i);
+      } else if (dist2 > unloadR2 && isActive) {
+        // 超出卸载缓冲 → 从场景移除
+        const children = this.hy3dTerrainGroup.children;
+        for (let j = children.length - 1; j >= 0; j--) {
+          if ((children[j] as any).userData['islandIdx'] === i) {
+            this.hy3dTerrainGroup.remove(children[j]);
+            break;
+          }
+        }
+        this._activeIslands.delete(i);
+      }
+    }
   }
 
   // ================= M5 角色/树 GLB 模板（HY3D 生成） =================
@@ -2965,11 +3005,9 @@ export class World3dComponent implements OnInit, OnDestroy {
         const rawY = h[lz * N + lx];
         let y = (rawY != null && !isNaN(rawY)) ? rawY : (this.heightAt(gx + 0.5, gz + 0.5) ?? (waterLevel + 1.0));
 
-        // 🔴🔴 矿石也需 HY3D 表面高度修正（2026-08-16 修复飞天）：
-        //   旧网格高度 y≈-0.2~0，但视觉上 HY3D 岛屿在 y≈4+
-        //   不修正 → 矿石悬空在天上
+        // 🔴🔴 矿石贴地：和玩家一样，有 HY3D 表面就强制用（不再判断 > gridY）
         const hy3dOreY = this.hy3dSurfaceHeightAt(gx + 0.5, gz + 0.5);
-        if (hy3dOreY != null && hy3dOreY > y) y = hy3dOreY;
+        if (hy3dOreY != null) y = hy3dOreY; // HY3D 优先，和玩家一致
         
         // 🔴🔴 水域防护 + 高度上限
         if (y < 0 || y > MAX_ORE_Y) continue; // 跳过水下和过高矿点
