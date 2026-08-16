@@ -2919,7 +2919,13 @@ export class World3dComponent implements OnInit, OnDestroy {
 
         // 直接从高度数组取值
         const rawY = h[lz * N + lx];
-        const y = (rawY != null && !isNaN(rawY)) ? rawY : (this.heightAt(gx + 0.5, gz + 0.5) ?? (waterLevel + 1.0));
+        let y = (rawY != null && !isNaN(rawY)) ? rawY : (this.heightAt(gx + 0.5, gz + 0.5) ?? (waterLevel + 1.0));
+
+        // 🔴🔴 矿石也需 HY3D 表面高度修正（2026-08-16 修复飞天）：
+        //   旧网格高度 y≈-0.2~0，但视觉上 HY3D 岛屿在 y≈4+
+        //   不修正 → 矿石悬空在天上
+        const hy3dOreY = this.hy3dSurfaceHeightAt(gx + 0.5, gz + 0.5);
+        if (hy3dOreY != null && hy3dOreY > y) y = hy3dOreY;
         
         // 🔴🔴 水域防护 + 高度上限
         if (y < 0 || y > MAX_ORE_Y) continue; // 跳过水下和过高矿点
