@@ -1329,43 +1329,30 @@ export class World3dComponent implements OnInit, OnDestroy {
       }
     }
 
-    // 垂直方向统一单路径插值（修复原双重写入导致的抖动）：
-    //   空中 → 纯 lerp 追踪物理跳跃弧线（丝滑）
-    //   地面 → 加速收敛到地面高度（防止下陷/悬空）
-    let groundY = this.heightAt(this.dpx, this.dpz);
-    // 🔴🔴🔴 HY3D 岛屿表面修正（2026-08-16 彻底修复：旧网格已隐藏，其高度值对视觉定位无意义）
-    //   当 HY3D 高度有效时，始终使用 HY3D 视觉地面（不再取 max，因为旧网格值在此位置可能虚高）
-    const hy3dY = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
-    if (hy3dY != null) {
-      groundY = hy3dY; // 强制用可见的 HY3D 岛屿表面作为唯一地面基准
-    }
-    // ⚠️ heightAt 返回 undefined 时（chunk 未加载），必须用 server 权威 py 做 fallback，
-    //    绝不能用 this.dpy —— 否则 targetY=dpy+0.35 导致每帧 +0.14 的正反馈循环 → 玩家无限上升！
-    const baseY = groundY ?? this.py;
-    const targetY = baseY + 0.35; // 脚底偏移
-        // 🔴🔴 判断是否真的在空中：不仅看 py 高度，还要看最近是否有跳跃输入
-    const timeSinceJump = performance.now() - this._lastJumpTs;
-    const recentlyJumped = timeSinceJump < 1500; // 跳跃后1.5秒内允许离地
-    const airborne = recentlyJumped && (this.py > targetY + 0.3);
-
-    if (airborne) {
-      // 空中：lerp 平滑追踪物理权威 Y（跳跃弧线丝滑）
-      this.dpy += (this.py - this.dpy) * k;
-    } else if (groundY != null) {
-      // 🔴🔴 着地状态：强力贴地（不管服务端发了什么值，必须在地面附近）
-      this.dpy += (targetY - this.dpy) * Math.min(k * 4.0, 0.60);
+    // 🔴🔴🔴🔴 核弹级防飞天修复（2026-08-16 第三轮）：
+    //   不再信任服务端 py / dpy 的任何累积值。
+    //   每帧根据 HY3D 地面高度直接计算正确 Y，仅跳跃时允许临时离地。
+    const hy3dGround = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
+    const gridGround = this.heightAt(this.dpx, this.dpz);
+    // 有 HY3D 就用 HY3D（视觉地面），否则用旧网格兜底
+    const effectiveGround = (hy3dGround != null) ? hy3dGround : (gridGround ?? 0);
+    const FOOT_OFFSET = 0.35; // 脚底到角色中心偏移
+    const GROUND_Y = effectiveGround + FOOT_OFFSET;
+    
+    // 判断是否在跳跃窗口内（跳跃后 1.2 秒允许离地）
+    const msSinceJump = performance.now() - this._lastJumpTs;
+    const inJumpWindow = msSinceJump < 1200;
+    
+    if (inJumpWindow) {
+      // 跳跃窗口内：允许离地，但用服务端 py 做上限（钳制到地面+2.5m）
+      this.dpy += (this.py - this.dpy) * k; // 正常 lerp 追踪
+      const jumpMax = effectiveGround + World3dComponent.MAX_ABOVE_GROUND;
+      if (this.dpy > jumpMax) this.dpy = jumpMax;
+      if (this.dpy < GROUND_Y) this.dpy = GROUND_Y; // 不允许钻地
     } else {
-      // chunk 未加载时：纯 lerp 追踪服务器权威 Y，不自我加速（防上升/下降漂移）
-      this.dpy += (this.py - this.dpy) * k;
-    }
-
-    // 🔴🔴🔴 2026-08-16 防飞天最终钳制（三重保险）：
-    const maxY = baseY + World3dComponent.MAX_ABOVE_GROUND;
-    if (this.dpy > maxY) {
-      this.dpy = maxY;
-      if (!recentlyJumped && this.dpy > targetY + 0.5) {
-        this.dpy = targetY; // 触发钳制且最近没跳跃 → 直接压到地面
-      }
+      // 🔴🔴 非跳跃状态：强制钉在地面上，不管服务端发了什么！
+      //   不用 lerp、不用收敛、不用钳制 —— 直接硬编码
+      this.dpy = GROUND_Y;
     }
 
     // 统一一次性设置玩家位置（不再有第二处覆写）
@@ -1880,15 +1867,15 @@ export class World3dComponent implements OnInit, OnDestroy {
         oresInWater: ores.filter(o => o.inWater).length,
         playerInWater: player.inWater ? 1 : 0
       },
-      // 🔴🔴 Y轴坐标诊断（2026-08-16 飞天修复）
+      // 🔴🔴🔴 Y轴坐标诊断（2026-08-16 核弹级修复后）
       yCoord: {
-        serverPy: this.py,           // 服务端原始Y（变换前）
-        displayY: this.dpy,          // 实际渲染Y（变换后+钳制）
-        gridGround: this.heightAt(this.dpx, this.dpz),   // 旧网格地面
-        hy3dGround: this.hy3dSurfaceHeightAt(this.dpx, this.dpz), // HY3D视觉地面
-        maxAboveGround: World3dComponent.MAX_ABOVE_GROUND,
-        recentlyJumped: (performance.now() - this._lastJumpTs) < 1500,
-        lastJumpAgo: ((performance.now() - this._lastJumpTs) / 1000).toFixed(1) + 's'
+        serverPy: this.py,                    // 服务端原始Y
+        displayY: this.dpy,                   // 实际渲染Y（核弹修复后=GROUND_Y）
+        hy3dGround: this.hy3dSurfaceHeightAt(this.dpx, this.dpz),
+        gridGround: this.heightAt(this.dpx, this.dpz),
+        effectiveGround: null, // 下面立即填充
+        inJumpWindow: (performance.now() - this._lastJumpTs) < 1200,
+        msSinceJump: ((performance.now() - this._lastJumpTs) | 0)
       },
       // 🔴 地形诊断
       terrain: {
