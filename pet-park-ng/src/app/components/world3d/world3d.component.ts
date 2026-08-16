@@ -831,6 +831,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     head.position.y = 1.25;
     g.add(body, head);
     this.playerMesh = g;
+    g.renderOrder = 999; // 🔴 玩家始终渲染在最上层（避免被HY3D地形遮挡）
+    g.traverse(o => { if (o instanceof THREE.Mesh) o.renderOrder = 999; });
     this.scene.add(g);
 
     // 异步加载玩家模型：按性别选 boy.glb（男 M）/ girl.glb（女 F）
@@ -845,6 +847,8 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.scene.remove(this.playerMesh);
       this.scene.add(normalized);
       this.playerMesh = normalized;
+      normalized.renderOrder = 999;
+      normalized.traverse(o => { if (o instanceof THREE.Mesh) o.renderOrder = 999; });
       console.log('[world3d] 玩家角色已替换为 ' + modelFile);
     }).catch(() => {
       console.warn('[world3d] ' + modelFile + ' 加载失败，保留占位符');
@@ -1306,7 +1310,12 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 垂直方向统一单路径插值（修复原双重写入导致的抖动）：
     //   空中 → 纯 lerp 追踪物理跳跃弧线（丝滑）
     //   地面 → 加速收敛到地面高度（防止下陷/悬空）
-    const groundY = this.heightAt(this.dpx, this.dpz);
+    let groundY = this.heightAt(this.dpx, this.dpz);
+    // 🔴 HY3D 岛屿表面修正（2026-08-16：旧网格隐藏后玩家可能被岛屿实体遮挡）
+    const hy3dY = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
+    if (hy3dY != null && (groundY == null || hy3dY > groundY)) {
+      groundY = hy3dY; // 用可见的 HY3D 岛屿表面替代不可见的旧网格高度
+    }
     // ⚠️ heightAt 返回 undefined 时（chunk 未加载），必须用 server 权威 py 做 fallback，
     //    绝不能用 this.dpy —— 否则 targetY=dpy+0.35 导致每帧 +0.14 的正反馈循环 → 玩家无限上升！
     const baseY = groundY ?? this.py;
@@ -1851,7 +1860,30 @@ export class World3dComponent implements OnInit, OnDestroy {
         centers: this.islandCenters.length,
         childCount: this.scene.children.length
       },
-      waterPlane: !!this.waterPlane
+      waterPlane: !!this.waterPlane,
+      // 🔴 玩家角色诊断（2026-08-16：排查角色不可见）
+      playerMesh: (() => {
+        const pm = this.playerMesh;
+        if (!pm) return { exists: false };
+        const box = new THREE.Box3().setFromObject(pm);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        let wv = pm.visible, p = pm.parent;
+        while (p) { if (!p.visible) { wv = false; break; } p = p.parent; }
+        return {
+          exists: true, visible: pm.visible, worldVisible: wv,
+          childCount: pm.children.length,
+          position: { x: +pm.position.x.toFixed(2), y: +pm.position.y.toFixed(2), z: +pm.position.z.toFixed(2) },
+          bboxSize: { x: +size.x.toFixed(2), y: +size.y.toFixed(2), z: +size.z.toFixed(2) },
+          renderOrder: pm.renderOrder,
+          name: pm.name || '(unnamed)',
+          children: pm.children.map(c => ({
+            type: c.type, visible: c.visible,
+            isMesh: c instanceof THREE.Mesh,
+            material: (c instanceof THREE.Mesh && c.material) ? { type: c.material.type, visible: c.material.visible, opacity: (c.material as any).opacity } : null
+          }))
+        };
+      })()
     };
   }
 
@@ -1936,6 +1968,40 @@ export class World3dComponent implements OnInit, OnDestroy {
     const tx = fx - x0;
     const tz = fz - z0;
     return h00 * (1 - tx) * (1 - tz) + h10 * tx * (1 - tz) + h01 * (1 - tx) * tz + h11 * tx * tz;
+  }
+
+  /** 🔴 HY3D 岛屿表面高度估算（2026-08-16 修复玩家被岛屿遮挡）
+   *  当旧 gridCache 地形被隐藏后，玩家可能站在不可见的旧地形高度上，
+   *  而 HY3D 岛屿实体模型在更高的 Y 位置 → 玩家被完全遮挡。
+   *  此方法返回最近岛屿在该位置的近似表面高度，供 animate() 取 max 使用。
+   */
+  private hy3dSurfaceHeightAt(wx: number, wz: number): number | null {
+    if (!this.hy3dTerrainGroup || !this.islandCenters.length) return null;
+    let bestY: number | null = null;
+    let bestDistSq = Infinity;
+    // 遍历所有已放置的岛屿实例
+    for (let i = 0; i < this.hy3dTerrainGroup.children.length; i++) {
+      const inst = this.hy3dTerrainGroup.children[i] as THREE.Group;
+      if (!inst.visible) continue;
+      const dx = wx - inst.position.x;
+      const dz = wz - inst.position.z;
+      const distSq = dx * dx + dz * dz;
+      const c = this.islandCenters[i];
+      if (!c) continue;
+      const islandRadius = c.r * 1.1; // 与 loadHy3dTerrain 的 horizScale 对应的水平范围
+      if (distSq > islandRadius * islandRadius) continue; // 不在此岛范围内
+      // 近似：用岛屿中心的高度作为基准（岛屿表面大致平坦，边缘渐低）
+      // inst.position.y 已经是 groundH - baseY*vertScale（即岛屿底座 Y）
+      // 加上岛屿模型压扁后的近似高度（用包围盒估算）
+      const box = new THREE.Box3().setFromObject(inst);
+      const surfaceY = box.max.y; // 岛屿最高点 ≈ 表面
+      // 距离越远表面越低（线性衰减到边缘为 baseY）
+      const dist = Math.sqrt(distSq);
+      const falloff = Math.max(0, 1 - dist / islandRadius);
+      const estY = inst.position.y + (surfaceY - inst.position.y) * falloff;
+      if (distSq < bestDistSq) { bestDistSq = distSq; bestY = estY; }
+    }
+    return bestY;
   }
 
   // ================= Chunk 流式 =================
