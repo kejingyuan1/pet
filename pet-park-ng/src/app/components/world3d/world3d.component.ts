@@ -486,6 +486,7 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   // 🔴🔴 跳跃防护（2026-08-16 修复连按空格飞天）
   private _lastJumpTs = 0;                          // 上次跳跃时间戳
+  private _lastYLogTs = 0;                           // 上次 Y-DEBUG 日志时间戳
   private static readonly JUMP_COOLDOWN_MS = 800;   // 跳跃冷却（ms），防止连按叠加
   private static readonly MAX_ABOVE_GROUND = 2.5;   // 允许离地最大高度（正常跳最高2m，超过则强制压回）
   // 障碍网格（静态：树/矿/建筑）chunkKey -> set("gx,gz")，与 gridCache 同生命周期
@@ -1355,6 +1356,18 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.dpy = GROUND_Y;
     }
 
+    // 🔴🔴🔴 每帧 Y 值日志（节流 2s，用于排查飞天）
+    if (!this._lastYLogTs || performance.now() - this._lastYLogTs > 2000) {
+      this._lastYLogTs = performance.now();
+      console.log('[Y-DEBUG]', {
+        dpy: this.dpy.toFixed(3),
+        hy3d: hy3dGround?.toFixed(3),
+        grid: gridGround?.toFixed(2),
+        ground: effectiveGround?.toFixed(3),
+        jumping: inJumpWindow,
+        px: this.dpx.toFixed(1), pz: this.dpz.toFixed(1)
+      });
+    }
     // 统一一次性设置玩家位置（不再有第二处覆写）
     this.playerMesh.position.set(this.dpx, this.dpy, this.dpz);
     this.playerMesh.rotation.y = this.dprot;
@@ -2032,33 +2045,40 @@ export class World3dComponent implements OnInit, OnDestroy {
    *  此方法返回最近岛屿在该位置的近似表面高度，供 animate() 取 max 使用。
    */
   private hy3dSurfaceHeightAt(wx: number, wz: number): number | null {
+    // 🔴🔴🔴 2026-08-16 修复：旧版用 box.max.y（含树/建筑等装饰物）导致"地面"虚高10-20m → 玩家飞天
+    //   改用 Raycaster 从上方垂直向下投射，找到 HY3D 地形网格的真实表面交点
     if (!this.hy3dTerrainGroup || !this.islandCenters.length) return null;
-    let bestY: number | null = null;
-    let bestDistSq = Infinity;
-    // 遍历所有已放置的岛屿实例
-    for (let i = 0; i < this.hy3dTerrainGroup.children.length; i++) {
-      const inst = this.hy3dTerrainGroup.children[i] as THREE.Group;
-      if (!inst.visible) continue;
-      const dx = wx - inst.position.x;
-      const dz = wz - inst.position.z;
-      const distSq = dx * dx + dz * dz;
+
+    // 快速判断：是否在任何岛屿水平范围内
+    let nearIsland = false;
+    for (let i = 0; i < this.islandCenters.length; i++) {
       const c = this.islandCenters[i];
-      if (!c) continue;
-      const islandRadius = c.r * 1.1; // 与 loadHy3dTerrain 的 horizScale 对应的水平范围
-      if (distSq > islandRadius * islandRadius) continue; // 不在此岛范围内
-      // 近似：用岛屿中心的高度作为基准（岛屿表面大致平坦，边缘渐低）
-      // inst.position.y 已经是 groundH - baseY*vertScale（即岛屿底座 Y）
-      // 加上岛屿模型压扁后的近似高度（用包围盒估算）
-      const box = new THREE.Box3().setFromObject(inst);
-      const surfaceY = box.max.y; // 岛屿最高点 ≈ 表面
-      // 距离越远表面越低（线性衰减到边缘为 baseY）
-      const dist = Math.sqrt(distSq);
-      const falloff = Math.max(0, 1 - dist / islandRadius);
-      const estY = inst.position.y + (surfaceY - inst.position.y) * falloff;
-      if (distSq < bestDistSq) { bestDistSq = distSq; bestY = estY; }
+      const dx = wx - c.cx;
+      const dz = wz - c.cz;
+      const r = c.r * 1.2; // 稍微放宽判定范围
+      if (dx * dx + dz * dz <= r * r) { nearIsland = true; break; }
     }
-    return bestY;
+    if (!nearIsland) return null;
+
+    // Raycaster 向下投射（从 y=200 足够高）
+    if (!this._hy3dRaycaster) {
+      this._hy3dRaycaster = new THREE.Raycaster();
+      this._hy3dRaycaster.ray.direction.set(0, -1, 0);
+    }
+    this._hy3dRaycaster.ray.origin.set(wx, 200, wz);
+
+    // 只检测 HY3D 地形组的子对象（避免命中玩家自身、矿石等）
+    const hits = this._hy3dRaycaster.intersectObjects(this.hy3dTerrainGroup.children, true);
+    if (hits.length > 0) {
+      // 第一个交点就是可见的地面/物体表面
+      return hits[0].point.y;
+    }
+
+    return null; // 没有命中任何地形
   }
+
+  /** Raycaster 实例（复用，避免每帧重建） */
+  private _hy3dRaycaster: THREE.Raycaster | null = null;
 
   // ================= Chunk 流式 =================
 
