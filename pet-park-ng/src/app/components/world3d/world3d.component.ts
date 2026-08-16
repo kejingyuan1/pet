@@ -2329,7 +2329,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         float c = sqrt(9.8 / k);                     // 相速度（深水近似）
         vec2  d = normalize(wave.xy);                // 方向
         float f = k * (dot(d, p.xz) - c * uTime);   // 相位
-        float a = wave.w * wave.z * 0.15;            // 振幅 = 陡度 × 波长 × 缩放
+        float a = wave.w * wave.z * 0.08;            // 振幅 = 陡度 × 波长 × 缩放（原0.15太陡→0.08平缓）
         return vec3(
           d.x * (a * cos(f)),       // x 水平位移
           a * sin(f),                 // y 垂直位移
@@ -2388,18 +2388,18 @@ export class World3dComponent implements OnInit, OnDestroy {
         float depthBlend = smoothstep(0.08, 0.55, vDistToShore);
         vec3 waterColor = mix(uShallowColor, uDeepColor, depthBlend);
 
-        // Fresnel 效应（视角越低反射越多）
-        float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0);
-        waterColor = mix(waterColor, vec3(0.65, 0.82, 0.95), fresnel * 0.35);
+        // Fresnel 效应（视角越低反射越多）— 柔化参数
+        float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 4.0);  // 原3.0→4.0更柔和
+        waterColor = mix(waterColor, vec3(0.65, 0.82, 0.95), fresnel * 0.25);  // 原0.35→0.25降低反射强度
 
-        // ---- 太阳高光（Blinn-Phong）----
+        // ---- 太阳高光（Blinn-Phong）---- 柔化高光
         vec3 halfVec = normalize(uSunDir + viewDir);
-        float spec = pow(max(dot(normal, halfVec), 0.0), 256.0);
-        waterColor += vec3(1.0, 0.95, 0.82) * spec * 0.85;
+        float spec = pow(max(dot(normal, halfVec), 0.0), 128.0);  // 原256→128更分散
+        waterColor += vec3(1.0, 0.95, 0.82) * spec * 0.5;  // 原0.85→0.5降低高光强度
 
-        // ---- 岸边泡沫（波峰 + 近岸）----
-        float shoreFoam = (1.0 - depthBlend) * 0.45;     // 近岸基础泡沫
-        float peakFoam  = vFoamFactor * 0.55;             // 波峰额外泡沫
+        // ---- 岸边泡沫（波峰 + 近岸）---- 减少泡沫量
+        float shoreFoam = (1.0 - depthBlend) * 0.25;     // 原0.45→0.25减少基础泡沫
+        float peakFoam  = vFoamFactor * 0.30;             // 原0.55→0.30减少波峰泡沫
         float foam = clamp(shoreFoam + peakFoam, 0.0, 1.0);
         foam *= smoothstep(0.0, 0.15, foam);              // 软化边缘
         waterColor = mix(waterColor, uFoamColor, foam * 0.7);
@@ -2421,9 +2421,14 @@ export class World3dComponent implements OnInit, OnDestroy {
       uFoamColor: { value: new THREE.Color(0xE8F4FC) },     // 泡沫白
       uWaterLevel: { value: wl },
       // Gerstner 波：方向(x,y), 陡度, 波长
-      uWaveA: { value: new THREE.Vector4( 1.0,  0.2, 0.25, 18.0) },  // 主浪（长波，东北方向）
-      uWaveB: { value: new THREE.Vector4(-0.6,  0.8, 0.20, 10.0) },  // 二次浪（西北）
-      uWaveC: { value: new THREE.Vector4( 0.3, -1.0, 0.15,  5.5) },  // 涟漪（短波）
+      // 🔴🔴 2026-08-16 优化：原参数频率太快、波太陡
+      //   调整策略：增大波长(降低频率) + 降低陡度(更平缓) + 减小时间系数(慢速)
+      //   WaveA 主浪：长波长40m（原18）+ 低陡度0.12（原0.25）→ 宽缓涌浪
+      //   WaveB 二次浪：波长22m（原10）+ 陡度0.10（原0.20）→ 中等交叉浪
+      //   WaveC 涟漪：波长12m（原5.5）+ 陡度0.06（原0.15）→ 细微纹理
+      uWaveA: { value: new THREE.Vector4( 1.0,  0.2, 0.12, 40.0) },  // 主浪（宽缓长浪）
+      uWaveB: { value: new THREE.Vector4(-0.6,  0.8, 0.10, 22.0) },  // 二次浪（交叉中浪）
+      uWaveC: { value: new THREE.Vector4( 0.3, -1.0, 0.06, 12.0) },  // 涟漪（细微纹理）
     };
 
     const mat = new THREE.ShaderMaterial({
@@ -2445,7 +2450,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   /** 更新水面着色器 uniform（时间 + 相机位置），波浪由 GPU Gerstner 算法驱动 */
   private updateWaterPlane(now: number): void {
     if (!this.waterPlane || !this.waterUniforms) return;
-    (this.waterUniforms['uTime'] as { value: number }).value = now * 0.0008;   // 波浪时间（控制速度）
+    (this.waterUniforms['uTime'] as { value: number }).value = now * 0.00025;  // 🔴 波浪时间（原0.0008太快→0.00025平缓）
     (this.waterUniforms['uCameraPos'] as { value: THREE.Vector3 }).value.copy(this.camera.position);
   }
 
@@ -2687,6 +2692,9 @@ export class World3dComponent implements OnInit, OnDestroy {
         if (cell !== 4) continue; // 4 = TREE
         const gx = resp.cx * CHUNK + lx;
         const gz = resp.cz * CHUNK + lz;
+        // 🔴🔴 岛屿范围防护（2026-08-16 修复）：旧数学网格在开放水域（岛外）会伪标 TREE 语义
+        // 必须限制树只生成在岛屿半径内，否则树会漂浮在水面上
+        if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) continue;
         // 直接从高度数组取值（避免 heightAt 插值/缓存未命中返回 undefined → y=0 漂浮）
         const rawY = h[lz * N + lx];
         // 🔴 用插值地表高度判定（与调试探针一致）：水边插值后树基会低于水面
@@ -2696,6 +2704,11 @@ export class World3dComponent implements OnInit, OnDestroy {
         // 之前用 waterLevel+0.6(-4.4) 太宽 → 负高度格(-3~-0.3)全漏过 → 树站在水里
         const safeY = Math.max(waterLevel + 0.6, 0); // 安全线 = 海平面以上
         if (y < safeY) continue; // 跳过水下/水边低洼格
+        // 🔴🔴🔴 HY3D 地形存在性检查（2026-08-16 终极修复）：
+        //   旧网格 height>=0 不代表真正有陆地（旧网格与HY3D视觉地形不一致）
+        //   hy3dSurfaceHeightAt 做 raycast：null=该位置无HY3D地形=水面→不放树
+        const hy3dY = this.hy3dSurfaceHeightAt(gx + 0.5, gz + 0.5);
+        if (hy3dY === null) continue;
         const finalY = y;
         const tree = this.makeTree();
         tree.position.set(gx + 0.5, finalY, gz + 0.5);
