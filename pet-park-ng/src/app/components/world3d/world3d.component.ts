@@ -447,7 +447,9 @@ export class World3dComponent implements OnInit, OnDestroy {
   private starMaterial!: THREE.ShaderMaterial; // 星星材质（透明度随昼夜变化）
   private cloudGroup!: THREE.Group;           // 云朵容器
 
-  // （已移除 waterPlane — 大平面穿透地形导致蓝色三角碎片）
+  // （已移除旧 waterPlane — 大平面穿透地形导致蓝色三角碎片）
+  // 新版水面：半透明波浪平面，填充 chunk 网格中过滤掉的水域空洞
+  private waterPlane!: THREE.Mesh;
   private static readonly STAR_COUNT = 1800;   // 星星数量
   private static readonly CLOUD_COUNT = 12;    // 云朵数量
 
@@ -621,6 +623,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 清理天空装饰
     if (this.starField) { this.scene?.remove(this.starField); this.starField.geometry.dispose(); this.starMaterial.dispose(); }
     if (this.cloudGroup) { this.scene?.remove(this.cloudGroup); }
+    // 清理水面
+    if (this.waterPlane) { this.scene?.remove(this.waterPlane); this.waterPlane.geometry.dispose(); (this.waterPlane.material as THREE.Material).dispose(); }
     // 清理 HY3D 地形岛屿层
     if (this.hy3dTerrainGroup) {
       this.scene?.remove(this.hy3dTerrainGroup);
@@ -657,13 +661,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 雾效：推远近裁面，暖化雾色，增加密度隐藏远处水天交界线（消除"无限蓝"感）
     this.scene.fog = new THREE.Fog(0xB8D4E8, 520, 1200);   // 拉远雾起點(520)與終點(1200)，減少近距霧化吞地形
 
-    // 🔴 水面已禁用：原 12000×12000 半透明蓝平面覆盖整个地图导致"全屏泛蓝"
-    // 地形网格已用语义色着色（水=0x2f7fd6 蓝），不需要额外叠加层
-    // 如需恢复波浪效果，必须将水平面裁剪到实际水域格（非全图），否则视觉错误
-    // const waterLevel = this.config?.waterLevel ?? -5;
-    // const oceanFloor = waterLevel;
-    // ...water mesh code removed...
-    (this as any).waterMat = null; // 无水面材质
+    // 🔴 水面：半透明波浪平面（createWaterPlane），chunk 网格已不渲染水三角
+    const waterLevel = this.config?.waterLevel ?? -5;
 
     this.camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 1500);
     // 相机初始位置：高俯视（群岛世界需要更陡的视角才能看到岛屿全貌，避免"全在水上"感）
@@ -708,7 +707,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     // ====== 云朵（昼夜均可见） ======
     this.createClouds();
 
-    // （已移除 waterPlane — 地形 WATER 语义格自身渲染蓝色即可）
+    // ====== 半透明水面（填充 chunk 网格中过滤掉的水域空洞） ======
+    this.createWaterPlane();
 
     // OrbitControls（默认禁用，跟随模式由自研 rig 控制；建造模式启用）
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -1365,17 +1365,12 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
     // 昼夜系统：据相位平滑插值天空/雾/灯光/曝光
     this.updateDayNight(dt);
-    // 天空装饰：星星闪烁 + 云朵漂移
+    // 天空装饰：星星闪烁 + 云朵漂移 + 水面波浪
     this.updateStars(now * 0.001);
     this.updateClouds(dt, now * 0.001);
-    // （waterPlane 微动已移除）
+    this.updateWaterPlane(now);
     this.renderer.render(this.scene, this.camera);
 
-    // v8 海浪动画：更新 shader 时间 uniform
-    const wMat = (this as any).waterMat as THREE.MeshStandardMaterial | undefined;
-    if (wMat && (wMat as any).waterShader) {
-      (wMat as any).waterShader.uniforms.uTime.value = performance.now() * 0.001;
-    }
     // 🔴 暴露场景调试数据（含水域安全状态），供 playwright 断言
     this.publishWorldDebug();
   }
@@ -1855,7 +1850,8 @@ export class World3dComponent implements OnInit, OnDestroy {
         islands: this.hy3dTerrainGroup ? this.hy3dTerrainGroup.children.length : 0,
         centers: this.islandCenters.length,
         childCount: this.scene.children.length
-      }
+      },
+      waterPlane: !!this.waterPlane
     };
   }
 
@@ -2060,6 +2056,63 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** 创建半透明水面：大平面覆盖整个世界，填充 chunk 网格过滤掉的水域空洞
+   *  关键：chunk 网格已不渲染水三角（Fix 1），所以水面从下方填补，不会穿透陆地 */
+  private createWaterPlane(): void {
+    const wl = this.config?.waterLevel ?? -5;
+    // 水面尺寸：覆盖所有可能的岛屿范围（±1500）
+    const size = 3200;
+    const geo = new THREE.PlaneGeometry(size, size, 64, 64);
+    geo.rotateX(-Math.PI / 2);
+
+    // 给顶点加正弦位移 → 渲染时自动形成波浪
+    const posAttr = geo.getAttribute('position');
+    const waveData = new Float32Array(posAttr.count); // 存每顶点的随机相位
+    for (let i = 0; i < posAttr.count; i++) {
+      waveData[i] = Math.random() * Math.PI * 2;
+    }
+    geo.userData['wavePhase'] = waveData;
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x1a8cd4,        // 海洋蓝（比之前的 0x2EAFCF 更深更自然）
+      transparent: true,
+      opacity: 0.68,          // 半透明，能看到水下地形过渡
+      roughness: 0.18,        // 光滑水面有高光
+      metalness: 0.35,        // 轻微金属感（反射天空）
+      fog: false,             // 不受雾影响
+      side: THREE.DoubleSide,
+    });
+
+    this.waterPlane = new THREE.Mesh(geo, mat);
+    this.waterPlane.position.y = wl - 0.15; // 略低于水位线，避免与海岸线 z-fighting
+    this.waterPlane.name = 'ocean_surface';
+    this.waterPlane.renderOrder = -999;       // 最先渲染（底层）
+    this.scene.add(this.waterPlane);
+
+    // 保存引用供动画使用
+    (this as any).waterMat = mat;
+  }
+
+  /** 更新水面波浪动画 */
+  private updateWaterPlane(now: number): void {
+    if (!this.waterPlane) return;
+    const t = now * 0.0006; // 波浪速度
+    const posAttr = this.waterPlane.geometry.getAttribute('position');
+    const waveData = this.waterPlane.geometry.userData['wavePhase'] as Float32Array;
+    if (!waveData) return;
+
+    for (let i = 0; i < posAttr.count; i++) {
+      const x = posAttr.getX(i);
+      const z = posAttr.getZ(i);
+      // 双波叠加：大波长缓浪 + 小波长涟漪
+      const w1 = Math.sin(t * 1.2 + x * 0.008 + z * 0.006 + waveData[i]) * 0.25;
+      const w2 = Math.sin(t * 2.8 + x * 0.022 + z * 0.018 + waveData[i] * 1.7) * 0.08;
+      posAttr.setY(i, w1 + w2);
+    }
+    posAttr.needsUpdate = true;
+    this.waterPlane.geometry.computeVertexNormals();
+  }
+
   private buildChunkMesh(resp: ChunkResp): THREE.Mesh {
     const h = resp.height;
     const sem = resp.semantic;
@@ -2102,6 +2155,14 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 仅对 WATER(0)/RIVER(10) 语义格及其陆地邻居做平滑
     this.smoothWaterEdges(positions, sem, waterLevel);
 
+    // 🔴🔴 水体三角形过滤：纯水域三角（3顶点都在语义0格内）不生成 → 消除蓝色碎片根因
+    // 混合三角（水+陆边界）保留 → 维持海岸线轮廓。水面由独立 waterPlane 渲染。
+    const isWaterCell = (vx: number, vz: number): boolean => {
+      const cx = Math.min(Math.max(vx, 0), CHUNK - 1);
+      const cz = Math.min(Math.max(vz, 0), CHUNK - 1);
+      return sem[cz * CHUNK + cx] === 0;
+    };
+
     const indices: number[] = [];
     for (let lz = 0; lz < CHUNK; lz++) {
       for (let lx = 0; lx < CHUNK; lx++) {
@@ -2110,14 +2171,17 @@ export class World3dComponent implements OnInit, OnDestroy {
         const cIdx = (lz + 1) * N + lx;
         const d = cIdx + 1;
 
-        // ===== 逐三角形检查（比 quad 级检查严格得多） =====
-        // 三角形 1: (a, cIdx, b)
+        // 三角形 1: (a, cIdx, b) — 跳过纯水域三角
         if (this.isValidTriangle(positions, a, cIdx, b, waterLevel)) {
-          indices.push(a, cIdx, b);
+          if (!(isWaterCell(lx, lz) && isWaterCell(lx, lz + 1) && isWaterCell(lx + 1, lz))) {
+            indices.push(a, cIdx, b);
+          }
         }
-        // 三角形 2: (cIdx, d, b)
+        // 三角形 2: (cIdx, d, b) — 跳过纯水域三角
         if (this.isValidTriangle(positions, cIdx, d, b, waterLevel)) {
-          indices.push(cIdx, d, b);
+          if (!(isWaterCell(lx, lz + 1) && isWaterCell(lx + 1, lz + 1) && isWaterCell(lx + 1, lz))) {
+            indices.push(cIdx, d, b);
+          }
         }
       }
     }
@@ -2411,12 +2475,15 @@ export class World3dComponent implements OnInit, OnDestroy {
           const tpl = valid[idx];
           const m = meta[idx];
           const inst = tpl.clone(true);
-          // 缩小到原大小的 1/3（避免巨大实心模型包裹摄像机）
-          const horizScale = (c.r * 0.4) / m.radius;  // 水平缩放：覆盖岛核心区域
-          inst.scale.set(horizScale, horizScale * 0.08, horizScale);  // Y 压扁到 8%（薄地形贴片）
-          // 位置：底座放在该岛中心的地形高度上（坐在程序化地形表面，而非水位线）
+          // 水平缩放：让 HY3D 岛屿略大于程序化岛半径（完整覆盖块状地形）
+          // HY3D 模型直径~300单位，程序化岛半径115-190 → scale ≈ 0.9~1.3
+          const horizScale = (c.r * 1.1) / m.radius;
+          // Y 压扁到 18%（HY3D 原模型有高山~100单位，压后最高~18单位，不包裹摄像机）
+          const vertScale = horizScale * 0.18;
+          inst.scale.set(horizScale, vertScale, horizScale);
+          // 底座对齐到地表高度（坐在程序化地形上）
           const groundH = this.heightAt(c.cx, c.cz) ?? 0;
-          inst.position.set(c.cx, groundH - m.baseY * horizScale * 0.08, c.cz);
+          inst.position.set(c.cx, groundH - m.baseY * vertScale, c.cz);
           inst.rotation.y = (i * 2.39996) % (Math.PI * 2);
           inst.traverse(o => { o.userData['shared'] = true; });
           group.add(inst);
