@@ -1356,18 +1356,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.dpy = GROUND_Y;
     }
 
-    // 🔴🔴🔴 每帧 Y 值日志（节流 2s，用于排查飞天）
-    if (!this._lastYLogTs || performance.now() - this._lastYLogTs > 2000) {
-      this._lastYLogTs = performance.now();
-      console.log('[Y-DEBUG]', {
-        dpy: this.dpy.toFixed(3),
-        hy3d: hy3dGround?.toFixed(3),
-        grid: gridGround?.toFixed(2),
-        ground: effectiveGround?.toFixed(3),
-        jumping: inJumpWindow,
-        px: this.dpx.toFixed(1), pz: this.dpz.toFixed(1)
-      });
-    }
+    // [Y-DEBUG removed 2026-08-16] 飞天问题已修复，不再需要每帧日志
     // 统一一次性设置玩家位置（不再有第二处覆写）
     this.playerMesh.position.set(this.dpx, this.dpy, this.dpz);
     this.playerMesh.rotation.y = this.dprot;
@@ -2623,8 +2612,9 @@ export class World3dComponent implements OnInit, OnDestroy {
           // 水平缩放：让 HY3D 岛屿略大于程序化岛半径（完整覆盖块状地形）
           // HY3D 模型直径~300单位，程序化岛半径115-190 → scale ≈ 0.9~1.3
           const horizScale = (c.r * 1.1) / m.radius;
-          // Y 压扁到 18%（HY3D 原模型有高山~100单位，压后最高~18单位，不包裹摄像机）
-          const vertScale = horizScale * 0.18;
+          // Y 压缩到 35%（原0.18把烘焙树压成饼，用户反馈"树完全被压扁"）
+          // HY3D 原模型有高山~100单位，压后最高~35单位
+          const vertScale = horizScale * 0.35;
           inst.scale.set(horizScale, vertScale, horizScale);
           // 底座对齐到地表高度（坐在程序化地形上）
           const groundH = this.heightAt(c.cx, c.cz) ?? 0;
