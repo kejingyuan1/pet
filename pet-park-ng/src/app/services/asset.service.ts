@@ -67,8 +67,10 @@ export class AssetService {
   constructor() {
     this.gltfLoader = new GLTFLoader();
     // DRACO 解码器：HY3D 生成的动物 GLB 为 draco 压缩版，必须挂 DRACOLoader 才能解析
+    // 🔴 2026-08-16：解码器本地化（src/assets/draco/，three 自带），不再依赖 gstatic CDN——
+    //   离线/弱网/无头环境下 CDN 拉取会 pending 卡死 → HY3D 岛屿/动物永远加载不出来
     this.dracoLoader = new DRACOLoader();
-    this.dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+    this.dracoLoader.setDecoderPath('assets/draco/');
     this.gltfLoader.setDRACOLoader(this.dracoLoader);
     this.textureLoader = new THREE.TextureLoader();
   }

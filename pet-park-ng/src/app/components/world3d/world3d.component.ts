@@ -496,6 +496,10 @@ export class World3dComponent implements OnInit, OnDestroy {
   private _lastYLogTs = 0;                           // 上次 Y-DEBUG 日志时间戳
   private static readonly JUMP_COOLDOWN_MS = 800;   // 跳跃冷却（ms），防止连按叠加
   private static readonly MAX_ABOVE_GROUND = 2.5;   // 允许离地最大高度（正常跳最高2m，超过则强制压回）
+  // 🔴🔴🔴 跳跃本地抛物线参数（2026-08-16）：与服务端 WorldPhysicsService 完全一致
+  //   JUMP_VEL=8.5 / GRAVITY=25 → 滞空 0.68s、最高 1.44m，落地零突跳（丝滑）
+  private static readonly JUMP_VEL = 8.5;
+  private static readonly JUMP_GRAVITY = 25.0;
   // 障碍网格（静态：树/矿/建筑）chunkKey -> set("gx,gz")，与 gridCache 同生命周期
   private obstacleGrid: Map<string, Set<string>> = new Map();
   // 导航卡住检测 / 重寻路
@@ -1295,25 +1299,33 @@ export class World3dComponent implements OnInit, OnDestroy {
     const pgz = Math.floor(this.dpz);
     let inWater = false;
 
-    // Layer 1: 语义格检测
-    const cc = this.cellChunk(pgx, pgz);
-    if (cc) {
-      const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
-      if (g) {
-        const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
-        if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
-          const sem = g.semantic[lz * CHUNK + lx];
-          if (sem === 0 || sem === 10) { inWater = true; } // WATER or RIVER
+    // 🔴🔴🔴 Layer 0（2026-08-16 修复"双击走不过去/WASD 橡皮筋"根因）：
+    //   玩家脚下 raycast 命中 HY3D 视觉岛屿表面 → 绝不在水里，直接跳过 Layer 1/2。
+    //   旧逻辑用旧网格语义/高度判水：HY3D 世界视觉地面 y≈4+，而旧网格大量格子高度 <0
+    //   → 出生点/岛上永久误报"落水"，每 3 秒打断自动导航（清空 pathPoints/moveTarget）
+    //   并把人瞬移回去 → 用户看到"双击不移动、按键没效果"。Layer 1/2 仅对岛外海域生效。
+    const hy3dGroundHere = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
+    if (hy3dGroundHere == null) {
+      // Layer 1: 语义格检测
+      const cc = this.cellChunk(pgx, pgz);
+      if (cc) {
+        const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+        if (g) {
+          const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
+          if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
+            const sem = g.semantic[lz * CHUNK + lx];
+            if (sem === 0 || sem === 10) { inWater = true; } // WATER or RIVER
+          }
         }
       }
-    }
 
-    // Layer 2: 高度 fallback（语义数据未加载时也能保护）
-    if (!inWater) {
-      const groundY = this.heightAt(this.dpx, this.dpz);
-      const wl = this.config?.waterLevel ?? -5;
-      const safeLine = Math.max(wl + 0.5, 0); // 🔴🔴 安全线=海平面以上
-      if (groundY != null && groundY < safeLine) { inWater = true; } // 地面低于安全线≈在水里/低洼
+      // Layer 2: 高度 fallback（语义数据未加载时也能保护）
+      if (!inWater) {
+        const groundY = this.heightAt(this.dpx, this.dpz);
+        const wl = this.config?.waterLevel ?? -5;
+        const safeLine = Math.max(wl + 0.5, 0); // 🔴🔴 安全线=海平面以上
+        if (groundY != null && groundY < safeLine) { inWater = true; } // 地面低于安全线≈在水里/低洼
+      }
     }
 
     // 推回陆地（带 3 秒冷却锁，防止每帧与服务端快照打架导致抖动）
@@ -1328,7 +1340,9 @@ export class World3dComponent implements OnInit, OnDestroy {
           //   覆盖后下一帧又被服务端改回 → 死循环抖动）
           const newPx = land.gx + 0.5, newPz = land.gz + 0.5;
           this.dpx = newPx; this.dpz = newPz;
-          this.dpy = (this.heightAt(newPx, newPz) ?? 0); // 脚底贴地
+          // 🔴 2026-08-16：Y 优先用 HY3D 视觉地面（旧网格高度比岛面低 4m+ → 瞬移坠崖观感）
+          const hyLand = this.hy3dSurfaceHeightAt(newPx, newPz);
+          this.dpy = (hyLand != null ? hyLand : (this.heightAt(newPx, newPz) ?? 0)); // 脚底贴地
           // 取消自动导航
           this.pathPoints = []; this.moveTarget = null; this.navGoal = null; this.miniTarget = null;
           // 通知服务端停止移动
@@ -1342,26 +1356,28 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 🔴🔴🔴🔴 核弹级防飞天修复（2026-08-16 第三轮）：
     //   不再信任服务端 py / dpy 的任何累积值。
     //   每帧根据 HY3D 地面高度直接计算正确 Y，仅跳跃时允许临时离地。
-    const hy3dGround = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
+    //   （hy3dGroundHere 已在本帧上方水域保护处算好，直接复用，避免二次 raycast）
     const gridGround = this.heightAt(this.dpx, this.dpz);
     // 有 HY3D 就用 HY3D（视觉地面），否则用旧网格兜底
-    const effectiveGround = (hy3dGround != null) ? hy3dGround : (gridGround ?? 0);
+    const effectiveGround = (hy3dGroundHere != null) ? hy3dGroundHere : (gridGround ?? 0);
     const FOOT_OFFSET = 0; // 脚底贴地，无偏移
     const GROUND_Y = effectiveGround + FOOT_OFFSET;
     
-    // 判断是否在跳跃窗口内（跳跃后 1.2 秒允许离地）
+    // 🔴🔴🔴 跳跃本地抛物线（2026-08-16 修复"最后几帧卡顿"根因）：
+    //   旧实现：跳跃窗口内 lerp 追服务端 py → 快照抖动 + 1.2s 窗口到期瞬间从
+    //   "追服务端高度"硬切到"落地 lerp" → 落地前几帧视觉突跳/卡顿。
+    //   新实现：完全本地抛物线 y = v0*t - ½g*t²（参数与服务端 JUMP_VEL=8.5/GRAVITY=25 一致），
+    //   t=0.68s 精确回到地面 → 落地零突跳、丝滑；地面每帧重算，斜坡/移动中跳跃自然贴合。
     const msSinceJump = performance.now() - this._lastJumpTs;
-    const inJumpWindow = msSinceJump < 1200;
-    
+    const jumpDurMs = (2 * World3dComponent.JUMP_VEL / World3dComponent.JUMP_GRAVITY) * 1000; // ≈680ms 滞空
+    const inJumpWindow = msSinceJump < jumpDurMs;
+
     if (inJumpWindow) {
-      // 跳跃窗口内：允许离地，但用服务端 py 做上限（钳制到地面+2.5m）
-      this.dpy += (this.py - this.dpy) * k; // 正常 lerp 追踪
-      const jumpMax = effectiveGround + World3dComponent.MAX_ABOVE_GROUND;
-      if (this.dpy > jumpMax) this.dpy = jumpMax;
-      if (this.dpy < GROUND_Y) this.dpy = GROUND_Y; // 不允许钻地
+      const jt = msSinceJump / 1000; // 跳跃经过秒数
+      const rise = World3dComponent.JUMP_VEL * jt - 0.5 * World3dComponent.JUMP_GRAVITY * jt * jt;
+      this.dpy = GROUND_Y + Math.max(0, rise); // 抛物线：0 → 1.44m → 0，单调平滑无突跳
     } else {
-      // 🔴🔴 平滑落地修复（2026-08-16）：不再硬钉 dpy=GROUND_Y（导致跳跃末帧视觉弹跳/卡顿），
-      //   改为快速 lerp ~50ms 收敛，让落地丝滑自然
+      // 🔴🔴 平滑落地（2026-08-16）：抛物线终点恰好=地面，此快速 lerp 仅兜底台阶/地形突变
       const landLerp = Math.min(1.0, dt * 20);
       this.dpy += (GROUND_Y - this.dpy) * landLerp;
     }
@@ -1370,6 +1386,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 统一一次性设置玩家位置（不再有第二处覆写）
     this.playerMesh.position.set(this.dpx, this.dpy, this.dpz);
     this.playerMesh.rotation.y = this.dprot;
+    // 🔴 每帧轻量调试钩子（playwright 高频采样跳跃弧线用；8 帧刷新的 __worldDebug 在低帧率下看不到 680ms 跳跃）
+    (window as any).__dpyNow = this.dpy;
 
     // 远端玩家：以物理快照刚体为准
     this.updateRemotePlayersFromPhysics();
@@ -1674,6 +1692,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       const s = getSem(gx, gz);
       if (s == null) return false;
       if (s !== 1 && s !== 2 && s !== 9) return false; // sand / grass / empty
+      if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) return false; // 🔴 岛外（视觉海/虚空）不可走
       if (this.isObstacle(gx, gz)) return false;       // 树/矿/建筑占位 → 绕行
       return true;
     };
@@ -1752,6 +1771,22 @@ export class World3dComponent implements OnInit, OnDestroy {
     return { cx, cz };
   }
 
+  /** 🔴 位置是否在某 HY3D 岛屿覆盖范围内（圆判定，与视觉岛屿同源 islandCenters）
+   *  2026-08-16：A* 寻路/可走判定必须叠加此约束——旧网格可在岛屿边缘外判"可走"，
+   *  但那里视觉上是海/虚空 → 玩家走过去触发水域推回 → 导航被打断。
+   *  🔴 用 0.85r 收边：岛屿边缘（0.85r~1.1r 环带）是三方错配区
+   *  （视觉 mesh 覆盖不稳 + 旧网格岸坡高度<0 + 服务端水域阻挡），导航必须避开 */
+  private static readonly ISLAND_WALK_FACTOR = 0.85;
+  private onIslandCircle(wx: number, wz: number): boolean {
+    for (let i = 0; i < this.islandCenters.length; i++) {
+      const c = this.islandCenters[i];
+      const rr = c.r * World3dComponent.ISLAND_WALK_FACTOR;
+      const dx = wx - c.cx, dz = wz - c.cz;
+      if (dx * dx + dz * dz <= rr * rr) return true;
+    }
+    return false;
+  }
+
   /** 单格是否可走（需有语义数据且为 sand/grass/empty） */
   private isWalkableCell(gx: number, gz: number): boolean {
     const c = this.cellChunk(gx, gz);
@@ -1762,6 +1797,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return false;
     const s = grid.semantic[lz * CHUNK + lx];
     if (s !== 1 && s !== 2 && s !== 9) return false;
+    if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) return false; // 🔴 岛外（视觉海/虚空）不可走
     if (this.isObstacle(gx, gz)) return false; // 树/矿/建筑占位 → 不可走
     return true;
   }
@@ -1771,6 +1807,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (this.disposed) return;
     const pgx = Math.floor(this.dpx);
     const pgz = Math.floor(this.dpz);
+    // 🔴🔴🔴 Layer 0（2026-08-16）：站在 HY3D 视觉岛屿上绝不在水里（与 animate 水域保护同修）
+    if (this.hy3dSurfaceHeightAt(this.dpx, this.dpz) != null) return;
     let inWater = false;
     // Layer 1: 语义检测
     const cc = this.cellChunk(pgx, pgz);
@@ -1798,7 +1836,9 @@ export class World3dComponent implements OnInit, OnDestroy {
         const newPx = land.gx + 0.5, newPz = land.gz + 0.5;
         // 只设显示插值目标，不覆盖服务端权威 px/pz（避免 animate 抖动）
         this.dpx = newPx; this.dpz = newPz;
-        this.dpy = (this.heightAt(newPx, newPz) ?? 0) + 0.35;
+        // 🔴 2026-08-16：Y 优先 HY3D 视觉地面（旧网格高度低 4m+ → 瞬移坠崖观感）
+        const hyLand = this.hy3dSurfaceHeightAt(newPx, newPz);
+        this.dpy = (hyLand != null ? hyLand : (this.heightAt(newPx, newPz) ?? 0)) + 0.35;
         // 同步到服务器
         if (this.ws.isConnected) {
           this.ws.send('/app/ws.input', { seq: Date.now(), move: { dx: 0, dz: 0, run: false } });
@@ -1874,6 +1914,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     });
     
     (window as any).__worldDebug = {
+      navfix: 'L0WATER_PARABOLA_20260816', // 🔴 修复标记：水域Layer0+跳跃抛物线（playwright 验证用）
       waterLevel: wl,
       ready: trees.length > 0 || chars.length > 0 || animals.length > 0 || ores.length > 0,
       player,
@@ -1893,7 +1934,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         hy3dGround: this.hy3dSurfaceHeightAt(this.dpx, this.dpz),
         gridGround: this.heightAt(this.dpx, this.dpz),
         effectiveGround: null, // 下面立即填充
-        inJumpWindow: (performance.now() - this._lastJumpTs) < 1200,
+        inJumpWindow: (performance.now() - this._lastJumpTs) < (2 * World3dComponent.JUMP_VEL / World3dComponent.JUMP_GRAVITY) * 1000,
         msSinceJump: ((performance.now() - this._lastJumpTs) | 0)
       },
       // 🔴 地形诊断
@@ -2066,6 +2107,14 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
     if (!nearIsland) return null;
 
+    // 🔴🔴🔴 2026-08-16 性能修复：岛 mesh 三角量大，逐帧 raycast 在低端 GPU/软渲染下
+    //   单帧可达数百毫秒 → 帧率趋零（WASD/跳跃/导航全部"假死"）。
+    //   坐标按 0.5 单位分桶 + 300ms TTL 缓存（含 miss 缓存），把 raycast 压到个位数/秒。
+    const ck = `${Math.round(wx * 2)},${Math.round(wz * 2)}`;
+    const now = performance.now();
+    const cch = this._hy3dSurfCache.get(ck);
+    if (cch && now - cch.ts < 300) return cch.y;
+
     // Raycaster 向下投射（从 y=200 足够高）
     if (!this._hy3dRaycaster) {
       this._hy3dRaycaster = new THREE.Raycaster();
@@ -2075,13 +2124,14 @@ export class World3dComponent implements OnInit, OnDestroy {
 
     // 只检测 HY3D 地形组的子对象（避免命中玩家自身、矿石等）
     const hits = this._hy3dRaycaster.intersectObjects(this.hy3dTerrainGroup.children, true);
-    if (hits.length > 0) {
-      // 第一个交点就是可见的地面/物体表面
-      return hits[0].point.y;
-    }
-
-    return null; // 没有命中任何地形
+    const y = hits.length > 0 ? hits[0].point.y : null;
+    if (this._hy3dSurfCache.size > 4096) this._hy3dSurfCache.clear(); // 防泄漏
+    this._hy3dSurfCache.set(ck, { y, ts: now });
+    return y; // 没有命中任何地形 → null
   }
+
+  /** 地面 raycast 缓存（0.5 单位分桶 → {y, ts}，含 null miss） */
+  private _hy3dSurfCache = new Map<string, { y: number | null; ts: number }>();
 
   /** Raycaster 实例（复用，避免每帧重建） */
   private _hy3dRaycaster: THREE.Raycaster | null = null;
@@ -3792,8 +3842,16 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
     const meshes = Array.from(this.chunkMeshes.values());
     const hits = this.raycaster.intersectObjects(meshes, false);
-    if (!hits.length) return;
-    const point = hits[0].point;
+    // 🔴🔴 HY3D 视觉世界优先（2026-08-16）：旧网格 chunk 在 HY3D 岛下方（y≈0 vs 岛面 y≈4+），
+    //   只打旧网格会让"点哪"和"走到哪"因相机俯角偏差数米；先打可见的 HY3D 岛面，命中且更近则优先。
+    let point: THREE.Vector3 | null = hits.length ? hits[0].point : null;
+    if (this.hy3dTerrainGroup) {
+      const hy3dHits = this.raycaster.intersectObjects(this.hy3dTerrainGroup.children, true);
+      if (hy3dHits.length && (!point || hy3dHits[0].distance < hits[0].distance)) {
+        point = hy3dHits[0].point;
+      }
+    }
+    if (!point) return;
     const targetGx = Math.floor(point.x);
     const targetGz = Math.floor(point.z);
     // 清空旧目标/路径
@@ -3965,6 +4023,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (this.dpy > baseY + World3dComponent.MAX_ABOVE_GROUND) return;
 
     this._lastJumpTs = now;
+    console.log('[JUMP] sendJump 已触发', { dpy: +this.dpy.toFixed(2), baseY: +baseY.toFixed(2) }); // 🔴 调试：验证跳跃链路
     // 取当前按键方向（与 sendInputIfNeeded 同算法），让 W+空格 = 跳起向前
     let ix = 0, iz = 0;
     if (this.keys['KeyW'] || this.keys['ArrowUp']) iz += 1;
