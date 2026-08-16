@@ -167,6 +167,15 @@ public class TerrainService {
         return h * (1 - rm) + targetH * rm;
     }
 
+    /** 🔴 是否在岛屿核心区 —— 2026-08-16 坡地移动修复用：
+     *  HY3D 视觉岛面平滑可走，但旧数学网格在岛内起伏，会把坡地误判成 MOUNTAIN/陡坡，
+     *  物理移动判定在岛内必须豁免旧网格语义/坡度限制（否则坡地 WASD 完全走不动）。
+     *  🔴 阈值 0.05 ≈ 0.85r：必须与客户端 A* 的 ISLAND_WALK_FACTOR=0.85 圆判定对齐，
+     *  否则出现"客户端判可走、服务端挡"的错配环带 → 双击导航最后一步永远走不进、不收尾 */
+    public boolean onIslandCore(int gx, int gz) {
+        return islandFalloff(gx, gz) >= 0.05;
+    }
+
     /** 岛屿径向衰减：最近岛心的平滑衰减（中心 1 → 边缘 0），岛外返回 0
      *  M4 增强：加域变形（domain warping）打破完美圆形，让岛屿边缘不规则/有海湾半岛 */
     private double islandFalloff(int gx, int gz) {

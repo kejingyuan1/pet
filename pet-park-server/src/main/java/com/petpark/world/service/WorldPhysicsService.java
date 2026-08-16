@@ -56,8 +56,13 @@ public class WorldPhysicsService {
     private static final double GRAVITY = 25.0;
     /** 跳跃初速度 */
     private static final double JUMP_VEL = 8.5;
-    /** 自动上台阶的最大高度差（世界单位/格）：着地时邻格高度差 ≤ 此值即可走上去 */
-    private static final double STEP_HEIGHT = 1.5;
+    /** 自动上台阶的最大高度差（世界单位/格）：着地时邻格高度差 ≤ 此值即可走上去
+     *  🔴 2026-08-16 1.5→3.0 放宽：原值卡太严，稍有小坡就挡住 WASD（用户反馈） */
+    private static final double STEP_HEIGHT = 3.0;
+    /** 🔴 岛内台阶限宽（HY3D 视觉岛面平滑，旧网格起伏不代表真实坡度，岛内大幅放宽） */
+    private static final double STEP_HEIGHT_ISLAND = 6.0;
+    /** 🔴 岛内可走坡度（°）——同上，旧网格 slopeAt 在岛内不可信 */
+    private static final double SLOPE_WALK_DEG_ISLAND = 55.0;
     private long lastSnapshotAt = System.currentTimeMillis();
     /** 上一帧 tick 的真实时间戳（纳秒），用于计算与帧率无关的 dt（2026-08-16 修复行走过慢） */
     private long lastTickNanos = 0;
@@ -268,9 +273,18 @@ public class WorldPhysicsService {
         if (p.grounded) {
             // 着地状态：硬障碍(树/岩)挡住；矿脉可走（小矿石堆，能踩上去采矿）
             if (t.isObstacle()) return false;
-            if (!t.isWalkable() && !t.isOre()) return false;
-            boolean slopeOk = terrain.slopeAt(gx, gz) < Math.tan(Math.toRadians(world.slopeWalkDeg()));
-            boolean stepOk = Math.abs(targetH - curH) <= STEP_HEIGHT;
+            // 🔴 2026-08-16 坡地移动修复：HY3D 视觉岛面平滑可走，但旧数学网格在岛内起伏，
+            //   会把坡地误判成 MOUNTAIN 语义/陡坡 → 岛内坡地 WASD 完全走不动（只能空格+方向跳着走）。
+            //   岛内（islandFalloff≥0.35）：豁免旧网格语义限制 + 台阶/坡度大幅放宽；
+            //   岛外（旧网格大海区）：保持原有语义与坡度规则（台阶已放宽到 3.0）。
+            boolean onIsland = terrain.onIslandCore(gx, gz);
+            if (!onIsland) {
+                if (!t.isWalkable() && !t.isOre()) return false;
+            }
+            double stepLimit = onIsland ? STEP_HEIGHT_ISLAND : STEP_HEIGHT;
+            double slopeDeg = onIsland ? SLOPE_WALK_DEG_ISLAND : world.slopeWalkDeg();
+            boolean slopeOk = terrain.slopeAt(gx, gz) < Math.tan(Math.toRadians(slopeDeg));
+            boolean stepOk = Math.abs(targetH - curH) <= stepLimit;
             return slopeOk || stepOk;
         }
 

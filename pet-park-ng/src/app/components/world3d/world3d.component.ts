@@ -1557,6 +1557,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (dist < 0.8) {
       this.moveTarget = null;
       this.miniTarget = null;
+      this.navGoal = null; // 🔴 同 followPath：漏清会让卡住检测拿旧目标反复重寻路
+      this.stuckTimer = 0;
       this.hint = '已到达目标位置';
       // 发停止指令
       if (this.ws.isConnected) {
@@ -1567,6 +1569,21 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 归一化方向
     const ndx = dx / dist;
     const ndz = dz / dist;
+    // 🔴 2026-08-16 防"过冲折返"：显示位置(dpx/dpz)滞后服务端 150ms + 服务端着地保速，
+    //   全程 run(9/s) 冲刺会跳过 <0.8 到达窗口 → 路点永远吃不掉 → 在目标点来回折返。
+    //   近距(<2.2)切步走(4/s)，<1.0 提前发停止让动量滑行进场
+    if (dist < 1.0) {
+      this.moveTarget = null;
+      this.miniTarget = null;
+      this.navGoal = null;
+      this.stuckTimer = 0;
+      this.hint = '已到达目标位置';
+      if (this.ws.isConnected) {
+        this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
+      }
+      return;
+    }
+    const walkSlow = dist < 2.2;
     // 节流 ~30Hz
     if (now - this.lastInputSend < 33 && this.inputSentKeyState === `auto_${ndx.toFixed(2)}_${ndz.toFixed(2)}`) {
       return;
@@ -1576,7 +1593,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (this.ws.isConnected) {
       this.ws.send('/app/ws.input', {
         seq: Math.floor(now),
-        move: { dx: ndx, dz: ndz, run: true },
+        move: { dx: ndx, dz: ndz, run: !walkSlow }, // 🔴 近距步走减速，防过冲折返
         targetGx: Math.floor(tx),
         targetGz: Math.floor(tz)
       });
@@ -1591,11 +1608,13 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
     const head = this.pathPoints[0];
     const dist = Math.hypot(head.x - this.dpx, head.z - this.dpz);
-    if (dist < 0.8) {
+    if (dist < 1.2) { // 🔴 0.8→1.2：显示插值滞后会跳过 0.8 窗口，路点吃不掉导致折返震荡
       this.pathPoints.shift();
       if (!this.pathPoints.length) {
         this.moveTarget = null;
         this.miniTarget = null;
+        this.navGoal = null; // 🔴 2026-08-16 漏清导致"到达→卡住检测→重寻路→过头→再到达"死循环震荡
+        this.stuckTimer = 0;
         if (this.ws.isConnected) {
           this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
         }
@@ -1625,7 +1644,26 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.lastStuckZ = this.dpz;
       return;
     }
-    if (this.stuckTimer < 1.4) return; // 需持续停滞 1.4s 才判定卡住
+    if (this.stuckTimer < 1.4) {
+      // 🔴 2026-08-16 到达收尾兜底：最后 1 个路点已贴近(<1.5)但被边界/精度挡住推不进 0.8，
+      //   停滞 0.6s 即视为到达收尾——否则 moveTarget 永挂"导航中"，角色在目标点旁无限蹭
+      if (this.pathPoints.length === 1 && this.stuckTimer > 0.6) {
+        const head = this.pathPoints[0];
+        if (Math.hypot(head.x - this.dpx, head.z - this.dpz) < 1.5) {
+          this.pathPoints = [];
+          this.moveTarget = null;
+          this.navGoal = null;
+          this.miniTarget = null;
+          this.stuckTimer = 0;
+          this.hint = '已到达目标位置';
+          if (this.ws.isConnected) {
+            this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
+          }
+          return;
+        }
+      }
+      return; // 需持续停滞 1.4s 才判定卡住
+    }
 
     // 先发停止，避免重寻路期间继续朝旧方向推
     if (this.ws.isConnected) {
@@ -1689,10 +1727,12 @@ export class World3dComponent implements OnInit, OnDestroy {
     };
 
     const walk = (gx: number, gz: number): boolean => {
+      if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) return false; // 🔴 岛外（视觉海/虚空）不可走
       const s = getSem(gx, gz);
       if (s == null) return false;
-      if (s !== 1 && s !== 2 && s !== 9) return false; // sand / grass / empty
-      if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) return false; // 🔴 岛外（视觉海/虚空）不可走
+      // 🔴 2026-08-16 坡地修复：岛内豁免旧网格语义（MOUNTAIN=3 等误判）——HY3D 视觉岛面
+      //   平滑可走，旧网格在下方起伏会把坡地判成"山"→ A* 无路可走。岛内只挡水（海岸错配环带）。
+      if (s === 0 || s === 10) return false;
       if (this.isObstacle(gx, gz)) return false;       // 树/矿/建筑占位 → 绕行
       return true;
     };
@@ -1787,7 +1827,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     return false;
   }
 
-  /** 单格是否可走（需有语义数据且为 sand/grass/empty） */
+  /** 单格是否可走（2026-08-16 坡地修复：岛内豁免旧网格 MOUNTAIN 误判，只挡水+障碍；与 findPath walk() 同口径） */
   private isWalkableCell(gx: number, gz: number): boolean {
     const c = this.cellChunk(gx, gz);
     if (!c) return false;
@@ -1795,9 +1835,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (!grid) return false;
     const lx = gx - c.cx * CHUNK, lz = gz - c.cz * CHUNK;
     if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return false;
-    const s = grid.semantic[lz * CHUNK + lx];
-    if (s !== 1 && s !== 2 && s !== 9) return false;
     if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) return false; // 🔴 岛外（视觉海/虚空）不可走
+    const s = grid.semantic[lz * CHUNK + lx];
+    if (s === 0 || s === 10) return false; // 🔴 岛内只挡水（与 walk() 同步放宽坡地语义）
     if (this.isObstacle(gx, gz)) return false; // 树/矿/建筑占位 → 不可走
     return true;
   }

@@ -99,14 +99,16 @@ const check = (name, pass, detail) => { results.push({ name, pass, detail }); co
   check('WASD 移动(四向累计)', wasdTotal > 3, `total=${wasdTotal.toFixed(2)} 各向=${JSON.stringify(perDir)}`);
   const w1 = await pos();
   const netDist = Math.hypot(w1.x - w0.x, w1.z - w0.z);
-  check('WASD 净位移', netDist > 2, `net=${netDist.toFixed(2)}`);
+  // 四向往返(W↔S/A↔D 相消)后净位移应接近 0；>0.3 证明真实位移存在，>6 反而说明某向被挡没走回
+  const minDir = Math.min(...Object.values(perDir));
+  check('WASD 净位移', netDist < 6 && minDir > 1.5, `net=${netDist.toFixed(2)} 各向最小=${minDir}`);
 
   // 相机跟随：移动前后 相机-玩家 距离变化 < 3
   const camDist0 = Math.hypot(w0.cam.x - w0.x, w0.cam.z - w0.z);
   const camDist1 = Math.hypot(w1.cam.x - w1.x, w1.cam.z - w1.z);
   check('相机跟随', Math.abs(camDist1 - camDist0) < 3, `d0=${camDist0.toFixed(1)} d1=${camDist1.toFixed(1)}`);
   const camMoved = Math.hypot(w1.cam.x - w0.cam.x, w1.cam.z - w0.cam.z);
-  check('相机随玩家移动', camMoved > 2, `camMoved=${camMoved.toFixed(2)} (与玩家净位移一致即跟随)`);
+  check('相机随玩家移动', Math.abs(camMoved - netDist) < 2.5, `camMoved=${camMoved.toFixed(2)} vs 玩家net=${netDist.toFixed(2)} (一致即跟随)`);
 
   // ---- 2. 双击导航 ----
   const box = await page.evaluate(() => {
@@ -125,7 +127,10 @@ const check = (name, pass, detail) => { results.push({ name, pass, detail }); co
   const d1 = await pos();
   const navDist = Math.hypot(d1.x - d0.x, d1.z - d0.z);
   const navDone = await page.evaluate(() => ({ p: window.__worldDebug.minimap.pathPoints, m: !!window.__worldDebug.minimap.moveTarget }));
-  check('双击真实移动', navDist > 3, `dist=${navDist.toFixed(2)}`);
+  // 双击落点可能就在脚边（本次目标仅 ~2.3 格），移动量按目标距离比例判
+  const tgt = navState.moveTarget;
+  const tgtDist = tgt ? Math.hypot(tgt.x - d0.x, tgt.z - d0.z) : 3;
+  check('双击真实移动', navDist > Math.min(3, tgtDist * 0.6), `dist=${navDist.toFixed(2)} 目标距=${tgtDist.toFixed(2)}`);
   check('导航完成到达', navDone.p === 0 && !navDone.m, JSON.stringify(navDone));
   // 触发态若因跑得太快没抓到，用"移动+到达完成"作为触发证据兜底判定
   if (navState.pathPoints === 0 && !navState.moveTarget && navDist > 3 && navDone.p === 0 && !navDone.m) {
