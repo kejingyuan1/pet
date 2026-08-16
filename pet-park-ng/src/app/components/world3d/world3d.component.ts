@@ -1259,7 +1259,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       const sG = (serverGround ?? -0.2); // 服务端地面 fallback
       if (st.y < -50 || st.y > 100 || !Number.isFinite(st.y)) {
         // 异常值：直接用视觉地面 + 脚底偏移
-        this.py = vG + 0.35;
+        this.py = vG; // 脚底贴地
       } else {
         // 正常值：高度差 = 服务端py - 服务端地面 → 叠加到视觉地面上
         const heightAboveGround = st.y - sG;
@@ -1319,7 +1319,7 @@ export class World3dComponent implements OnInit, OnDestroy {
           //   覆盖后下一帧又被服务端改回 → 死循环抖动）
           const newPx = land.gx + 0.5, newPz = land.gz + 0.5;
           this.dpx = newPx; this.dpz = newPz;
-          this.dpy = (this.heightAt(newPx, newPz) ?? 0) + 0.35;
+          this.dpy = (this.heightAt(newPx, newPz) ?? 0); // 脚底贴地
           // 取消自动导航
           this.pathPoints = []; this.moveTarget = null; this.navGoal = null; this.miniTarget = null;
           // 通知服务端停止移动
@@ -1337,7 +1337,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     const gridGround = this.heightAt(this.dpx, this.dpz);
     // 有 HY3D 就用 HY3D（视觉地面），否则用旧网格兜底
     const effectiveGround = (hy3dGround != null) ? hy3dGround : (gridGround ?? 0);
-    const FOOT_OFFSET = 0.35; // 脚底到角色中心偏移
+    const FOOT_OFFSET = 0; // 脚底贴地，无偏移
     const GROUND_Y = effectiveGround + FOOT_OFFSET;
     
     // 判断是否在跳跃窗口内（跳跃后 1.2 秒允许离地）
@@ -2001,7 +2001,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         let ry = st.y;
         const hy3dY = this.hy3dSurfaceHeightAt(st.gx, st.gz);
         if (hy3dY != null && hy3dY > ry) {
-          ry = hy3dY + 0.35; // 脚底贴岛屿表面
+          ry = hy3dY; // 脚底贴岛屿表面
         }
         g.position.set(st.gx, ry, st.gz);
         g.rotation.y = st.rot;
@@ -3216,7 +3216,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 🔴 远端玩家初始位置也需 HY3D 修正（2026-08-16 修复穿模）
     let initY = (p.y ?? 0) + 0.3;
     const hy3dInitY = this.hy3dSurfaceHeightAt((p.gx ?? 0) + 0.5, (p.gz ?? 0) + 0.5);
-    if (hy3dInitY != null && hy3dInitY > initY) initY = hy3dInitY + 0.35;
+    if (hy3dInitY != null && hy3dInitY > initY) initY = hy3dInitY; // 脚底贴地
     g.position.set((p.gx ?? 0) + 0.5, initY, (p.gz ?? 0) + 0.5);
     this.scene.add(g);
     this.remotePlayers.set(p.uid, g);
