@@ -2196,6 +2196,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
     mesh.frustumCulled = false;
+    // 🔴🔴 隐藏旧程序化网格的视觉渲染：HY3D 岛屿层已替代地形视觉
+    // chunk 网格仍保留在场景中供 heightAt()/物理查询，但不再渲染
+    mesh.visible = false;
     return mesh;
   }
 
