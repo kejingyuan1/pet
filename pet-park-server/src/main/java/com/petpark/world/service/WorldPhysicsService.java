@@ -59,6 +59,8 @@ public class WorldPhysicsService {
     /** 自动上台阶的最大高度差（世界单位/格）：着地时邻格高度差 ≤ 此值即可走上去 */
     private static final double STEP_HEIGHT = 1.5;
     private long lastSnapshotAt = System.currentTimeMillis();
+    /** 上一帧 tick 的真实时间戳（纳秒），用于计算与帧率无关的 dt（2026-08-16 修复行走过慢） */
+    private long lastTickNanos = 0;
 
     public WorldPhysicsService(TerrainService terrain, WorldConfigService world,
                                RegionBroker regionBroker, PhysicsSnapshotMapper snapshotMapper) {
@@ -160,28 +162,41 @@ public class WorldPhysicsService {
     @Scheduled(fixedRate = 1000L / 60)
     public void tick() {
         tick++;
+        // 🔴 2026-08-16 修复：用真实流逝时间算 dt，避免 Spring 调度实际帧率低于 60Hz 时
+        //   移动距离被按比例压缩（之前固定 FIXED_DT=1/60 → 实际 30Hz 时行走速度只有一半）。
+        long nowN = System.nanoTime();
         double dt = FIXED_DT;
+        if (lastTickNanos != 0) {
+            dt = Math.min(0.05, Math.max(1.0 / 120.0, (nowN - lastTickNanos) / 1_000_000_000.0));
+        }
+        lastTickNanos = nowN;
         for (Player p : players.values()) {
             ConcurrentLinkedQueue<double[]> q = inputQueues.get(p.uid);
             double dx = 0, dz = 0, runScale = 0;
             boolean wantJump = false;
+            boolean gotInput = false;
             if (q != null) {
                 double[] msg;
-                while ((msg = q.poll()) != null) { dx = msg[0]; dz = msg[1]; runScale = msg[2]; if (msg.length > 3 && msg[3] > 0.5) wantJump = true; }
+                while ((msg = q.poll()) != null) { dx = msg[0]; dz = msg[1]; runScale = msg[2]; if (msg.length > 3 && msg[3] > 0.5) wantJump = true; gotInput = true; }
             }
             // 跳跃：着地时给向上初速度
             if (wantJump && p.grounded) {
                 p.vy = JUMP_VEL;
                 p.grounded = false;
             }
-            // 水平移动：输入驱动速度；空中且无输入时保留水平动量（跳跃更顺滑、跳起向前不丢失）
             double speed = (runScale > 0.5) ? 9.0 : 4.0;
-            if (dx != 0 || dz != 0) {
-                p.vx = dx * speed; p.vz = dz * speed;
-            } else if (p.grounded) {
-                p.vx = 0; p.vz = 0; // 着地且无输入 → 停
+            // 🔴 2026-08-16 修复（WASD 几乎不动的根因）：着地行走时，若本 tick 没有新输入帧
+            //   绝不能清零速度——否则输入频率(≈30Hz)低于物理 tick(60Hz)时，约一半 tick 把速度归零，
+            //   玩家只在"恰好含输入帧"的 tick 挪一小步 → 行走又慢又卡，相机跟随下看起来"按了没反应"。
+            //   正确做法：收到新输入才更新速度；收到显式停止(dx=dz=0，客户端松键发的 idle 帧)才停；
+            //   否则保留上一帧速度持续行走（速度大小恒为 speed，与帧率/输入频率无关）。
+            if (gotInput) {
+                if (dx != 0 || dz != 0) {
+                    p.vx = dx * speed; p.vz = dz * speed;
+                } else {
+                    p.vx = 0; p.vz = 0; // 客户端显式松键停止
+                }
             }
-            // 注：空中且无输入时保留 p.vx/p.vz（动量），不清零
             double ngx = p.gx + p.vx * dt, ngz = p.gz + p.vz * dt;
             // 碰撞：尝试整步移动 → 不行则单轴（台阶/斜坡也允许）
             if (canEnter(p, (int)Math.floor(ngx), (int)Math.floor(ngz))) {

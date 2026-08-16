@@ -1231,6 +1231,8 @@ export class World3dComponent implements OnInit, OnDestroy {
   private animate(): void {
     if (this.disposed) return;
     this.rafId = requestAnimationFrame(() => this.animate());
+    let __bizErr: any = null;
+    try {
 
     const now = performance.now();
     const dt = this.lastTs ? Math.min((now - this.lastTs) / 1000, 0.05) : 0.016;
@@ -1358,9 +1360,10 @@ export class World3dComponent implements OnInit, OnDestroy {
       if (this.dpy > jumpMax) this.dpy = jumpMax;
       if (this.dpy < GROUND_Y) this.dpy = GROUND_Y; // 不允许钻地
     } else {
-      // 🔴🔴 非跳跃状态：强制钉在地面上，不管服务端发了什么！
-      //   不用 lerp、不用收敛、不用钳制 —— 直接硬编码
-      this.dpy = GROUND_Y;
+      // 🔴🔴 平滑落地修复（2026-08-16）：不再硬钉 dpy=GROUND_Y（导致跳跃末帧视觉弹跳/卡顿），
+      //   改为快速 lerp ~50ms 收敛，让落地丝滑自然
+      const landLerp = Math.min(1.0, dt * 20);
+      this.dpy += (GROUND_Y - this.dpy) * landLerp;
     }
 
     // [Y-DEBUG removed 2026-08-16] 飞天问题已修复，不再需要每帧日志
@@ -1412,10 +1415,15 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.updateStars(now * 0.001);
     this.updateClouds(dt, now * 0.001);
     this.updateWaterPlane(now);
+    } catch (err) { __bizErr = err; }
+    try {
+
     this.renderer.render(this.scene, this.camera);
 
     // 🔴 暴露场景调试数据（含水域安全状态），供 playwright 断言
-    this.publishWorldDebug();
+    try { this.publishWorldDebug(); } catch (e2) { /* 调试钩子失败不影响渲染 */ }
+    } catch (e3) { console.error('[animate] 渲染异常（已隔离）', e3); }
+    if (__bizErr) console.error('[animate] 单帧业务异常（已隔离，循环继续）', __bizErr);
   }
 
   private updateFollowCamera(): void {
@@ -2681,7 +2689,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 注意：boy/girl 不再经过 buildRiggedModel 骨骼拆分（拆分导致模型破损变形），
     // 直接用原始 GLB 归一化，保留完整外观和材质/贴图
     this.assets.loadModel(base + 'tree.glb').then(g => {
-      this.treeModel = norm(g, 3.2);
+      this.treeModel = norm(g, 5.0); // 🔴 2026-08-16 修复：原 3.2 太矮显"扁"，提高到 5.0 让树有正常比例
       if (!this.treeModel) console.warn('[world3d] 树模型加载失败，使用程序化树回退');
       else this.tryPlaceCharacters(); // 树就绪后尝试补放角色（若角色已就绪）
     });
