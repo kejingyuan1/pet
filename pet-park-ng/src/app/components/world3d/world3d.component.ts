@@ -131,8 +131,8 @@ interface GridData {
       <span class="time-phase">{{worldTime.phase}}</span>
     </div>
 
-    <!-- P1-小地图：右上角 -->
-    <canvas #minimap class="minimap" width="160" height="160"></canvas>
+    <!-- P1-小地图：右上角（可点击导航到该位置） -->
+    <canvas #minimap class="minimap" width="160" height="160" (pointerdown)="onMinimapClick($event)"></canvas>
 
     <!-- 触屏控制层（P0-1）：仅触屏设备显示 -->
     <div class="touch-layer" *ngIf="touchActive">
@@ -314,7 +314,8 @@ interface GridData {
     .touch-layer { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
 
     /* P1-小地图：右上角 HUD */
-    .minimap { position: absolute; top: 12px; right: 12px; z-index: 6; width: 160px; height: 160px; border-radius: 10px; border: 2px solid rgba(255,255,255,.4); background: rgba(10,20,30,.5); box-shadow: 0 3px 12px rgba(0,0,0,.35); pointer-events: none; }
+    .minimap { position: absolute; top: 12px; right: 12px; z-index: 6; width: 160px; height: 160px; border-radius: 10px; border: 2px solid rgba(255,255,255,.4); background: rgba(10,20,30,.5); box-shadow: 0 3px 12px rgba(0,0,0,.35); pointer-events: auto; cursor: pointer; }
+    .minimap:hover { border-color: rgba(255,255,255,.85); }
     .joystick { position: absolute; left: 22px; bottom: 26px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.4); pointer-events: auto; touch-action: none; }
     .joy-knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255,255,255,.8); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
     /* 触屏按钮：低调半透明，不抢戏 */
@@ -491,6 +492,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   private keys: Record<string, boolean> = {};
   // 双击移动目标（世界坐标），null 表示无目标
   private moveTarget: { x: number; z: number } | null = null;
+  private miniTarget: { x: number; z: number } | null = null;  // 小地图点击的目标点（绘制红圈标记）
   // P2 双击 A* 寻路：路点队列（世界坐标），依次抵达后清空
   private pathPoints: { x: number; z: number }[] = [];
 
@@ -1298,7 +1300,7 @@ export class World3dComponent implements OnInit, OnDestroy {
           this.dpx = newPx; this.dpz = newPz;
           this.dpy = (this.heightAt(newPx, newPz) ?? 0) + 0.35;
           // 取消自动导航
-          this.pathPoints = []; this.moveTarget = null; this.navGoal = null;
+          this.pathPoints = []; this.moveTarget = null; this.navGoal = null; this.miniTarget = null;
           // 通知服务端停止移动
           if (this.ws.isConnected) {
             this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
@@ -1492,6 +1494,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 到达判定（< 0.8 单位视为到达）
     if (dist < 0.8) {
       this.moveTarget = null;
+      this.miniTarget = null;
       this.hint = '已到达目标位置';
       // 发停止指令
       if (this.ws.isConnected) {
@@ -1530,6 +1533,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.pathPoints.shift();
       if (!this.pathPoints.length) {
         this.moveTarget = null;
+        this.miniTarget = null;
         if (this.ws.isConnected) {
           this.ws.send('/app/ws.input', { seq: Math.floor(now), move: { dx: 0, dz: 0, run: false } });
         }
@@ -1583,6 +1587,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.pathPoints = [];
     this.moveTarget = null;
     this.navGoal = null;
+    this.miniTarget = null;
     this.hint = '⚠️ 被障碍物阻挡，无法到达目标';
   }
 
@@ -1883,7 +1888,14 @@ export class World3dComponent implements OnInit, OnDestroy {
             material: (c instanceof THREE.Mesh && c.material) ? { type: c.material.type, visible: c.material.visible, opacity: (c.material as any).opacity } : null
           }))
         };
-      })()
+      })(),
+      // 🔴 小地图点击导航诊断（2026-08-16）
+      minimap: {
+        miniTarget: this.miniTarget ? { x: +this.miniTarget.x.toFixed(1), z: +this.miniTarget.z.toFixed(1) } : null,
+        pathPoints: this.pathPoints.length,
+        moveTarget: this.moveTarget ? { x: +this.moveTarget.x.toFixed(1), z: +this.moveTarget.z.toFixed(1) } : null,
+        playerDp: { x: +this.dpx.toFixed(1), z: +this.dpz.toFixed(1) }
+      }
     };
   }
 
@@ -3439,6 +3451,19 @@ export class World3dComponent implements OnInit, OnDestroy {
     ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath();
     ctx.fill();
     ctx.restore();
+    // 小地图点击目标标记（红色十字圆）
+    if (this.miniTarget) {
+      const tx = toX(this.miniTarget.x), ty = toY(this.miniTarget.z);
+      if (tx >= 0 && tx <= W && ty >= 0 && ty <= H) {
+        ctx.strokeStyle = '#ff4d4d';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(tx - 8, ty); ctx.lineTo(tx + 8, ty);
+        ctx.moveTo(tx, ty - 8); ctx.lineTo(tx, ty + 8);
+        ctx.stroke();
+      }
+    }
     // 边框
     ctx.strokeStyle = 'rgba(255,255,255,.4)';
     ctx.lineWidth = 2;
@@ -3657,6 +3682,50 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
   };
 
+  /** 点击小地图：反算世界坐标 → A* 寻路移动角色过去（查看该位置） */
+  onMinimapClick(e: PointerEvent): void {
+    // 交互模式下不响应（避免与建造/钓鱼/采矿/拆除/升级/收获冲突）
+    if (this.buildMode || this.fishMode || this.mineMode || this.removeMode || this.upgradeMode || this.harvestMode) {
+      this.hint = '当前模式不可用，退出后点击小地图移动';
+      return;
+    }
+    const cv = this.minimapRef?.nativeElement as HTMLCanvasElement | undefined;
+    if (!cv) return;
+    const rect = cv.getBoundingClientRect();
+    // canvas 内像素坐标（CSS 尺寸可能不等于分辨率，按比例换算）
+    const lx = (e.clientX - rect.left) / rect.width * cv.width;
+    const ly = (e.clientY - rect.top) / rect.height * cv.height;
+    const W = cv.width, H = cv.height;
+    const span = 110;                 // 必须与 drawMinimap 中的 span 一致
+    const scale = W / (span * 2);     // 像素/世界单位（drawMinimap 的 toX/toY 逆运算）
+    const wx = this.dpx + (lx - W / 2) / scale;
+    const wz = this.dpz + (ly - H / 2) / scale;
+
+    // 复用双击大地图的导航逻辑：清空旧目标 → 设 navGoal → A* 寻路
+    this.moveTarget = null;
+    this.miniTarget = { x: wx, z: wz };
+    this.navGoal = { x: wx, z: wz };
+    this.navRetries = 0;
+    this.stuckTimer = 0;
+    this.lastStuckX = this.dpx;
+    this.lastStuckZ = this.dpz;
+    const startGx = Math.floor(this.dpx);
+    const startGz = Math.floor(this.dpz);
+    const targetGx = Math.floor(wx);
+    const targetGz = Math.floor(wz);
+    const path = this.findPath(startGx, startGz, targetGx, targetGz);
+    if (path && path.length > 0) {
+      this.pathPoints = path;
+      this.hint = `🧭 小地图导航 ${path.length} 路点 → (${targetGx}, ${targetGz})`;
+      this.sendMoveTarget();
+    } else {
+      // 直线移动直达点击点（用户主动点击；真实落水时由水域保护推回，无需旧网格硬拒绝）
+      this.moveTarget = { x: wx, z: wz };
+      this.hint = `📍 移动目标: (${Math.floor(wx)}, ${Math.floor(wz)})（直线）`;
+      this.sendMoveTarget();
+    }
+  }
+
   /** 发送移动目标到服务端（双击地图 → 跑过去） */
   private sendMoveTarget(): void {
     if (!this.moveTarget || !this.ws.isConnected) return;
@@ -3697,6 +3766,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.moveTarget = null;
       this.pathPoints = [];
       this.navGoal = null;
+      this.miniTarget = null;
       this.hint = '已取消自动移动，WASD 手动控制';
     }
     // 空格跳跃（非建造/养鱼/采矿模式，且不在输入框中）
