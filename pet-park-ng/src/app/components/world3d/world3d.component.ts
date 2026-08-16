@@ -440,6 +440,8 @@ export class World3dComponent implements OnInit, OnDestroy {
   private girlModel: THREE.Group | null = null;
   /** HY3D 7 只动物模板（cat/dog/chicken/duck/cow/sheep/fish），归一化后缓存复用 */
   private animalModels: Record<string, THREE.Group> = {};
+  /** HY3D 矿产模板（小/中/大三种规格，draco 压缩） */
+  private oreModel: THREE.Group | null = null;
   /** 野生生物容器：一次性散布后常驻世界，不随 chunk 卸载 */
   private wildlifeGroup: THREE.Group | null = null;
   private animalsSpawned = false;
@@ -481,6 +483,11 @@ export class World3dComponent implements OnInit, OnDestroy {
   private px = 0; private pz = 0; private py = 0; private prot = 0;
   // 平滑显示位置（lerp 跟随物理权威位置，消除一跳一跳）
   private dpx = 0; private dpz = 0; private dpy = 0; private dprot = 0;
+
+  // 🔴🔴 跳跃防护（2026-08-16 修复连按空格飞天）
+  private _lastJumpTs = 0;                          // 上次跳跃时间戳
+  private static readonly JUMP_COOLDOWN_MS = 800;   // 跳跃冷却（ms），防止连按叠加
+  private static readonly MAX_ABOVE_GROUND = 5.0;   // 允许离地最大高度（超过则强制压回）
   // 障碍网格（静态：树/矿/建筑）chunkKey -> set("gx,gz")，与 gridCache 同生命周期
   private obstacleGrid: Map<string, Set<string>> = new Map();
   // 导航卡住检测 / 重寻路
@@ -1336,6 +1343,11 @@ export class World3dComponent implements OnInit, OnDestroy {
       // chunk 未加载时：纯 lerp 追踪服务器权威 Y，不自我加速（防上升/下降漂移）
       this.dpy += (this.py - this.dpy) * k;
     }
+
+    // 🔴🔴 2026-08-16 防飞天最终钳制：即使服务端叠加了过多跳跃力，
+    //   客户端也坚决不允许玩家离地超过 MAX_ABOVE_GROUND
+    const maxY = baseY + World3dComponent.MAX_ABOVE_GROUND;
+    if (this.dpy > maxY) this.dpy = maxY;
 
     // 统一一次性设置玩家位置（不再有第二处覆写）
     this.playerMesh.position.set(this.dpx, this.dpy, this.dpz);
@@ -2632,6 +2644,12 @@ export class World3dComponent implements OnInit, OnDestroy {
         else console.warn('[world3d] 动物模型加载失败: ' + w.key);
       }).catch(() => console.warn('[world3d] 动物模型加载异常: ' + w.key));
     }
+    // 🔴🔴 HY3D 矿产模型（draco 压缩）：替代程序化几何体矿石
+    this.assets.loadModel('assets/3d_build/ores-hy3d/hy3d_ore_small_draco.glb').then(g => {
+      this.oreModel = g ? this.normalizeModel(g, 0.5) : null; // 矿产高度 ~0.5m（小）
+      if (this.oreModel) console.log('[world3d] HY3D 矿产模型已加载（替代程序化几何体）');
+      else console.warn('[world3d] HY3D 矿产模型加载失败，回退程序化几何体');
+    }).catch(() => console.warn('[world3d] HY3D 矿产模型加载异常'));
   }
 
   /** 归一化模型：缩放到目标高度，并把底部对齐到局部 y=0（外层 Group 包裹，便于按实例设置世界坐标） */
@@ -2945,8 +2963,28 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.oreMeshes.set(key, ores);
   }
 
-  /** 单个低模矿石：不同类型不同颜色+形状 */
+  /** 单个矿石模型：优先使用 HY3D GLB 模型，回退程序化几何体
+   *  🔴🔴 2026-08-16 重构：集成 hy3d_ore_small_draco.glb（贴图+PBR材质）
+   */
   private makeOre(type: 'gold' | 'iron' | 'coal'): THREE.Group {
+    // 🔴 优先使用 HY3D 矿产模型（clone 实例，按类型染色）
+    if (this.oreModel) {
+      const inst = this.oreModel.clone();
+      // 按矿石类型调整材质色调（保留 PBR roughness/metalness）
+      const typeTint: Record<string, number> = { gold: 0xFFD700, iron: 0x708090, coal: 0x3a3a3a };
+      inst.traverse(o => {
+        const mesh = o as THREE.Mesh;
+        if ((mesh as any)?.isMesh && mesh.material) {
+          const mat = mesh.material as THREE.MeshStandardMaterial;
+          mat.color.setHex(typeTint[type] ?? 0x888888);
+          // 金矿额外发光
+          if (type === 'gold') { mat.emissive.setHex(0x443300); mat.emissiveIntensity = 0.4; }
+        }
+      });
+      return inst;
+    }
+
+    // 🔴 回退：程序化几何体（HY3D 模型加载失败时）
     const g = new THREE.Group();
     if (type === 'gold') {
       // 金矿：金黄色八面体晶体（双锥组合）
@@ -3839,9 +3877,22 @@ export class World3dComponent implements OnInit, OnDestroy {
       code === 'ArrowUp' || code === 'ArrowDown' || code === 'ArrowLeft' || code === 'ArrowRight';
   }
 
-  /** 发送跳跃意图到服务端（带上当前 WASD 方向 → 跳起向前） */
+  /** 发送跳跃意图到服务端（带上当前 WASD 方向 → 跳起向前）
+   *  🔴🔴 2026-08-16 修复：加冷却 + 离地高度上限，防止连按空格飞天
+   */
   private sendJump(): void {
     if (!this.ws.isConnected) return;
+    // 🔴 跳跃冷却：防止连按空格叠加跳跃力
+    const now = performance.now();
+    if (now - this._lastJumpTs < World3dComponent.JUMP_COOLDOWN_MS) return;
+    // 🔴 离地太高时不允许再跳（防止空中无限连跳）
+    let groundY = this.heightAt(this.dpx, this.dpz);
+    const hy3dY = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
+    if (hy3dY != null && (groundY == null || hy3dY > groundY)) groundY = hy3dY;
+    const baseY = groundY ?? this.py;
+    if (this.dpy > baseY + World3dComponent.MAX_ABOVE_GROUND) return;
+
+    this._lastJumpTs = now;
     // 取当前按键方向（与 sendInputIfNeeded 同算法），让 W+空格 = 跳起向前
     let ix = 0, iz = 0;
     if (this.keys['KeyW'] || this.keys['ArrowUp']) iz += 1;
