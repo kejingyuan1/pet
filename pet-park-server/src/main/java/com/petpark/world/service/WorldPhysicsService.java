@@ -233,6 +233,13 @@ public class WorldPhysicsService {
             if (Math.abs(p.vx) > 0.01 || Math.abs(p.vz) > 0.01) p.rot = Math.atan2(p.vx, p.vz);
             // 🔴🔴 P1 垂直物理：分水中浮力 / 陆地重力两套
             if (inWater) {
+                // 🔴 HY3D 湖岛修正：客户端 snapSpawnToIsland 已把玩家夹到陆地环带（p.y > wl+1.2），
+                //   但服务端 heightAt 对湖岛返回水面而误判 inWater。若不拦住，水浮力每 10Hz 把玩家拉回 wl+0.3，
+                //   与客户端陆地 Y 反复拉锯 = "上下闪动"。此处信任客户端的陆地 Y，保持贴地，跳过浮力。
+                if (p.y > wl + 1.2) {
+                    p.vy = 0;
+                    p.grounded = true;
+                } else {
                 // 浮力：玩家浮在水面 (waterLevel 略上方)，平滑贴合，弱重力把人稳稳压在水面。
                 double floatY = wl + 0.3;
                 if (p.grounded) {
@@ -244,6 +251,7 @@ public class WorldPhysicsService {
                     if (p.y > floatY + 0.4) { p.y = floatY + 0.4; if (p.vy > 0) p.vy = 0; }
                     if (p.y < wl - 4) { p.y = wl - 4; p.vy = 0; }
                     if (p.y <= floatY) { p.y = floatY; p.vy = 0; p.grounded = true; } // 落回水面=贴面着地
+                }
                 }
             } else {
                 // 垂直物理：重力 + 地面碰撞
@@ -258,7 +266,10 @@ public class WorldPhysicsService {
                         p.grounded = true;
                     }
                 } else {
-                    p.y = groundY; // 着地时始终贴地
+                    // 🔴 HY3D 湖岛修正：服务端 groundY 落在水面附近但客户端 Y 已在陆地 → 信任客户端
+                    if (!(groundY <= wl + 0.8 && p.y > wl + 1.2)) {
+                        p.y = groundY; // 着地时始终贴地
+                    }
                 }
             }
         }

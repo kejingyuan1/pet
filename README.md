@@ -8,9 +8,9 @@
 
 ---
 
-## ✅ HY3D 地图修复 + 牧场幼崽/蛋 · 进度（2026-08-17 已收尾）
+## ✅ HY3D 地图修复 + 牧场幼崽/蛋 · 进度（2026-08-17 收尾）
 
-> 本节记录近期攻坚项。相关代码：`pet-park-ng/src/app/components/world3d/world3d.component.ts`（地图）、`ranch.component.ts` + `models.ts` + `state.service.ts`（牧场）。
+> 本节记录近期攻坚项。相关代码：`pet-park-ng/src/app/components/world3d/world3d.component.ts`（地图）、`ranch.component.ts` + `models.ts` + `state.service.ts`（牧场）、`pet-park-server/.../WorldPhysicsService.java`（服务端物理）。
 
 ### ✅ 已完成（已提交 + Playwright 验证）
 
@@ -18,18 +18,16 @@
 |---|---|
 | HY3D 岛屿系统 | 22 个岛屿、4 种 GLB 变体（普通/湖/半岛/山，`assets/3d_build/terrain-hy3d/`，仅 draco 版入库）、LOD 600m 动态加载/卸载 |
 | 方案A：随机岛出生 | 玩家出生随机落在某个 HY3D 岛屿；移除程序化草地 fallback |
-| 出生钳制 `snapSpawnToIsland` | 只接受高于水位安全线（`waterLevel+0.5`）的命中，螺旋搜索钳到「最高陆地」而非首个命中；对隐藏水面网格禁用 raycast（three r128 `Mesh.raycast` 不检查 `visible`） |
-| 延后 join | `join` 延迟到出生钳制完成后再上报服务端，确保服务端权威出生点 = 实体岛面 |
-| **湖岛出生修复（原阻塞项）** | 修复湖心空洞/湖底被误判为陆地 → 玩家落水。Playwright E2E：`?spawnIsland=1` → `playerInWater=0`、`hy3dGround` 非空、常规岛(idx0)无回归，VERDICT pass |
+| **出生钳制 `snapSpawnToIsland`（客户端）** | 只接受高于水位安全线（`waterLevel+0.5`）的命中，螺旋搜索钳到「最高陆地」而非首个命中；对隐藏水面网格禁用 raycast（three r128 `Mesh.raycast` 不检查 `visible`） |
+| **湖岛出生修复（完整根因）** | **客户端**（`world3d` 75e107e）：湖心空洞/湖底不再被误判为陆地。**服务端**（`WorldPhysicsService`）：10Hz 广播 `POSITION_SNAPSHOT` 时强制 `p.y = groundY`（`terrain.heightAt()+0.7`），对 HY3D 湖岛环带返回水面 → 客户端陆地 Y 与服务端水面 Y 每 100ms 拉锯 = 「上下闪动」。修复：`p.y > wl+1.2`（客户端已在陆地）时跳过水浮力/低地面强拉，信任客户端的陆地 Y（详见 `WorldPhysicsService` 两条 `🔴 HY3D 湖岛修正` 守卫） |
 | **牧场幼崽/蛋接入** | `models.ts` 登记 `RANCH_BABIES`/`RANCH_EGGS`（lifecycle_*.glb）；牧场组件「幼崽区」展示已购动物幼崽、「产蛋区」展示蛋模型；拾蛋玩法（每蛋 +6 金，每日每只下蛋动物产 1 枚） |
 | **牧场 Playwright 验证** | E2E：登录→建屋→购鸡/鸭→幼崽/蛋模型加载（babyCount/eggCount≥1）→拾蛋金币增加，VERDICT pass |
-| GLB 瘦身 | 仓库只留 draco/小体积版（成年 7 只 ~800K、地形 4 只 4.7–6M、幼崽 lifecycle 36–167K）；19 个几十 M 源 GLB（合计 385M）已从仓库移除、本地磁盘保留待认证后删除 |
+| GLB 瘦身 | 仓库只留 draco/小体积版（成年 7 只 ~800K、地形 4 只 4.7–6M、幼崽 lifecycle 36–167K）；19 个几十 M 源 GLB（合计 385M）已从仓库移除、本地磁盘已删 |
 
-### ⏳ 待办 / 待确认
+### ⏳ 待办 / 部署
 
-1. **删除旧工作区** `C:\Users\WIN11\WorkBuddy\2026-08-03-13-46-59\pet-park`（需用户确认后执行）。
-2. **删除本地源 GLB**：`assets/3d_build/animals-source/hy3_*_baby*.glb` 等 19 个大文件（385M）已在仓库移除、仍留本地磁盘；待用户认证 draco 可用后再删本地。
-3. **本文档全面刷新**：v48 主文与当前代码仍脱节，后续按当前代码整体重写（本次仅更新本进度节）。
+1. **服务端湖岛修复部署**：本次会话 WorkBuddy 沙箱里 Maven 链路全坏（3.9.12 缺 `plexus-classworlds-2.7.0.jar`、HTTPS 证书吊销检查失败下不了 jar、`wmic` 禁用取不到运行中 8080 进程的 classpath、PowerShell WMI 空响应），无法在本沙箱 `mvn package` 出 fat jar 部署到 8080。**修复在源码里已就绪（`WorldPhysicsService.java`）**，请在有 mvn 的环境跑 `mvn -DskipTests package` 重出 fat jar 后重启 8080 即可生效。重启前 8080 上的「上下闪动」会一直存在（那是服务端 10Hz 拉回水面的 bug，客户端 clamp 解决不了）。
+2. **README 主文全面刷新**：v48 主文与当前代码（HY3D / 牧场 / 空气墙根治 / 幼崽蛋 / GLB 瘦身）仍脱节，需整体重写（本次仅刷新了本进度节）。
 
 ---
 
