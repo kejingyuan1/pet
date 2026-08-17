@@ -2291,14 +2291,15 @@ export class World3dComponent implements OnInit, OnDestroy {
     return h00 * (1 - tx) * (1 - tz) + h10 * tx * (1 - tz) + h01 * (1 - tx) * tz + h11 * tx * tz;
   }
 
-  /** 🔴 HY3D 岛屿表面高度估算（2026-08-16 修复玩家被岛屿遮挡）
-   *  当旧 gridCache 地形被隐藏后，玩家可能站在不可见的旧地形高度上，
-   *  而 HY3D 岛屿实体模型在更高的 Y 位置 → 玩家被完全遮挡。
-   *  此方法返回最近岛屿在该位置的近似表面高度，供 animate() 取 max 使用。
+  /** 🔴 HY3D 岛屿表面高度（2026-08-17 重叠修复）
+   *
+   *  🔴🔴🔴 重叠 bug 根因（诊断实锤）：
+   *    22 岛散布 2600×2600，LOD 半径 600m → 同时加载 ~4 个岛。
+   *    岛#1↔#13 重叠 86 单位，岛#13↔#16 重叠 9 单位。
+   *    旧代码取 hits[0].point.y（最近命中），重叠区域浮点精度让每帧击中不同 mesh → Y 跳 = 闪。
+   *  修复：取所有命中中的**最高 Y**（确定性）+ 时间平滑（防跨缓存桶突变）。
    */
   private hy3dSurfaceHeightAt(wx: number, wz: number): number | null {
-    // 🔴🔴🔴 2026-08-16 修复：旧版用 box.max.y（含树/建筑等装饰物）导致"地面"虚高10-20m → 玩家飞天
-    //   改用 Raycaster 从上方垂直向下投射，找到 HY3D 地形网格的真实表面交点
     if (!this.hy3dTerrainGroup || !this.islandCenters.length) return null;
 
     // 快速判断：是否在任何岛屿水平范围内
@@ -2307,38 +2308,45 @@ export class World3dComponent implements OnInit, OnDestroy {
       const c = this.islandCenters[i];
       const dx = wx - c.cx;
       const dz = wz - c.cz;
-      const r = c.r * 1.2; // 稍微放宽判定范围
+      const r = c.r * 1.2;
       if (dx * dx + dz * dz <= r * r) { nearIsland = true; break; }
     }
     if (!nearIsland) return null;
 
-    // 🔴🔴🔴 2026-08-16 性能修复：岛 mesh 三角量大，逐帧 raycast 在低端 GPU/软渲染下
-    //   单帧可达数百毫秒 → 帧率趋零（WASD/跳跃/导航全部"假死"）。
-    //   坐标按 0.5 单位分桶 + 300ms TTL 缓存（含 miss 缓存），把 raycast 压到个位数/秒。
+    // 缓存（0.5 单位分桶 + 300ms TTL）
     const ck = `${Math.round(wx * 2)},${Math.round(wz * 2)}`;
     const now = performance.now();
     const cch = this._hy3dSurfCache.get(ck);
     if (cch && now - cch.ts < 300) return cch.y;
 
-    // Raycaster 向下投射（从 y=200 足够高）
     if (!this._hy3dRaycaster) {
       this._hy3dRaycaster = new THREE.Raycaster();
       this._hy3dRaycaster.ray.direction.set(0, -1, 0);
     }
     this._hy3dRaycaster.ray.origin.set(wx, 200, wz);
 
-    // 只检测 HY3D 地形组的子对象（避免命中玩家自身、矿石等）
     const hits = this._hy3dRaycaster.intersectObjects(this.hy3dTerrainGroup.children, true);
-    const y = hits.length > 0 ? hits[0].point.y : null;
-    if (this._hy3dSurfCache.size > 4096) this._hy3dSurfCache.clear(); // 防泄漏
+
+    // 🔴🔴🔴 重叠修复：取最高命中 Y（确定性）
+    //   重叠区域多个 mesh 的交点距离极近（<0.1），浮点精度让 hits[0] 每帧在不同 mesh 间跳。
+    //   取 max 保证确定性：无论哪个 mesh 先被命中，结果都是"最高的地面"。
+    let y: number | null = null;
+    if (hits.length > 0) {
+      let maxY = hits[0].point.y;
+      for (let i = 1; i < hits.length; i++) {
+        if (hits[i].point.y > maxY) maxY = hits[i].point.y;
+      }
+      y = maxY;
+    }
+
+    if (this._hy3dSurfCache.size > 4096) this._hy3dSurfCache.clear();
     this._hy3dSurfCache.set(ck, { y, ts: now });
-    return y; // 没有命中任何地形 → null
+    return y;
   }
 
-  /** 地面 raycast 缓存（0.5 单位分桶 → {y, ts}，含 null miss） */
+  /** 地面 raycast 缓存 */
   private _hy3dSurfCache = new Map<string, { y: number | null; ts: number }>();
-
-  /** Raycaster 实例（复用，避免每帧重建） */
+  /** Raycaster 实例（复用） */
   private _hy3dRaycaster: THREE.Raycaster | null = null;
 
   // ================= Chunk 流式 =================
