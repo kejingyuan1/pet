@@ -60,6 +60,8 @@ interface GridData {
   imports: [CommonModule, FormsModule],
   template: `
     <div #mount class="world3d-mount"></div>
+    <!-- P2/P4-水下：全屏蓝色滤镜叠层（随下潜深度增强，pointer-events:none 不挡操作） -->
+    <div class="underwater-overlay" *ngIf="underwaterTint > 0.01" [style.opacity]="underwaterTint"></div>
     <div class="w3d-toolbar">
       <button (click)="enterBuild()" [class.on]="buildMode">🏗️ 建造</button>
       <button (click)="enterFish()" [class.on]="fishMode">🐟 养鱼</button>
@@ -77,6 +79,12 @@ interface GridData {
       <div class="hud-row">位置 ({{posText}})</div>
       <div class="hud-hint">{{hint}}</div>
       <div class="hud-run" *ngIf="running">🏃 奔跑中</div>
+    </div>
+    <!-- P2/P4-水下：潜水氧气条（进入水中显示，随 depth 实时消耗/回充；<30% 转红预警） -->
+    <div class="hud-oxygen" *ngIf="isInWater">
+      <span class="oxy-icon">🫧</span>
+      <div class="oxy-bar"><div class="oxy-fill" [class.low]="oxygen < 30" [style.width.%]="oxygen"></div></div>
+      <span class="oxy-text">{{oxygen | number:'1.0-0'}}%</span>
     </div>
     <!-- 采矿 HUD（M4）：能量 / 等级 / 经验 / 背包售卖 -->
     <div class="w3d-mine" *ngIf="miningReady">
@@ -249,6 +257,23 @@ interface GridData {
     .inv-empty { opacity: .5; font-style: italic; padding: 4px 0; }
     .w3d-toast { position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%); z-index: 9; background: rgba(0,0,0,.72); color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 15px; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
     .hud-run { display: inline-block; margin-top: 4px; padding: 2px 10px; background: rgba(70,130,180,.82); color: #fff; border-radius: 10px; font-weight: 600; font-size: 12px; text-shadow: none; }
+    /* P2/P4-水下：全屏蓝色滤镜叠层（随下潜深度增强，不挡交互） */
+    .underwater-overlay {
+      position: absolute; inset: 0; z-index: 4; pointer-events: none;
+      background: linear-gradient(180deg, rgba(20,90,150,.70) 0%, rgba(8,50,110,.90) 100%);
+      transition: opacity .25s ease;
+    }
+    /* P2/P4-水下：潜水氧气条 HUD */
+    .hud-oxygen {
+      position: absolute; left: 10px; bottom: 92px; z-index: 6; display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 12px; background: rgba(0,0,0,.42); color: #eaf6ff; font-size: 12px; font-weight: 600;
+      text-shadow: 0 1px 2px rgba(0,0,0,.5); pointer-events: none;
+    }
+    .hud-oxygen .oxy-icon { font-size: 14px; }
+    .hud-oxygen .oxy-bar { width: 120px; height: 8px; border-radius: 6px; background: rgba(255,255,255,.22); overflow: hidden; }
+    .hud-oxygen .oxy-fill { height: 100%; background: linear-gradient(90deg,#5fd0ff,#2aa3e0); transition: width .15s linear; }
+    .hud-oxygen .oxy-fill.low { background: linear-gradient(90deg,#ff8c6b,#e0563a); }
+    .hud-oxygen .oxy-text { min-width: 34px; text-align: right; }
     .w3d-help { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; }
     .help-card { width: min(420px, 86vw); background: #fff; color: #2a2a2a; border-radius: 14px; padding: 16px 18px; box-shadow: 0 10px 40px rgba(0,0,0,.4); font-size: 14px; }
     .help-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 16px; margin-bottom: 10px; }
@@ -427,7 +452,12 @@ export class World3dComponent implements OnInit, OnDestroy {
   private _lastWaterPushTs = 0;           // 水域推回冷却锁（防止每帧与服务端快照打架导致抖动）
   // 🔴 P1 真3D 水系统：游泳状态（离开 HY3D 视觉岛屿 = 处于水中）
   private swimMode = false;               // 是否处于游泳模式（驱动动画/速度/浮力视觉）
-  private isInWater = false;              // 当前帧是否在水里（playwright 断言用）
+  isInWater = false;                      // 当前帧是否在水里（playwright 断言用 + 模板绑定）
+  // 🔴 P2/P4 水下系统状态（模板绑定需 public）
+  oxygen = 100;                          // 氧气 0~100（潜水消耗，浮出回充）
+  underwaterTint = 0;                    // 水下蓝色滤镜强度 0~1（驱动 CSS 叠层）
+  private submerged = false;             // 是否真正没入水面以下（下潜）
+  private diveDepth = 0;                 // 当前下潜深度（水面以下米数）
   private inFlight = new Set<string>();
   private objectMeshes = new Map<number, THREE.Object3D>();
   private worldObjects = new Map<number, WorldObjectResp>();
@@ -1303,50 +1333,65 @@ export class World3dComponent implements OnInit, OnDestroy {
     const pgz = Math.floor(this.dpz);
     const wl = this.config?.waterLevel ?? -5;
     const hy3dGroundHere = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
-    // 🔴 P1 游泳判定：离开"可行走岛屿圆环"(onIslandCircle, 1.2r) 且离开 HY3D 视觉岛面 → 真在海中。
-    //   圆环内(1.1r~1.2r)是可走沙滩（即便 HY3D 视觉岛仅覆盖 1.1r），不算水；
-    //   出生点/沙滩都在此圆环内 → 不会误触发游泳（修复"出生即游泳"回归）。
-    const onIsl = this.onIslandCircle(this.dpx + 0.5, this.dpz + 0.5);
+    // 🔴 2026-08-17 空气墙根治：废弃 onIslandCircle 圆近似判定水体。
+    //   旧逻辑「圈外即水」会把真实草地（位于 1.2r 圆外、却在群岛 falloff 内的格子）误判为水中 →
+    //   玩家在草地上走着走着突然进入游泳模式、无法继续正常行走 = 错误空气墙。
+    //   现以「视觉 HY3D 地面 + 地形语义网格 + 地形高度」为唯一权威判定。
     let inWater = false;
-    if (!onIsl) {
-      inWater = (hy3dGroundHere == null);
-      if (!inWater) {
-        // 兜底：语义/高度判水（HY3D 射线偶发未命中的情况）
-        const cc = this.cellChunk(pgx, pgz);
-        if (cc) {
-          const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
-          if (g) {
-            const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
-            if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
-              const sem = g.semantic[lz * CHUNK + lx];
-              if (sem === 0 || sem === 10) inWater = true; // WATER or RIVER
-            }
+    if (hy3dGroundHere == null) {
+      // 视觉岛面未命中（HY3D 未实例化/远处）：凭语义网格 + 地形高度兜底判水
+      const cc = this.cellChunk(pgx, pgz);
+      let sem = -1;
+      if (cc) {
+        const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+        if (g) {
+          const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
+          if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
+            sem = g.semantic[lz * CHUNK + lx];
           }
         }
+      }
+      if (sem === 0 || sem === 10) {
+        inWater = true; // WATER or RIVER
+      } else {
+        // 兜底：地形高度低于安全线 ≈ 在水中（HY3D 射线偶发未命中时的二级判据）
         const groundY = this.heightAt(this.dpx, this.dpz);
         const safeLine = Math.max(wl + 0.5, 0); // 🔴🔴 安全线=海平面以上
-        if (groundY != null && groundY < safeLine) inWater = true; // 高度低于安全线≈在水里
+        if (groundY != null && groundY < safeLine) inWater = true;
       }
     }
     this.isInWater = inWater;
     this.swimMode = inWater; // 游泳模式 = 在水里
 
     if (inWater) {
-      // ===================== 游泳模式 =====================
-      // 玩家浮在水面（waterLevel 略上方），自由游动，永不被推回陆地。
-      const floatY = wl + 0.15; // 脚底略沉入水面，呈现"浮在水上"观感
-      const swimLerp = Math.min(1.0, dt * 6);
-      this.dpy += (floatY - this.dpy) * swimLerp;
-      // 蹬水（跳跃键）：在水面做小幅上下起伏，幅度限制在 ±0.4m，不真正离开水面
-      const msSinceJump = performance.now() - this._lastJumpTs;
-      const jumpDurMs = (2 * World3dComponent.JUMP_VEL / World3dComponent.JUMP_GRAVITY) * 1000;
-      if (msSinceJump < jumpDurMs) {
-        const jt = msSinceJump / 1000;
-        const rise = World3dComponent.JUMP_VEL * jt - 0.5 * World3dComponent.JUMP_GRAVITY * jt * jt;
-        this.dpy += Math.max(-0.15, Math.min(0.4, rise * 0.25));
+      // ===================== 游泳模式（P1 浮力 + P2 水下 + P4 下潜） =====================
+      // 玩家浮在水面（waterLevel 略上方）；水中长按空格下潜，松开上浮，永不被推回陆地。
+      const surfaceY = wl + 0.15;             // 水面（脚底基准）
+      const spaceHeld = !!this.keys['Space']; // 🔴 P4 长按空格下潜
+      if (spaceHeld) {
+        this.diveDepth = Math.min(this.diveDepth + 6 * dt, 14);   // 下潜 6m/s，最大 14m
+      } else {
+        this.diveDepth = Math.max(this.diveDepth - 5 * dt, 0);    // 上浮 5m/s
       }
-      this.py = this.dpy; // 逻辑 Y 同步水面（心跳/小地图坐标合理）
+      const targetY = surfaceY - this.diveDepth;
+      const swimLerp = Math.min(1.0, dt * 6);
+      this.dpy += (targetY - this.dpy) * swimLerp;
+      this.py = this.dpy; // 逻辑 Y 同步（心跳/小地图坐标合理）
       this._lastWaterPushTs = Date.now(); // 抑制旧推回冷却（swimMode 下永不推回）
+
+      // 🔴 P2 氧气：没入水面以下（下潜）才消耗；浮在水面/出水即回充
+      this.submerged = this.dpy < (wl - 0.25);
+      if (this.submerged) {
+        this.oxygen = Math.max(0, this.oxygen - 12 * dt); // ≈8s 耗尽
+        if (this.oxygen <= 0 && this.diveDepth > 0) {
+          this.diveDepth = 0; // 窒息强制浮出水面
+          this.hint = '⚠️ 氧气耗尽！已自动浮出水面';
+        }
+      } else {
+        this.oxygen = Math.min(100, this.oxygen + 24 * dt); // ≈4s 充满
+      }
+      // 🔴 P2 水下蓝色滤镜强度：随下潜深度增强（水面 0 → 14m 约 0.72）
+      this.underwaterTint = Math.min(0.72, (this.diveDepth / 14) * 0.72);
     } else {
       // ===================== 陆地 / 坡地（原"核弹级防飞天"逻辑，保持不变）=====================
       // 🔴🔴🔴🔴 核弹级防飞天修复（2026-08-16 第三轮）：
@@ -1714,13 +1759,15 @@ export class World3dComponent implements OnInit, OnDestroy {
     };
 
     const walk = (gx: number, gz: number): boolean => {
-      if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) return false; // 🔴 岛外（视觉海/虚空）不可走
       const s = getSem(gx, gz);
       if (s == null) return false;
-      // 🔴 2026-08-16 坡地修复：岛内豁免旧网格语义（MOUNTAIN=3 等误判）——HY3D 视觉岛面
-      //   平滑可走，旧网格在下方起伏会把坡地判成"山"→ A* 无路可走。
-      // 🔴 P1：放行水格（0/10）——玩家可游泳穿越海域；代价由 A* 评分惩罚（见下方 costMul），
-      //   让自动导航优先走陆地，仅在目标在水中/必须下水时才游过去。
+      // 🔴 2026-08-17 空气墙根治：废弃 onIslandCircle 圆近似判定。
+      //   旧逻辑用「岛心 ± 1.2r 圆」近似陆地，但该圆与真实群岛 falloff 形状严重不符，
+      //   圈外的真实草地被误判为「海/虚空」→ A* 在无形圆边界突然无路可走 = 错误空气墙。
+      //   现改以地形语义网格为唯一权威（与后端 canEnter 同源）：草地/沙地/山体可走，
+      //   水格仍放行（costMul 惩罚，游泳穿越），不再有任何圆形空气墙。
+      // 🔴 2026-08-16 坡地修复：岛内豁免旧网格语义（MOUNTAIN=3 等误判）——HY3D 视觉岛面平滑可走。
+      // 🔴 P1：放行水格（0/10）——玩家可游泳穿越海域；代价由 A* 评分惩罚（见下方 costMul）。
       if (this.isObstacle(gx, gz)) return false;       // 树/矿/建筑占位 → 绕行
       return true;
     };
@@ -1819,7 +1866,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     return false;
   }
 
-  /** 单格是否可走（2026-08-16 坡地修复：岛内豁免旧网格 MOUNTAIN 误判，只挡水+障碍；与 findPath walk() 同口径） */
+  /** 单格是否可走（2026-08-17 空气墙根治：废弃 onIslandCircle 圆近似，改以地形语义网格为权威；
+   *  坡地豁免 MOUNTAIN 误判，只挡水+障碍；与 findPath walk() 同口径） */
   private isWalkableCell(gx: number, gz: number): boolean {
     const c = this.cellChunk(gx, gz);
     if (!c) return false;
@@ -1827,8 +1875,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (!grid) return false;
     const lx = gx - c.cx * CHUNK, lz = gz - c.cz * CHUNK;
     if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return false;
-    if (!this.onIslandCircle(gx + 0.5, gz + 0.5)) return false; // 🔴 岛外（视觉海/虚空）不可走
-    const s = grid.semantic[lz * CHUNK + lx];
+    // 🔴 2026-08-17 空气墙根治：移除 onIslandCircle「圈外即不可走」判定（圆形与真实群岛形状不符，
+    //   会在圈外真实草地上制造错误空气墙）。行走性完全交由地形语义网格决定。
     // 🔴 P1：放行水格（0/10）——玩家可游泳进入海中（与 walk() 同步）
     if (this.isObstacle(gx, gz)) return false; // 树/矿/建筑占位 → 不可走
     return true;
@@ -2026,26 +2074,42 @@ export class World3dComponent implements OnInit, OnDestroy {
         pathPoints: this.pathPoints.length,
         moveTarget: this.moveTarget ? { x: +this.moveTarget.x.toFixed(1), z: +this.moveTarget.z.toFixed(1) } : null,
         playerDp: { x: +this.dpx.toFixed(1), z: +this.dpz.toFixed(1) }
-      }
+      },
+      // 🔴 2026-08-17 全量空气墙扫描探针（playwright 用）：
+      //   canEnter(gx,gz)=单格可走判定（与 findPath walk() / isWalkableCell 同源，无圆近似闸门）
+      //   getSem(gx,gz)=地形语义（0=水, 2=草, 3=山, 10=河, …），未加载返回 -1
+      //   isObstacle(gx,gz)=是否被树/矿/建筑占用
+      canEnter: (gx: number, gz: number) => this.isWalkableCell(gx, gz),
+      getSem: (gx: number, gz: number): number => {
+        const cc = this.cellChunk(gx, gz);
+        if (!cc) return -1;
+        const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
+        if (!g) return -1;
+        const lx = gx - cc.cx * CHUNK, lz = gz - cc.cz * CHUNK;
+        if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return -1;
+        return g.semantic[lz * CHUNK + lx];
+      },
+      isObstacle: (gx: number, gz: number) => this.isObstacle(gx, gz)
     };
-    // 🔴 P1：暴露游泳判定探针（playwright 验证用——给定世界坐标，返回是否处于水中）
+    // 🔴 2026-08-17 暴露游泳判定探针（playwright 验证用——给定世界坐标，返回是否处于水中）
+    //   与 animate 水体判定同源：以 HY3D 地面 + 语义网格 + 地形高度为权威，废弃 onIslandCircle 圆近似。
     (window as any).__isSwimAt = (x: number, z: number): boolean => {
-      if (this.onIslandCircle(x + 0.5, z + 0.5)) return false; // 可走岛屿圆环内 = 陆地
       const hy3d = this.hy3dSurfaceHeightAt(x, z);
-      if (hy3d == null) return true; // 离开视觉岛 + 离岛圆环 = 水
+      if (hy3d != null) return false; // 视觉岛面命中 = 陆地
       const pgx = Math.floor(x), pgz = Math.floor(z);
       const wl = this.config?.waterLevel ?? -5;
       const cc = this.cellChunk(pgx, pgz);
+      let sem = -1;
       if (cc) {
         const grid = this.gridCache.get(`${cc.cx}_${cc.cz}`);
         if (grid) {
           const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
           if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
-            const sem = grid.semantic[lz * CHUNK + lx];
-            if (sem === 0 || sem === 10) return true;
+            sem = grid.semantic[lz * CHUNK + lx];
           }
         }
       }
+      if (sem === 0 || sem === 10) return true; // WATER / RIVER
       const gy = this.heightAt(x, z);
       if (gy != null && gy < Math.max(wl + 0.5, 0)) return true;
       return false;
@@ -2589,13 +2653,24 @@ export class World3dComponent implements OnInit, OnDestroy {
     geo.computeVertexNormals();
     geo.computeBoundingBox();
     geo.computeBoundingSphere();
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02, fog: false, side: THREE.DoubleSide });
+    // 🔴🔴 材质选型定案：MeshBasicMaterial（不受光，vertexColors 直接显示语义色）。
+    //   曾试 MeshStandardMaterial / MeshLambertMaterial —— r128 下场景灯光
+    //   (sun 1.0 + fill 0.2 + hemi 0.45 ≈ 1.65×) 会把受光顶点色推过 1.0 钳到全白（"陆地惨白"）。
+    //   Basic 不受光，颜色 1:1 还原 CELL_COLORS 语义（绿草/黄沙/灰岩），且确定性高、与 HY3D 岛间隙
+    //   处的补色风格一致；承担「陆地配色填充 + 深度遮挡（治穿模）」两层作用。
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `chunk_${resp.cx}_${resp.cz}`;
     mesh.frustumCulled = false;
-    // 🔴🔴 隐藏旧程序化网格的视觉渲染：HY3D 岛屿层已替代地形视觉
-    // chunk 网格仍保留在场景中供 heightAt()/物理查询，但不再渲染
-    mesh.visible = false;
+    // 🔴🔴 2026-08-17 修复水陆穿模/接边错位：恢复 chunk 程序化网格可见。
+    //   HY3D 岛屿仅覆盖 22 个岛心 ±115–190m 的有限斑块；陆地块（sem≠0）若未被 HY3D 覆盖、且没有
+    //   chunk 网格遮挡，waterPlane（3200×3200 半透明）就会直接透出→水草地接边错位/穿模（inlet 处尤其明显）。
+    //   chunk 网格（纯水域三角早已 skip → 与 waterPlane 无 z-fight）承担两层作用：
+    //     ① 陆地格的视觉颜色填充（HY3D 间隙处补绿）；
+    //     ② 陆地深度遮挡层（waterPlane 渲染顺序在前、chunk 在后，chunk 写深度与不透明色覆盖水）。
+    //   原始"蓝色碎片"根因（chunk 水三角与 waterPlane 双层 z-fight）已通过 skip 纯水域三角彻底消除，
+    //   恢复可见是安全的。
+    mesh.visible = true;
     return mesh;
   }
 

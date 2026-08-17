@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { GameState, Category, StudySubject, StudySession, GAME_DAY_MS, DAY_START_H, NIGHT_START_H,
-  FARM_PLOTS, FARM_UP_COST, POND_SLOTS, POND_UP_COST, RANCH_SLOTS, RANCH_UP_COST, STUDY_DAILY_LIMIT } from '../models';
+  FARM_PLOTS, FARM_UP_COST, POND_SLOTS, POND_UP_COST, RANCH_SLOTS, RANCH_UP_COST, STUDY_DAILY_LIMIT,
+  HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS, HouseTier, RanchAnimal } from '../models';
 import { AuthService } from './auth.service';
 import { WorldApiService } from './world-api.service';
 
@@ -57,11 +58,12 @@ export class StateService {
         stats: { feed: 0, play: 0, watch: 0, harvest: 0, study: 0 } },
       farm: { level: 1, plots },
       pond: { level: 1, fish },
-      ranch: { level: 1, stalls },
-      house: { furniture: [] },
+      ranch: { level: 1, stalls, ownedAnimals: [] },
+      house: { owned: false, level: 0, furniture: [] },
       categories: JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)),
       layout: { house: { x: -2.8, z: 0.8 }, farm: { x: 3.8, z: -1.8 }, pond: { x: 4.0, z: 2.6 } },
       study: { earned: 0, lastDay: '', learned: [] },
+      dailyClaimDay: '',
       logs: []
     };
   }
@@ -128,11 +130,19 @@ export class StateService {
     if (!s.weather) s.weather = 'sunny';
     if (typeof s.pet.energy !== 'number') s.pet.energy = 80;
     if (!s.categories || !s.categories.length) s.categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
-    if (!s.ranch) s.ranch = { level: 1, stalls: [] };
+    if (!s.ranch) s.ranch = { level: 1, stalls: [], ownedAnimals: [] };
     if (!s.ranch.stalls || !s.ranch.stalls.length) {
       for (let rk = 0; rk < 4; rk++) s.ranch.stalls.push({ id: rk + 1, type: null, stockedDay: 0, lastFeedDay: 0, grownDays: 0, productReady: false, lastProductDay: 0 });
     }
     if (!s.layout) s.layout = { house: { x: -2.8, z: 0.8 }, farm: { x: 3.8, z: -1.8 }, pond: { x: 4.0, z: 2.6 } };
+    if (!s.house) s.house = { owned: false, level: 0, furniture: [] };
+    else {
+      if (typeof s.house.owned !== 'boolean') s.house.owned = false;
+      if (typeof s.house.level !== 'number') s.house.level = 0;
+      if (!Array.isArray(s.house.furniture)) s.house.furniture = [];
+    }
+    if (!s.ranch.ownedAnimals) s.ranch.ownedAnimals = [];
+    if (typeof s.dailyClaimDay !== 'string') s.dailyClaimDay = '';
   }
 
   save(): void {
@@ -645,4 +655,75 @@ export class StateService {
     this.addLog('level', '买了' + c.name);
     this.save();
   }
+
+  // ================= 房屋（进入牧场的前提） =================
+  /** 当前房屋层级配置（未拥有返回 null） */
+  houseTier(): HouseTier | null {
+    if (!this.state.house.owned || this.state.house.level < 1) return null;
+    return HOUSE_TIERS[this.state.house.level - 1] || null;
+  }
+  houseModelPath(): string | null { return this.houseTier()?.model || null; }
+  /** 进入牧场的前提：玩家必须拥有自己的房屋 */
+  canEnterRanch(): boolean { return this.state.house.owned; }
+
+  /** 建造一层小屋（从 0 级开始） */
+  buildHouse(): boolean {
+    const h = this.state.house;
+    if (h.owned) return false;
+    const cost = HOUSE_TIERS[0].buildCost;
+    if (!this.spendCoins(cost)) return false;
+    h.owned = true; h.level = 1;
+    this.addLog('level', '建造了一层小屋，现在可以进入牧场啦！');
+    this.save();
+    return true;
+  }
+  /** 升级到下一层（level → level+1） */
+  upgradeHouse(): boolean {
+    const h = this.state.house;
+    if (!h.owned || h.level >= 6) return false;
+    const next = HOUSE_TIERS[h.level];   // 升至 level+1 的成本
+    if (!next) return false;
+    if (!this.spendCoins(next.buildCost)) return false;
+    h.level++;
+    this.addLog('level', '房屋升级到 ' + next.name + '！');
+    this.save();
+    return true;
+  }
+  /** 升到下一级所需金币（已满级返回 0） */
+  nextHouseCost(): number {
+    const h = this.state.house;
+    if (!h.owned || h.level >= 6) return 0;
+    return HOUSE_TIERS[h.level].buildCost;
+  }
+  canUpgradeHouse(): boolean {
+    const h = this.state.house;
+    return h.owned && h.level < 6 && this.state.coins >= this.nextHouseCost();
+  }
+
+  // ================= 牧场动物购买 =================
+  /** 购买一只动物（重复购买 / 金币不足返回 false） */
+  buyAnimal(code: string): boolean {
+    const a = RANCH_ANIMALS.find(x => x.code === code);
+    if (!a) return false;
+    if (this.state.ranch.ownedAnimals.includes(code)) return false;
+    if (!this.spendCoins(a.price)) return false;
+    this.state.ranch.ownedAnimals.push(code);
+    this.addLog('feed', '在牧场购买了一只' + a.name + '（' + a.price + '金）');
+    this.save();
+    return true;
+  }
+  ownsAnimal(code: string): boolean { return this.state.ranch.ownedAnimals.includes(code); }
+  ranchAnimalList(): RanchAnimal[] { return RANCH_ANIMALS; }
+
+  // ================= 每日签到金币（便于体验购买流程） =================
+  claimDailyCoins(): boolean {
+    const today = this.todayKey();
+    if (this.state.dailyClaimDay === today) return false;
+    this.addCoins(DAILY_CLAIM_COINS);
+    this.state.dailyClaimDay = today;
+    this.addLog('level', '签到领取了 ' + DAILY_CLAIM_COINS + ' 金币');
+    this.save();
+    return true;
+  }
+  canClaimDaily(): boolean { return this.state.dailyClaimDay !== this.todayKey(); }
 }

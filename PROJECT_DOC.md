@@ -358,10 +358,10 @@ if(dx*dx + dz*dz < radius*radius) return o;
 
 ---
 
-## 11. 迭代升级路线（加后端 + 数据库）
+## 11. 后端架构（Spring Boot + MySQL）
 
-> 目标：把单机 localStorage 版升级为**有账号体系的联网版**（后端 + 数据库）。以下给出**最小侵入**改造方案。
-> **已定技术栈：Java 17 + Spring Boot 3.x + MySQL 8**（2026-08-05 用户明确）。
+> 联网版后端技术栈与数据库设计（当前已实现，单机 localStorage 版早已废弃）。
+> **技术栈：Java 17 + Spring Boot 3.x + MySQL 8**（2026-08-05 用户明确）。
 
 ### 11.1 目标架构
 

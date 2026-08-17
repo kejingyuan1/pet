@@ -4,12 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { StateService } from './services/state.service';
 import { AuthService } from './services/auth.service';
 import { World3dComponent } from './components/world3d/world3d.component';
+import { RanchComponent } from './components/ranch/ranch.component';
 import { ChatService, ChatMessage } from './services/chat.service';
 import { WorldSocketService } from './services/world-socket.service';
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, World3dComponent],
+  imports: [CommonModule, FormsModule, World3dComponent, RanchComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
   /* ★ v58 根除版：默认 Emulated 封装会把 body {} 改写成 body[_ngcontent-xxx]
@@ -74,6 +75,28 @@ export class AppComponent implements OnInit, OnDestroy {
 
   /** 积分：读游戏实时值（登录成功时已用后端权威 users.coins 初始化） */
   get coins(): number { return this.state.state.coins ?? 0; }
+
+  // ================= 牧场（进入牧场按钮 + 覆盖层） =================
+  showRanch = false;
+  /** 点击左上角"进入牧场"：没有房屋则提示并进入房屋中心；有房屋直接进入展厅 */
+  openRanch(): void {
+    if (!this.state.canEnterRanch()) {
+      this.toast('请先拥有自己的房屋（在牧场里可建造）');
+    }
+    this.showRanch = true;
+  }
+  closeRanch(): void { this.showRanch = false; }
+
+  /** 轻量 toast（复用 weatherTip 的 DOM 注入思路） */
+  private toast(msg: string): void {
+    try {
+      const t = document.createElement('div');
+      t.textContent = msg;
+      t.style.cssText = 'position:fixed;left:50%;top:90px;transform:translateX(-50%);background:rgba(60,40,20,.95);color:#fff;padding:10px 18px;border-radius:12px;font-size:.9rem;font-weight:700;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.35)';
+      document.body.appendChild(t);
+      setTimeout(() => { t.remove(); }, 2200);
+    } catch (e) { /* ignore */ }
+  }
   get pet(): any { return this.state.state.pet; }
   get isNight(): boolean { return this.state.isNight(); }
 

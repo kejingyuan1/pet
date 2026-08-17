@@ -73,11 +73,12 @@ export interface GameState {
   };
   farm: { level: number; plots: Plot[] };
   pond: { level: number; fish: Fish[] };
-  ranch: { level: number; stalls: Stall[] };
-  house: { furniture: string[] };
+  ranch: { level: number; stalls: Stall[]; ownedAnimals: string[] };
+  house: { owned: boolean; level: number; furniture: string[] };
   categories: Category[];
   layout: { house: LayoutSpot; farm: LayoutSpot; pond: LayoutSpot };
   study: { earned: number; lastDay: string; learned: string[] };
+  dailyClaimDay: string;
   logs: Array<{ t: number; type: string; text: string }>;
 }
 
@@ -107,6 +108,44 @@ export const POND_SLOTS: Record<number, number> = { 1: 4, 2: 6, 3: 8 };
 export const POND_UP_COST: Record<number, number> = { 2: 150, 3: 350 };
 export const RANCH_SLOTS: Record<number, number> = { 1: 4, 2: 6, 3: 8 };
 export const RANCH_UP_COST: Record<number, number> = { 2: 150, 3: 350 };
+
+// ================= 房屋（进入牧场的前提） =================
+/** 房屋升级链：6 级，对应 building_quaternius GLB（已部署到 public/assets/models/houses/） */
+export interface HouseTier {
+  level: number;
+  name: string;
+  model: string;        // assets/models/houses/house_tN.glb
+  buildCost: number;    // 升到该级所需金币（从 0 级建 1 层 = HOUSE_TIERS[0].buildCost）
+}
+export const HOUSE_TIERS: HouseTier[] = [
+  { level: 1, name: '一层小屋', model: 'assets/models/houses/house_t1.glb', buildCost: 120 },
+  { level: 2, name: '二层小楼', model: 'assets/models/houses/house_t2.glb', buildCost: 200 },
+  { level: 3, name: '三层小宅', model: 'assets/models/houses/house_t3.glb', buildCost: 320 },
+  { level: 4, name: '四层公寓', model: 'assets/models/houses/house_t4.glb', buildCost: 480 },
+  { level: 5, name: '阔气四层', model: 'assets/models/houses/house_t5.glb', buildCost: 680 },
+  { level: 6, name: '六层高楼', model: 'assets/models/houses/house_t6.glb', buildCost: 900 }
+];
+
+// ================= 牧场可购买动物（HY3D 生成的 7 个模型） =================
+/** 这 7 个模型即本次需要"在游戏中检查是否可用"的目标资产 */
+export interface RanchAnimal {
+  code: string;
+  name: string;
+  model: string;        // assets/models/animals/hy3_xxx_draco.glb
+  price: number;
+}
+export const RANCH_ANIMALS: RanchAnimal[] = [
+  { code: 'cat',     name: '猫', model: 'assets/models/animals/hy3_cat_draco.glb',     price: 60 },
+  { code: 'dog',     name: '狗', model: 'assets/models/animals/hy3_dog_draco.glb',     price: 80 },
+  { code: 'chicken', name: '鸡', model: 'assets/models/animals/hy3_chicken_draco.glb', price: 40 },
+  { code: 'duck',    name: '鸭', model: 'assets/models/animals/hy3_duck_draco.glb',    price: 50 },
+  { code: 'cow',     name: '牛', model: 'assets/models/animals/hy3_cow_draco.glb',     price: 120 },
+  { code: 'sheep',   name: '羊', model: 'assets/models/animals/hy3_sheep_draco.glb',   price: 100 },
+  { code: 'fish',    name: '鱼', model: 'assets/models/animals/hy3_fish_draco.glb',    price: 45 }
+];
+
+/** 每日签到领取金币（便于体验"购买房屋 / 购买动物"流程） */
+export const DAILY_CLAIM_COINS = 300;
 
 // ================= 学习题库类型（五科目多题型） =================
 export type StudyQType = 'card' | 'choice' | 'fill' | 'qa';

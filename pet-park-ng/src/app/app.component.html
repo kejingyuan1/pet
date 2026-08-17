@@ -63,6 +63,9 @@
   </div>
 </header>
 
+<!-- 游戏左上方：进入牧场按钮（拥有房屋才能进入） -->
+<button class="enter-ranch-btn" *ngIf="auth.isLoggedIn" (click)="openRanch()" title="进入牧场（需先拥有自己的房屋）">🐮 进入牧场</button>
+
 <!-- 今日待办（仅首页显示） -->
 <section class="today" *ngIf="mod==='home'">
   <h2><span class="dot"></span>今天要处理</h2>
@@ -492,5 +495,8 @@
     </div>
   </div>
 </div>
+
+<!-- 牧场覆盖层（3D 展厅 + 动物商店 + 房屋中心） -->
+<app-ranch *ngIf="showRanch" (close)="closeRanch()"></app-ranch>
 
 </div><!-- /.app-shell -->
