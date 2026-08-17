@@ -499,6 +499,8 @@ export class World3dComponent implements OnInit, OnDestroy {
   // HY3D 地图地形：实例化的岛屿视觉层（覆盖程序化块状岛屿，保留网格做物理）
   private hy3dTerrainGroup: THREE.Group | null = null;
   private islandCenters: { cx: number; cz: number; r: number }[] = [];
+  /** 上次在陆地上的视觉地面高度（岛内边缘 raycast miss 时粘滞，防瞬坠水面闪） */
+  private _lastLandY: number | null = null;
   // 🔴🔴 HY3D 岛屿 LOD：模板缓存 + 已实例化索引集合（性能优化，只加载100m内）
   private _hy3dTemplates: THREE.Group[] = [];           // 4 个变体模板
   private _hy3dMeta: { radius: number; baseY: number; height: number }[] = [];
@@ -508,7 +510,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   private _spawnIslandIdx = -1;                          // 随机出生所选岛屿索引
   private _wsConnected = false;                          // WS 已连（join 前置条件）
   private _joinSent = false;                            // 出生钳制后已向服务端上报出生点
-  private readonly ISLAND_LOD_RADIUS = 600;              // 加载半径（米）
+  private readonly ISLAND_LOD_RADIUS = 300;              // 加载半径（米）< CELL/2=350，保证任意位置最多 1 岛加载
   private readonly ISLAND_UNLOAD_BUFFER = 130;           // 卸载缓冲区（避免频繁增删）
   private animalList: { x: number; y: number; z: number }[] = [];
   private oreList: { x: number; y: number; z: number; type: string }[] = []; // 🔴 矿石坐标跟踪（用于调试+水域校验）
@@ -1358,7 +1360,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     //   玩家在草地上走着走着突然进入游泳模式、无法继续正常行走 = 错误空气墙。
     //   现以「视觉 HY3D 地面 + 地形语义网格 + 地形高度」为唯一权威判定。
     let inWater = false;
-    if (hy3dGroundHere == null) {
+    // 🔴🔴🔴 2026-08-18 边缘粘滞：岛范围内（isOnIsland）即便 raycast 偶发 miss（返回 null），
+    //   也不应判为入水/坠海，否则岛边缘会出现「瞬坠水面再弹回」的闪烁。
+    const onIslandCircle = this.onIslandCircle(this.dpx, this.dpz);
+    if (hy3dGroundHere == null && !onIslandCircle) {
       // 🔴 离岛 = 水：彻底去掉任何程序化网格/语义回退（用户硬性 no-fallback）。
       //   世界 100% 是 HY3D 岛屿，岛外即海，玩家进入游泳模式而非被推回旧草地/旧网格地形。
       inWater = true;
@@ -1400,7 +1405,16 @@ export class World3dComponent implements OnInit, OnDestroy {
       // 🔴🔴🔴🔴 核弹级防飞天修复（2026-08-16 第三轮）：
       //   不再信任服务端 py / dpy 的任何累积值。每帧根据 HY3D 地面高度直接计算正确 Y，仅跳跃时允许临时离地。
       // 🔴 离岛即水面/游泳高度：绝不再用旧网格高度（no fallback，世界 100% HY3D 岛屿）
-      const effectiveGround = (hy3dGroundHere != null) ? hy3dGroundHere : (this.config?.waterLevel ?? -5);
+      // 🔴🔴 2026-08-18 边缘粘滞：岛范围内 raycast 偶发 miss 时，用上次陆地高度兜底，避免瞬坠水面闪。
+      let effectiveGround: number;
+      if (hy3dGroundHere != null) {
+        effectiveGround = hy3dGroundHere;
+        this._lastLandY = hy3dGroundHere;
+      } else if (onIslandCircle && this._lastLandY != null) {
+        effectiveGround = this._lastLandY;
+      } else {
+        effectiveGround = this.config?.waterLevel ?? -5;
+      }
       const GROUND_Y = effectiveGround;
       // 🔴🔴🔴 跳跃本地抛物线（2026-08-16 修复"最后几帧卡顿"根因）
       const msSinceJump = performance.now() - this._lastJumpTs;
@@ -2965,17 +2979,21 @@ export class World3dComponent implements OnInit, OnDestroy {
       const low32 = h & 0xFFFFFFFFn;
       return Number(low32) / 4294967296.0;
     };
-    const ISLAND_COUNT = 22, SPREAD = 2600, BASE_R = 115, R_VAR = 75;
+    // 🔴🔴🔴 2026-08-18 网格布局（根治岛屿重叠导致 raycast 命中非确定性 → 上下闪）：
+    //   旧版用 scatterHash 随机撒 22 岛于 2600×2600 + LOD 600m → 同时加载 4 岛且两两 mesh 重叠。
+    //   现改为 GRID×GRID 规则网格，中心间距 CELL=700，最大岛直径 380 → 边缘间留 320m 净空，
+    //   几何上保证任意两岛永不重叠；再配 ISLAND_LOD_RADIUS=300（<CELL/2）使任意位置最多只加载 1 个岛。
+    const ISLAND_COUNT = 22, GRID = 5, CELL = 700, BASE_R = 115, R_VAR = 75;
     this.islandCenters = [];
-    for (let i = 0; i < ISLAND_COUNT; i++) {
-      const hx = scatterHash(i * 3 + 1, 777, SALT_ISLAND);
-      const hz = scatterHash(i * 3 + 2, 888, SALT_ISLAND);
-      const hr = scatterHash(i * 3 + 3, 999, SALT_ISLAND);
-      this.islandCenters.push({
-        cx: (hx - 0.5) * SPREAD,
-        cz: (hz - 0.5) * SPREAD,
-        r: BASE_R + hr * R_VAR,
-      });
+    let placed = 0;
+    for (let row = 0; row < GRID && placed < ISLAND_COUNT; row++) {
+      for (let col = 0; col < GRID && placed < ISLAND_COUNT; col++) {
+        const cx = (col - (GRID - 1) / 2) * CELL;
+        const cz = (row - (GRID - 1) / 2) * CELL;
+        const hr = scatterHash(placed * 3 + 3, 999, SALT_ISLAND); // 仅用于半径随机变化
+        this.islandCenters.push({ cx, cz, r: BASE_R + hr * R_VAR });
+        placed++;
+      }
     }
   }
 
