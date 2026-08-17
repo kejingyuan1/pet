@@ -504,7 +504,11 @@ export class World3dComponent implements OnInit, OnDestroy {
   private _hy3dMeta: { radius: number; baseY: number; height: number }[] = [];
   private _hy3dLoaded = false;                           // 模板是否已加载完
   private _activeIslands = new Set<number>();            // 当前已实例化的岛屿索引
-  private readonly ISLAND_LOD_RADIUS = 100;              // 加载半径（米）
+  private _needSpawnSnap = false;                        // 出生落地钳制待执行（LOD 首次就绪后触发）
+  private _spawnIslandIdx = -1;                          // 随机出生所选岛屿索引
+  private _wsConnected = false;                          // WS 已连（join 前置条件）
+  private _joinSent = false;                            // 出生钳制后已向服务端上报出生点
+  private readonly ISLAND_LOD_RADIUS = 600;              // 加载半径（米）
   private readonly ISLAND_UNLOAD_BUFFER = 130;           // 卸载缓冲区（避免频繁增删）
   private animalList: { x: number; y: number; z: number }[] = [];
   private oreList: { x: number; y: number; z: number; type: string }[] = []; // 🔴 矿石坐标跟踪（用于调试+水域校验）
@@ -942,9 +946,25 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.ws.subscribe('/user/queue/reply', f => this.onReply(f));
     // 物理快照客户端（POSITION_SNAPSHOT / PHYS_RESTART）
     this.physics.init();
+    this._wsConnected = true;
+    this._joinSent = false;   // 断线重连也需重新 join（每次新连接重置）
+    // 🔴 出生钳制：等 snapSpawnToIsland 把出生点钳到实体岛面后再 join，
+    //   否则服务端权威出生点落在湖心/岛外水面 → POSITION_SNAPSHOT 的 st.gx 永不修正
+    //   → 客户端每帧 this.px=st.gx 且 dpx 向 px 收敛 → 玩家被拉回水中（方案A 失败）。
+    this.trySendJoin();
+  }
+
+  /** 🔴 延后 join：必须等 snapSpawnToIsland 把出生点钳到实体岛面（_needSpawnSnap=false）且 WS 已连，
+   *  才向服务端上报出生点。服务端 join 直接用客户端 gx/gz 作为物理权威出生点（WorldWsController.join:108-109），
+   *  故上报的必须是已钳到实体岛面的点，而非 loadHy3dTerrain 选岛时的临时水面点。 */
+  private trySendJoin(): void {
+    if (this._joinSent) return;
+    if (this._needSpawnSnap) return;   // 等 LOD 首次钳制完成（岛屿实例已可 raycast）
+    if (!this._wsConnected) return;    // 等 WS 真正连上
     const cx = Math.floor(this.px / CHUNK);
     const cz = Math.floor(this.pz / CHUNK);
     this.ws.send('/app/ws.join', { chunkKey: `${cx}_${cz}`, gx: Math.floor(this.px), gz: Math.floor(this.pz) });
+    this._joinSent = true;
     this.hint = '已接入大世界（服务端物理权威），按 WASD 移动探索';
   }
 
@@ -1339,26 +1359,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     //   现以「视觉 HY3D 地面 + 地形语义网格 + 地形高度」为唯一权威判定。
     let inWater = false;
     if (hy3dGroundHere == null) {
-      // 视觉岛面未命中（HY3D 未实例化/远处）：凭语义网格 + 地形高度兜底判水
-      const cc = this.cellChunk(pgx, pgz);
-      let sem = -1;
-      if (cc) {
-        const g = this.gridCache.get(`${cc.cx}_${cc.cz}`);
-        if (g) {
-          const lx = pgx - cc.cx * CHUNK, lz = pgz - cc.cz * CHUNK;
-          if (lx >= 0 && lz >= 0 && lx < CHUNK && lz < CHUNK) {
-            sem = g.semantic[lz * CHUNK + lx];
-          }
-        }
-      }
-      if (sem === 0 || sem === 10) {
-        inWater = true; // WATER or RIVER
-      } else {
-        // 兜底：地形高度低于安全线 ≈ 在水中（HY3D 射线偶发未命中时的二级判据）
-        const groundY = this.heightAt(this.dpx, this.dpz);
-        const safeLine = Math.max(wl + 0.5, 0); // 🔴🔴 安全线=海平面以上
-        if (groundY != null && groundY < safeLine) inWater = true;
-      }
+      // 🔴 离岛 = 水：彻底去掉任何程序化网格/语义回退（用户硬性 no-fallback）。
+      //   世界 100% 是 HY3D 岛屿，岛外即海，玩家进入游泳模式而非被推回旧草地/旧网格地形。
+      inWater = true;
     }
     this.isInWater = inWater;
     this.swimMode = inWater; // 游泳模式 = 在水里
@@ -1396,9 +1399,8 @@ export class World3dComponent implements OnInit, OnDestroy {
       // ===================== 陆地 / 坡地（原"核弹级防飞天"逻辑，保持不变）=====================
       // 🔴🔴🔴🔴 核弹级防飞天修复（2026-08-16 第三轮）：
       //   不再信任服务端 py / dpy 的任何累积值。每帧根据 HY3D 地面高度直接计算正确 Y，仅跳跃时允许临时离地。
-      const gridGround = this.heightAt(this.dpx, this.dpz);
-      // 有 HY3D 就用 HY3D（视觉地面），否则用旧网格兜底
-      const effectiveGround = (hy3dGroundHere != null) ? hy3dGroundHere : (gridGround ?? 0);
+      // 🔴 离岛即水面/游泳高度：绝不再用旧网格高度（no fallback，世界 100% HY3D 岛屿）
+      const effectiveGround = (hy3dGroundHere != null) ? hy3dGroundHere : (this.config?.waterLevel ?? -5);
       const GROUND_Y = effectiveGround;
       // 🔴🔴🔴 跳跃本地抛物线（2026-08-16 修复"最后几帧卡顿"根因）
       const msSinceJump = performance.now() - this._lastJumpTs;
@@ -2012,12 +2014,34 @@ export class World3dComponent implements OnInit, OnDestroy {
       yCoord: {
         serverPy: this.py,                    // 服务端原始Y
         displayY: this.dpy,                   // 实际渲染Y（核弹修复后=GROUND_Y）
+        dpx: this.dpx,                        // 实际渲染X（诊断出生点是否落在岛屿上）
+        dpz: this.dpz,                        // 实际渲染Z
         hy3dGround: this.hy3dSurfaceHeightAt(this.dpx, this.dpz),
         gridGround: this.heightAt(this.dpx, this.dpz),
         effectiveGround: null, // 下面立即填充
         inJumpWindow: (performance.now() - this._lastJumpTs) < (2 * World3dComponent.JUMP_VEL / World3dComponent.JUMP_GRAVITY) * 1000,
         msSinceJump: ((performance.now() - this._lastJumpTs) | 0)
       },
+      // 🔴 出生点诊断：玩家是否落在某 HY3D 岛屿覆盖范围内
+      spawnDiag: (() => {
+        const px = this.dpx, pz = this.dpz;
+        let best = -1, bestDist = Infinity, bestC: any = null;
+        for (let i = 0; i < this.islandCenters.length; i++) {
+          const c = this.islandCenters[i];
+          const d = Math.hypot(px - c.cx, pz - c.cz);
+          if (d < bestDist) { bestDist = d; best = i; bestC = c; }
+        }
+        const onIslandCircle = bestC ? (bestDist <= bestC.r * 1.2) : false;
+        // 在"最近岛屿中心"处做 raycast，判断该岛是否真的被加载/可命中
+        const hAtCenter = bestC ? this.hy3dSurfaceHeightAt(bestC.cx, bestC.cz) : null;
+        return {
+          playerX: +px.toFixed(2), playerZ: +pz.toFixed(2),
+          nearestIdx: best, nearestDist: +bestDist.toFixed(2),
+          nearestRadius: bestC ? +bestC.r.toFixed(2) : null,
+          onIslandCircle,
+          hy3dGroundAtNearestCenter: hAtCenter
+        };
+      })(),
       // 🔴 地形诊断
       terrain: {
         chunkMeshCount: this.chunkMeshes.size,
@@ -2154,6 +2178,25 @@ export class World3dComponent implements OnInit, OnDestroy {
       const lx = gx - cc.cx * CHUNK, lz = gz - cc.cz * CHUNK;
       if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return -1;
       return (g.semantic as any)[lz * CHUNK + lx];
+    };
+    // 🔴 临时探针：探查某岛屿在哪些半径环带存在可 raycast 的实体岛面（排查湖岛出生钳制失效）
+    (window as any).__probeIsland = (idx: number) => {
+      if (!this.islandCenters || !this.hy3dTerrainGroup) return { err: 'no-islands' };
+      this.hy3dTerrainGroup.updateMatrixWorld(true);
+      const c = this.islandCenters[idx];
+      if (!c) return { err: 'bad-idx', count: this.islandCenters.length };
+      const center = this.hy3dSurfaceHeightAt(c.cx, c.cz);
+      const rings: any[] = [];
+      for (let s = 1; s <= 12; s++) {
+        const rf = s * 0.1; const rr = rf * c.r; let solid = 0; const ys: number[] = [];
+        for (let k = 0; k < 8; k++) {
+          const a = (k * Math.PI * 2) / 8;
+          const h = this.hy3dSurfaceHeightAt(c.cx + rr * Math.cos(a), c.cz + rr * Math.sin(a));
+          if (h != null) { solid++; ys.push(+h.toFixed(2)); }
+        }
+        rings.push({ rf: +rf.toFixed(2), solidCount: solid, ys });
+      }
+      return { idx, variant: idx % 4, cx: c.cx, cz: c.cz, r: c.r, centerHit: center, rings };
     };
   }
 
@@ -2352,7 +2395,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 网格
     const mesh = this.buildChunkMesh(resp);
     this.chunkMeshes.set(key, mesh);
-    this.scene.add(mesh);
+    // 🔴 移除程序化草地 fallback 视觉：整个游戏世界 = HY3D 岛屿，离岛即水面（保留网格用于物理/heightAt）
+    // this.scene.add(mesh);
     // 树木（TREE 语义 → 3D 树模型）
     this.spawnTrees(resp);
     // M5：尝试在出生区块附近放置男孩/女孩（地形与模型均就绪后落位，仅一次）
@@ -2933,6 +2977,36 @@ export class World3dComponent implements OnInit, OnDestroy {
   private loadHy3dTerrain(): void {
     if (this._hy3dLoaded) return;
     this.computeIslandCenters();
+    // 🔴 出生点：随机落在某个 HY3D 岛屿上（彻底去掉程序化草地 fallback）
+    if (this.islandCenters.length) {
+      // 🔴 QA 钩子：?spawnIsland=I（或 sessionStorage 持久化）强制出生到指定岛屿、offset=0（岛心）。
+      //   仅 QA 用，用于确定性验证「湖心/岛外水面出生」bug；正常游戏随机出生，不受影响。
+      let forcedRaw: string | null = null;
+      try {
+        if (typeof window !== 'undefined' && window.location && window.location.search) {
+          const p = new URLSearchParams(window.location.search).get('spawnIsland');
+          if (p != null) { forcedRaw = p; window.sessionStorage.setItem('forceSpawnIsland', p); }
+        }
+        if (forcedRaw == null) forcedRaw = (typeof window !== 'undefined' && window.sessionStorage) ? window.sessionStorage.getItem('forceSpawnIsland') : null;
+      } catch (e) { forcedRaw = null; }
+      let ri: number;
+      let forceCenter = false;
+      if (forcedRaw != null && /^\d+$/.test(forcedRaw)) {
+        const fi = parseInt(forcedRaw, 10);
+        if (fi >= 0 && fi < this.islandCenters.length) { ri = fi; forceCenter = true; }
+        else ri = Math.floor(Math.random() * this.islandCenters.length);
+      } else {
+        ri = Math.floor(Math.random() * this.islandCenters.length);
+      }
+      const c = this.islandCenters[ri];
+      const off = forceCenter ? 0 : c.r * 0.5;   // 强制岛心：湖岛→湖心，必触发水面 bug（验证钳制是否生效）
+      this.px = c.cx + (Math.random() - 0.5) * off;
+      this.pz = c.cz + (Math.random() - 0.5) * off;
+      this.py = 6;                       // 安全高度，落入岛面（最终由 snapSpawnToIsland 钳到实体岛面）
+      this.dpx = this.px; this.dpz = this.pz; this.dpy = this.py; this.dprot = 0;
+      this._spawnIslandIdx = ri;         // 记录所选岛屿，供 LOD 加载后钳制落地
+      this._needSpawnSnap = true;        // 标记：等 HY3D 实例首次就绪后把出生点钳到实体岛面
+    }
     const variantPaths = [
       'assets/3d_build/terrain-hy3d/hy3_island_draco.glb',
       'assets/3d_build/terrain-hy3d/hy3_island_lake_draco.glb',
@@ -3010,6 +3084,46 @@ export class World3dComponent implements OnInit, OnDestroy {
           }
         }
         this._activeIslands.delete(i);
+      }
+    }
+    // 🔴 出生落地钳制：等 HY3D 实例首次就绪（group 已挂载且 matrixWorld 更新），把随机出生点钳到实体岛面
+    if (this._needSpawnSnap && this.hy3dTerrainGroup && this.hy3dTerrainGroup.children.length > 0) {
+      this.snapSpawnToIsland();
+      this._needSpawnSnap = false;
+      this.trySendJoin();   // 🔴 出生钳制完成，现在才 join（权威出生点=实体岛面）
+    }
+  }
+
+  /** 🔴 出生落地钳制：把随机出生点（可能落在湖心/岛外导致 hy3dSurfaceHeightAt 命中 null）钳到选中岛屿实体岛面
+   *  在 updateHy3dIslandLOD 首次对出生岛实例化后调用——此时 group.children>0，实例 matrixWorld 已更新，raycast 可用。
+   *  优先命中当前 (px,pz)；若落空（湖心空洞/岛外），沿 0.3r~0.9r 环带 8 方向采样找最近实体岛面。 */
+  private snapSpawnToIsland(): void {
+    // 🔴 关键：刚 add 到场景的岛屿实例尚未经过 render()，matrixWorld 仍是 identity，
+    //   直接 raycast 会命中在错误位置（全部 miss）→ 出生点钳制失效、玩家落到湖心。
+    //   钳制前先强制刷新世界矩阵，确保岛屿实例位于真实 (cx,cz)。
+    if (this.hy3dTerrainGroup) this.hy3dTerrainGroup.updateMatrixWorld(true);
+    const hit = (x: number, z: number) => this.hy3dSurfaceHeightAt(x, z);
+    let y = hit(this.px, this.pz);
+    if (y != null) { this.py = y; this.dpy = y; return; }
+    const c = this.islandCenters[this._spawnIslandIdx];
+    if (!c) return;
+    // 🔴 螺旋外扩搜索：从岛心向外（步长 0.12r，覆盖到 1.08r），16 方向，首个实体岛面命中即钳制。
+    //   湖岛形态为「中央隐藏湖面(raycast 跳过不可见水面→null) + 外圈陆地」，固定 0.9r 环带会全部落在湖面而失效；
+    //   外扩到陆地环带才能命中。命中后把出生点（含 px/pz/dpx/dpz/py/dpy）钳到实体岛面，配合延后 join 让服务端权威出生点=岛面。
+    const DIRS = 16;
+    for (let step = 1; step <= 9; step++) {
+      const rf = step * 0.12;            // 0.12r ~ 1.08r
+      const rr = rf * c.r;
+      for (let k = 0; k < DIRS; k++) {
+        const a = (k * Math.PI * 2) / DIRS + step * 0.2;
+        const tx = c.cx + rr * Math.cos(a);
+        const tz = c.cz + rr * Math.sin(a);
+        const hy = hit(tx, tz);
+        if (hy != null) {
+          this.px = tx; this.pz = tz; this.py = hy;
+          this.dpx = tx; this.dpz = tz; this.dpy = hy; this.dprot = 0;
+          return;
+        }
       }
     }
   }
