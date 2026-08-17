@@ -73,7 +73,7 @@ export interface GameState {
   };
   farm: { level: number; plots: Plot[] };
   pond: { level: number; fish: Fish[] };
-  ranch: { level: number; stalls: Stall[]; ownedAnimals: string[] };
+  ranch: { level: number; stalls: Stall[]; ownedAnimals: string[]; lastEggDay?: string };
   house: { owned: boolean; level: number; furniture: string[] };
   categories: Category[];
   layout: { house: LayoutSpot; farm: LayoutSpot; pond: LayoutSpot };
@@ -146,6 +146,34 @@ export const RANCH_ANIMALS: RanchAnimal[] = [
 
 /** 每日签到领取金币（便于体验"购买房屋 / 购买动物"流程） */
 export const DAILY_CLAIM_COINS = 300;
+
+// ================= 牧场生命周期模型（幼崽 / 蛋） =================
+/** 幼崽模型：code → GLB（已部署到 public/assets/models/lifecycle/）。
+ *  拥有对应成年动物后，牧场「幼崽区」展示其幼崽。 */
+export const RANCH_BABIES: Record<string, string> = {
+  cat:     'assets/models/lifecycle/lifecycle_cat_baby.glb',
+  chicken: 'assets/models/lifecycle/lifecycle_chicken_baby.glb',
+  cow:     'assets/models/lifecycle/lifecycle_cow_calf.glb',
+  dog:     'assets/models/lifecycle/lifecycle_dog_baby.glb',
+  duck:    'assets/models/lifecycle/lifecycle_duck_baby.glb',
+  fish:    'assets/models/lifecycle/lifecycle_fish_baby.glb',
+  goose:   'assets/models/lifecycle/lifecycle_goose_baby.glb',
+  pig:     'assets/models/lifecycle/lifecycle_pig_piglet.glb',
+  sheep:   'assets/models/lifecycle/lifecycle_sheep_lamb.glb'
+};
+
+/** 产蛋模型：会下蛋的动物 code → 蛋 GLB（已部署到 public/assets/models/lifecycle/） */
+export const RANCH_EGGS: Record<string, string> = {
+  chicken: 'assets/models/lifecycle/lifecycle_chicken_egg_brown.glb',
+  duck:    'assets/models/lifecycle/lifecycle_duck_egg.glb',
+  goose:   'assets/models/lifecycle/lifecycle_goose_egg.glb'
+};
+
+/** 会下蛋的动物种类（用于「产蛋区」与拾蛋玩法） */
+export const EGG_LAYERS: string[] = ['chicken', 'duck', 'goose'];
+
+/** 每枚蛋拾取收益（金币） */
+export const EGG_COINS = 6;
 
 // ================= 学习题库类型（五科目多题型） =================
 export type StudyQType = 'card' | 'choice' | 'fill' | 'qa';

@@ -8,27 +8,28 @@
 
 ---
 
-## ⚠️ 当前进行中：HY3D 地图修复（方案A）· 已做 / 待办（2026-08-17）
+## ✅ HY3D 地图修复 + 牧场幼崽/蛋 · 进度（2026-08-17 已收尾）
 
-> 本文档（v48 生产版）与当前代码差异已较大；本节先记录**正在进行的 HY3D 地图修复**与**全部待办事项**，防止遗漏。相关代码集中在 `pet-park-ng/src/app/components/world3d/world3d.component.ts`。
+> 本节记录近期攻坚项。相关代码：`pet-park-ng/src/app/components/world3d/world3d.component.ts`（地图）、`ranch.component.ts` + `models.ts` + `state.service.ts`（牧场）。
 
-### ✅ 已做（代码已改，提交中）
+### ✅ 已完成（已提交 + Playwright 验证）
 
 | 项 | 说明 |
 |---|---|
-| HY3D 岛屿系统 | 22 个岛屿、4 种 GLB 变体（普通/湖/半岛/山，`assets/3d_build/terrain-hy3d/`）、LOD 600m 动态加载/卸载 |
-| 方案A：随机岛出生 | 玩家出生随机落在某个 HY3D 岛屿；移除程序化草地 fallback（不再落到旧草地） |
-| 出生钳制 `snapSpawnToIsland` | 出生点落湖心/岛外水面时，螺旋外扩搜索（0.12r~1.08r × 16 方向）钳到实体岛面；钳制前强制 `updateMatrixWorld(true)`，修复刚实例化岛屿 raycast 全 miss |
-| 延后 join | `join` 延迟到出生钳制完成后再上报服务端，确保服务端权威出生点 = 实体岛面（修复服务端快照把玩家拉回水面） |
-| QA 钩子 | `?spawnIsland=N` 强制指定岛屿出生、`window.__probeIsland(idx)` 岛屿地形探针（测试用，不影响正常逻辑） |
+| HY3D 岛屿系统 | 22 个岛屿、4 种 GLB 变体（普通/湖/半岛/山，`assets/3d_build/terrain-hy3d/`，仅 draco 版入库）、LOD 600m 动态加载/卸载 |
+| 方案A：随机岛出生 | 玩家出生随机落在某个 HY3D 岛屿；移除程序化草地 fallback |
+| 出生钳制 `snapSpawnToIsland` | 只接受高于水位安全线（`waterLevel+0.5`）的命中，螺旋搜索钳到「最高陆地」而非首个命中；对隐藏水面网格禁用 raycast（three r128 `Mesh.raycast` 不检查 `visible`） |
+| 延后 join | `join` 延迟到出生钳制完成后再上报服务端，确保服务端权威出生点 = 实体岛面 |
+| **湖岛出生修复（原阻塞项）** | 修复湖心空洞/湖底被误判为陆地 → 玩家落水。Playwright E2E：`?spawnIsland=1` → `playerInWater=0`、`hy3dGround` 非空、常规岛(idx0)无回归，VERDICT pass |
+| **牧场幼崽/蛋接入** | `models.ts` 登记 `RANCH_BABIES`/`RANCH_EGGS`（lifecycle_*.glb）；牧场组件「幼崽区」展示已购动物幼崽、「产蛋区」展示蛋模型；拾蛋玩法（每蛋 +6 金，每日每只下蛋动物产 1 枚） |
+| **牧场 Playwright 验证** | E2E：登录→建屋→购鸡/鸭→幼崽/蛋模型加载（babyCount/eggCount≥1）→拾蛋金币增加，VERDICT pass |
+| GLB 瘦身 | 仓库只留 draco/小体积版（成年 7 只 ~800K、地形 4 只 4.7–6M、幼崽 lifecycle 36–167K）；19 个几十 M 源 GLB（合计 385M）已从仓库移除、本地磁盘保留待认证后删除 |
 
-### ❌ 待办 / 未完成（代办事项）
+### ⏳ 待办 / 待确认
 
-1. **[阻塞] 湖岛出生最终验证未通过**：强制湖岛中心出生（`?spawnIsland=1`）验证仍 `playerInWater=1`（`hy3dGround=null`），湖岛/半岛岛出生钳制是否彻底修复**尚未确认**——此项通过前不要上生产。
-2. **牧场幼崽/蛋接入游戏**：`lifecycle_*.glb`（鸡/牛/鸭/鹅/羊幼崽）已生成入库，但 `models.ts` 未登记、牧场组件未展示幼崽区/蛋、玩法未接入。
-3. **牧场 Playwright 验证**（幼崽/蛋接入后的页面验证）。
-4. **删除旧工作区** `C:\Users\WIN11\WorkBuddy\2026-08-03-13-46-59\pet-park`（待确认后执行）。
-5. **本文档全面刷新**：v48 内容与当前代码（HY3D/牧场/空气墙根治等）严重脱节，需按当前代码重写。
+1. **删除旧工作区** `C:\Users\WIN11\WorkBuddy\2026-08-03-13-46-59\pet-park`（需用户确认后执行）。
+2. **删除本地源 GLB**：`assets/3d_build/animals-source/hy3_*_baby*.glb` 等 19 个大文件（385M）已在仓库移除、仍留本地磁盘；待用户认证 draco 可用后再删本地。
+3. **本文档全面刷新**：v48 主文与当前代码仍脱节，后续按当前代码整体重写（本次仅更新本进度节）。
 
 ---
 

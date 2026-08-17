@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { GameState, Category, StudySubject, StudySession, GAME_DAY_MS, DAY_START_H, NIGHT_START_H,
   FARM_PLOTS, FARM_UP_COST, POND_SLOTS, POND_UP_COST, RANCH_SLOTS, RANCH_UP_COST, STUDY_DAILY_LIMIT,
-  HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS, HouseTier, RanchAnimal } from '../models';
+  HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS, EGG_LAYERS, EGG_COINS, HouseTier, RanchAnimal } from '../models';
 import { AuthService } from './auth.service';
 import { WorldApiService } from './world-api.service';
 
@@ -714,6 +714,25 @@ export class StateService {
   }
   ownsAnimal(code: string): boolean { return this.state.ranch.ownedAnimals.includes(code); }
   ranchAnimalList(): RanchAnimal[] { return RANCH_ANIMALS; }
+
+  // ================= 牧场产蛋 / 拾蛋玩法 =================
+  /** 当前可拾取的蛋数量（每个拥有的下蛋动物每天产 1 枚；当日已拾取则归 0） */
+  availableEggs(): number {
+    if (this.state.ranch.lastEggDay === this.todayKey()) return 0;
+    return EGG_LAYERS.filter(c => this.ownsAnimal(c)).length;
+  }
+  canCollectEggs(): boolean { return this.availableEggs() > 0; }
+  /** 拾取所有可用蛋，返回获得的金币数（当日已拾取则返回 0） */
+  collectEggs(): number {
+    const n = this.availableEggs();
+    if (n <= 0) return 0;
+    const coins = n * EGG_COINS;
+    this.addCoins(coins);
+    this.state.ranch.lastEggDay = this.todayKey();
+    this.addLog('feed', `从牧场收集了 ${n} 枚蛋，获得 ${coins} 金币`);
+    this.save();
+    return coins;
+  }
 
   // ================= 每日签到金币（便于体验购买流程） =================
   claimDailyCoins(): boolean {

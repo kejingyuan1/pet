@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import * as THREE from 'three';
 import { AssetService } from '../../services/asset.service';
 import { StateService } from '../../services/state.service';
-import { HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS } from '../../models';
+import { HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS, RANCH_BABIES, RANCH_EGGS, EGG_LAYERS, EGG_COINS } from '../../models';
 
 /**
  * 牧场（3D 展厅 + 动物商店 + 房屋中心）
@@ -63,9 +63,18 @@ import { HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS } from '../../models';
         </div>
       </div>
       <div class="shop-hint" *ngIf="!state.state.house.owned">拥有房屋后即可购买动物</div>
+
+      <hr class="rh-sep">
+      <h4>🥚 产蛋区</h4>
+      <div class="egg-row" *ngIf="state.state.house.owned">
+        <span class="egg-count">待拾蛋：{{ state.availableEggs() }} 枚</span>
+        <button class="egg-btn" *ngIf="state.canCollectEggs()" (click)="onCollectEggs()">拾取鸡蛋（{{ eggReward() }} 金）</button>
+        <span class="egg-done" *ngIf="!state.canCollectEggs()">今日已拾取 ✅</span>
+      </div>
+      <div class="egg-hint" *ngIf="state.state.house.owned && state.availableEggs() === 0 && !hasEggLayer()">购买鸡/鸭/鹅后可在此拾蛋</div>
     </div>
 
-    <div class="ranch-hint" *ngIf="state.state.house.owned">展台上的 7 个动物模型会一直展示，可直接检查模型是否可用；购买后计入"已拥有"。</div>
+    <div class="ranch-hint" *ngIf="state.state.house.owned">展台上的 7 个动物模型会一直展示；已购买的动物会在前方「幼崽区」展示其幼崽，下蛋动物会在左侧「产蛋区」产蛋。</div>
     <div class="ranch-hint" *ngIf="!state.state.house.owned">建造房屋后，展台上会出现房屋与 7 个动物模型供你检查。</div>
   </div>
   `,
@@ -104,6 +113,13 @@ import { HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS } from '../../models';
     .si-buy:disabled { background: #cfd8dc; color: #879; cursor: not-allowed; }
     .si-owned { color: #2a9d4a; font-weight: 700; font-size: .82rem; }
     .shop-hint { font-size: .78rem; color: #e76f51; margin-top: 8px; }
+    .egg-row { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+    .egg-count { font-size: .85rem; color: #456; font-weight: 600; }
+    .egg-btn { border: none; border-radius: 8px; padding: 7px 10px; background: #FFD166; color: #7a5200;
+      font-weight: 700; cursor: pointer; font-size: .85rem; }
+    .egg-btn:hover { background: #ffc94d; }
+    .egg-done { font-size: .82rem; color: #2a9d4a; font-weight: 700; }
+    .egg-hint { font-size: .76rem; color: #b8860b; margin-top: 6px; }
     .ranch-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
       background: rgba(13,27,42,.8); color: #fff; padding: 7px 14px; border-radius: 20px; font-size: .8rem; z-index: 3; }
   `]
@@ -119,8 +135,11 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
   private camera?: THREE.PerspectiveCamera;
   private rafId = 0;
   private animalPivots: THREE.Group[] = [];
+  private babyPivots: THREE.Group[] = [];
+  private eggPivots: THREE.Group[] = [];
   private housePivot: THREE.Group | null = null;
   private resizeObs?: ResizeObserver;
+  private loadToken = 0;   // 展厅加载代次：使在途的异步 loadShowroom 过期，避免连续购买时重复叠加模型
 
   constructor(public state: StateService, private asset: AssetService) {}
 
@@ -199,11 +218,13 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
   private async loadShowroom(): Promise<void> {
     if (!this.scene) return;
     this.clearShowroom();
+    const tok = this.loadToken;
 
     if (this.state.state.house.owned) {
       const housePath = this.state.houseModelPath();
       if (housePath) {
         const g = await this.asset.loadModel(housePath);
+        if (tok !== this.loadToken) return;
         if (g) {
           this.fitModel(g, 3.6);
           const pivot = new THREE.Group();
@@ -221,6 +242,7 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
       for (let i = 0; i < RANCH_ANIMALS.length; i++) {
         const a = RANCH_ANIMALS[i];
         const g = await this.asset.loadModel(a.model);
+        if (tok !== this.loadToken) return;
         if (g) {
           this.fitModel(g, 1.7);
           const pivot = new THREE.Group();
@@ -230,11 +252,62 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
           this.animalPivots.push(pivot);
         }
       }
+      // 🔴 幼崽区：拥有对应成年动物才展示其幼崽（lifecycle 模型接入游戏）
+      const owned = this.state.state.ranch.ownedAnimals;
+      const babySpots = [{ x: -2.6, z: 4.0 }, { x: -0.9, z: 4.0 }, { x: 0.9, z: 4.0 }, { x: 2.6, z: 4.0 }];
+      let bi = 0;
+      for (const code of owned) {
+        const babyPath = RANCH_BABIES[code];
+        if (!babyPath || bi >= babySpots.length) continue;
+        const bg = await this.asset.loadModel(babyPath);
+        if (tok !== this.loadToken) return;
+        if (bg) {
+          this.fitModel(bg, 0.9);
+          const pivot = new THREE.Group();
+          pivot.position.set(babySpots[bi].x, 0, babySpots[bi].z);
+          pivot.add(bg);
+          this.scene.add(pivot);
+          this.babyPivots.push(pivot);
+          bi++;
+        }
+      }
+      // 🔴 产蛋区：拥有下蛋动物在其「巢位」展示蛋模型（lifecycle 蛋模型接入游戏）
+      const eggSpots = [{ x: -4.6, z: 2.4 }, { x: -3.7, z: 3.0 }, { x: -2.8, z: 3.6 }];
+      let ei = 0;
+      for (const code of owned) {
+        const eggPath = RANCH_EGGS[code];
+        if (!eggPath || ei >= eggSpots.length) continue;
+        const eg = await this.asset.loadModel(eggPath);
+        if (tok !== this.loadToken) return;
+        if (eg) {
+          this.fitModel(eg, 0.5);
+          const pivot = new THREE.Group();
+          pivot.position.set(eggSpots[ei].x, 0, eggSpots[ei].z);
+          pivot.add(eg);
+          this.scene.add(pivot);
+          this.eggPivots.push(pivot);
+          ei++;
+        }
+      }
     }
+    this.publishDebug();
+  }
+
+  /** 暴露给 E2E/调试：展厅里已加载的幼崽/蛋数量与场景节点数 */
+  private publishDebug(): void {
+    (window as any).__ranchDebug = {
+      babyCount: this.babyPivots.length,
+      eggCount: this.eggPivots.length,
+      animalCount: this.animalPivots.length,
+      sceneChildren: this.scene ? this.scene.children.length : 0,
+      availableEggs: this.state.availableEggs(),
+      coins: this.state.state.coins
+    };
   }
 
   private clearShowroom(): void {
     if (!this.scene) return;
+    this.loadToken++;   // 使在途 loadShowroom 过期
     const remove = (g: THREE.Group | null) => {
       if (!g) return;
       this.scene!.remove(g);
@@ -250,6 +323,10 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     };
     this.animalPivots.forEach(remove);
     this.animalPivots = [];
+    this.babyPivots.forEach(remove);
+    this.babyPivots = [];
+    this.eggPivots.forEach(remove);
+    this.eggPivots = [];
     remove(this.housePivot);
     this.housePivot = null;
   }
@@ -283,7 +360,19 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     if (this.state.upgradeHouse()) this.reloadShowroom();
   }
   onBuyAnimal(code: string): void {
-    this.state.buyAnimal(code);
+    if (this.state.buyAnimal(code)) this.reloadShowroom();
+  }
+  onCollectEggs(): void {
+    const coins = this.state.collectEggs();
+    if (coins > 0) this.publishDebug();
+  }
+  /** 拾蛋可获得的金币（availableEggs × EGG_COINS） */
+  eggReward(): number {
+    return this.state.availableEggs() * (typeof EGG_COINS !== 'undefined' ? EGG_COINS : 6);
+  }
+  /** 是否已拥有任意下蛋动物（鸡/鸭/鹅） */
+  hasEggLayer(): boolean {
+    return EGG_LAYERS.some(c => this.state.ownsAnimal(c));
   }
   onClaimDaily(): void {
     this.state.claimDailyCoins();
