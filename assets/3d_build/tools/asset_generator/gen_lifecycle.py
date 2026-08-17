@@ -378,6 +378,128 @@ def gen_pig_piglet(seed=11):
     return parts
 
 
+# ================ 猫 / 狗 / 鱼 幼崽（补齐 ranch 7 动物，HY3D 免费额度失效时的算法兜底） ================
+
+def gen_cat_baby(seed=21):
+    """小猫幼崽：橘色圆胖、蓝眼、小三角耳、粉鼻、翘尾"""
+    rng = gl.rng_from_seed(seed)
+    body_c = gl.jitter((0xE8, 0x9C, 0x3C), 0.03, rng)  # 橘
+    parts = []
+    body = gl.mesh(body_c, radius=0.14, sections=10, geom="sphere")
+    body.apply_scale([1.15, 0.95, 1.15])
+    body.apply_translation([0, 0.16, 0])
+    parts.append(("body", body))
+    head = gl.mesh(body_c, radius=0.11, sections=8, geom="sphere")
+    head.apply_translation([0, 0.34, 0.06])
+    parts.append(("head", head))
+    # 耳朵（三角，橘 + 粉内）
+    for side in (-1, 1):
+        ear = gl.mesh(body_c, radius=0.05, height=0.07, sections=4, geom="cone")
+        ear.apply_translation([0.06 * side, 0.45, 0.05])
+        parts.append((f"ear{side}", ear))
+        inner = gl.mesh(gl.C("pink"), radius=0.025, height=0.04, sections=4, geom="cone")
+        inner.apply_translation([0.06 * side, 0.44, 0.07])
+        parts.append((f"ear_in{side}", inner))
+    # 蓝眼 + 黑瞳
+    for side in (-1, 1):
+        eye = gl.mesh(gl.C("blueberry"), radius=0.018, sections=8, geom="sphere")
+        eye.apply_translation([0.045 * side, 0.36, 0.16])
+        parts.append((f"eye{side}", eye))
+        pupil = gl.mesh(gl.C("black"), radius=0.008, sections=6, geom="sphere")
+        pupil.apply_translation([0.045 * side, 0.36, 0.176])
+        parts.append((f"pupil{side}", pupil))
+    # 粉鼻
+    nose = gl.mesh(gl.C("pink"), radius=0.014, sections=6, geom="sphere")
+    nose.apply_translation([0, 0.32, 0.17])
+    parts.append(("nose", nose))
+    # 短腿（前 + 后）
+    _legs(parts, body_c, 0.028, 0.07, 0.06, 0.035, 0.06, rng)
+    _legs(parts, body_c, 0.028, 0.07, 0.06, 0.035, -0.06, rng)
+    # 翘尾
+    tail = gl.mesh(body_c, radius=0.022, height=0.16, sections=6, geom="cylinder")
+    tail.apply_translation([0, 0.26, -0.16])
+    tail.apply_transform(trimesh.transformations.rotation_matrix(np.radians(55), [1, 0, 0], [0, 0, 0]))
+    parts.append(("tail", tail))
+    return parts
+
+
+def gen_dog_baby(seed=22):
+    """小狗幼崽：棕色圆胖、垂耳、黑鼻、卷尾、奶油色四足"""
+    rng = gl.rng_from_seed(seed)
+    body_c = gl.jitter((0xA0, 0x6B, 0x3E), 0.03, rng)  # 棕
+    parts = []
+    body = gl.mesh(body_c, radius=0.15, sections=10, geom="sphere")
+    body.apply_scale([1.3, 0.9, 1.0])
+    body.apply_translation([0, 0.17, 0])
+    parts.append(("body", body))
+    head = gl.mesh(body_c, radius=0.11, sections=8, geom="sphere")
+    head.apply_translation([0, 0.34, 0.20])
+    parts.append(("head", head))
+    snout = gl.mesh(gl.jitter(gl.C("cream"), 0.03, rng), extents=(0.07, 0.06, 0.06), geom="box")
+    snout.apply_translation([0, 0.30, 0.30])
+    parts.append(("snout", snout))
+    nose = gl.mesh(gl.C("black"), radius=0.015, sections=6, geom="sphere")
+    nose.apply_translation([0, 0.32, 0.36])
+    parts.append(("nose", nose))
+    # 垂耳
+    for side in (-1, 1):
+        ear = gl.mesh(body_c, extents=(0.04, 0.10, 0.03), geom="box")
+        ear.apply_translation([0.10 * side, 0.32, 0.16])
+        ear.apply_transform(trimesh.transformations.rotation_matrix(np.radians(15 * side), [0, 0, 1], [0, 0, 0]))
+        parts.append((f"ear{side}", ear))
+    _eyes(parts, 0.38, 0.29, x_off=0.05, r=0.013)
+    # 短腿
+    _legs(parts, gl.jitter(gl.C("cream"), 0.03, rng), 0.03, 0.09, 0.07, 0.045, 0.07, rng)
+    _legs(parts, gl.jitter(gl.C("cream"), 0.03, rng), 0.03, 0.09, 0.07, 0.045, -0.07, rng)
+    # 卷尾
+    tail = gl.mesh(body_c, radius=0.025, height=0.10, sections=6, geom="cylinder")
+    tail.apply_translation([0, 0.30, -0.15])
+    tail.apply_transform(trimesh.transformations.rotation_matrix(np.radians(50), [1, 0, 0], [0, 0, 0]))
+    parts.append(("tail", tail))
+    return parts
+
+
+def gen_fish_baby(seed=23):
+    """小鱼幼崽：橙身白肚、白条纹、粉鳍、黑眼（悬浮，锚点=腹底）"""
+    rng = gl.rng_from_seed(seed)
+    body_c = gl.jitter((0xE9, 0x7A, 0x3C), 0.03, rng)  # 橙
+    parts = []
+    body = gl.mesh(body_c, radius=0.13, sections=12, geom="sphere")
+    body.apply_scale([1.6, 0.9, 0.7])
+    body.apply_translation([0, 0.18, 0])
+    parts.append(("body", body))
+    # 白肚
+    belly = gl.mesh(gl.C("white"), radius=0.10, sections=10, geom="sphere")
+    belly.apply_scale([1.5, 0.6, 0.6])
+    belly.apply_translation([0, 0.12, 0])
+    parts.append(("belly", belly))
+    # 白条纹
+    for i in range(2):
+        stripe = gl.mesh(gl.C("white"), extents=(0.02, 0.20, 0.12), geom="box")
+        stripe.apply_translation([0.05 + 0.06 * i, 0.18, 0])
+        parts.append((f"stripe{i}", stripe))
+    # 尾鳍（扇）
+    tail = gl.mesh(gl.jitter(gl.C("pink"), 0.03, rng), extents=(0.10, 0.16, 0.02), geom="box")
+    tail.apply_translation([0, 0.18, -0.22])
+    tail.apply_transform(trimesh.transformations.rotation_matrix(np.radians(20), [0, 1, 0], [0, 0, 0]))
+    parts.append(("tail", tail))
+    # 背鳍
+    dorsal = gl.mesh(gl.jitter(gl.C("pink"), 0.03, rng), extents=(0.12, 0.06, 0.02), geom="box")
+    dorsal.apply_translation([0, 0.30, 0])
+    parts.append(("dorsal", dorsal))
+    # 侧鳍
+    for side in (-1, 1):
+        fin = gl.mesh(gl.jitter(gl.C("pink"), 0.03, rng), extents=(0.02, 0.06, 0.10), geom="box")
+        fin.apply_translation([0.10 * side, 0.15, 0])
+        parts.append((f"fin{side}", fin))
+    # 眼
+    for side in (-1, 1):
+        eye = gl.mesh(gl.C("black"), radius=0.018, sections=8, geom="sphere")
+        eye.apply_translation([0.05 * side, 0.22, 0.10])
+        parts.append((f"eye{side}", eye))
+    return parts
+
+
 # ================ 注册表 ================
 
 GENERATORS = {
@@ -392,6 +514,9 @@ GENERATORS = {
     "lifecycle_cow_calf": gen_cow_calf,
     "lifecycle_sheep_lamb": gen_sheep_lamb,
     "lifecycle_pig_piglet": gen_pig_piglet,
+    "lifecycle_cat_baby": gen_cat_baby,
+    "lifecycle_dog_baby": gen_dog_baby,
+    "lifecycle_fish_baby": gen_fish_baby,
 }
 
 # 碰撞（sphere 半径 ≈ 体型，已按 SCALE 折算）
@@ -407,6 +532,9 @@ COLLISION = {
     "lifecycle_cow_calf": {"type": "dynamic", "shape": "sphere", "params": {"r": 0.42}},
     "lifecycle_sheep_lamb": {"type": "dynamic", "shape": "sphere", "params": {"r": 0.31}},
     "lifecycle_pig_piglet": {"type": "dynamic", "shape": "sphere", "params": {"r": 0.23}},
+    "lifecycle_cat_baby": {"type": "dynamic", "shape": "sphere", "params": {"r": 0.20}},
+    "lifecycle_dog_baby": {"type": "dynamic", "shape": "sphere", "params": {"r": 0.22}},
+    "lifecycle_fish_baby": {"type": "dynamic", "shape": "sphere", "params": {"r": 0.22}},
 }
 
 # 每资产整体缩放：把基础尺寸校正到目标规格（锚点=底部中心，绕原点缩放不破坏锚点）
@@ -423,6 +551,9 @@ SCALE = {
     "lifecycle_cow_calf": 1.40,         # 0.567 → 0.79m ✓
     "lifecycle_sheep_lamb": 1.20,       # 0.419 → 0.50m ✓
     "lifecycle_pig_piglet": 1.10,       # 0.357 → 0.39m ✓
+    "lifecycle_cat_baby": 1.0,          # 0.38m ✓
+    "lifecycle_dog_baby": 1.0,          # 0.40m ✓
+    "lifecycle_fish_baby": 1.0,         # 0.36m ✓
 }
 
 NAMES = {
@@ -437,6 +568,9 @@ NAMES = {
     "lifecycle_cow_calf": "牛犊（幼年）",
     "lifecycle_sheep_lamb": "羊羔（幼年）",
     "lifecycle_pig_piglet": "猪仔（幼年）",
+    "lifecycle_cat_baby": "小猫（幼年）",
+    "lifecycle_dog_baby": "小狗（幼年）",
+    "lifecycle_fish_baby": "小鱼（幼年）",
 }
 
 DESCS = {
@@ -451,6 +585,9 @@ DESCS = {
     "lifecycle_cow_calf": "养殖生命周期：牛犊（幼年）",
     "lifecycle_sheep_lamb": "养殖生命周期：羊羔（幼年）",
     "lifecycle_pig_piglet": "养殖生命周期：猪仔（幼年）",
+    "lifecycle_cat_baby": "养殖生命周期：小猫（幼年）",
+    "lifecycle_dog_baby": "养殖生命周期：小狗（幼年）",
+    "lifecycle_fish_baby": "养殖生命周期：小鱼（幼年）",
 }
 
 
