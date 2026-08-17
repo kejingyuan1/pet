@@ -3,6 +3,7 @@ _qa/
 build-check/
 *.out
 *.bak_m2
+tools/_shots_*/
 
 # 各类一次性排查/诊断 txt
 attrib-check.txt
@@ -57,5 +58,14 @@ mvn-out.txt
 # ===== 依赖 / 临时服务目录 =====
 node_modules/
 tmp_srv/
+
+# ===== 大体积源 GLB（仓库只留 draco/小体积版；源文件本地保留，待用户认证 draco 后再删本地） =====
+assets/3d_build/animals-source/hy3_*_baby*.glb
+assets/3d_build/animals-source/hy3_*_calf*.glb
+assets/3d_build/animals-source/hy3_*_lamb*.glb
+assets/3d_build/terrain-hy3d/hy3_island.glb
+assets/3d_build/terrain-hy3d/hy3_island_lake.glb
+assets/3d_build/terrain-hy3d/hy3_island_mountain.glb
+assets/3d_build/terrain-hy3d/hy3_island_peninsula.glb
 
 # 注意：m4_*.mjs 验证脚本与 m4_pw_verify.png 为 M4 里程碑交付物，保留不忽略
