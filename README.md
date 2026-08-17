@@ -26,7 +26,7 @@
 
 ### ⏳ 待办 / 部署
 
-1. **服务端湖岛修复部署**：本次会话 WorkBuddy 沙箱里 Maven 链路全坏（3.9.12 缺 `plexus-classworlds-2.7.0.jar`、HTTPS 证书吊销检查失败下不了 jar、`wmic` 禁用取不到运行中 8080 进程的 classpath、PowerShell WMI 空响应），无法在本沙箱 `mvn package` 出 fat jar 部署到 8080。**修复在源码里已就绪（`WorldPhysicsService.java`）**，请在有 mvn 的环境跑 `mvn -DskipTests package` 重出 fat jar 后重启 8080 即可生效。重启前 8080 上的「上下闪动」会一直存在（那是服务端 10Hz 拉回水面的 bug，客户端 clamp 解决不了）。
+1. ~~**服务端湖岛修复部署**（已完成并验证）~~：**✅ 已部署并 E2E 验证通过**。沙箱内绕过坏掉的 `mvn` bash 脚本（直接调 `org.codehaus.plexus.classworlds.launcher.Launcher` + `plexus-classworlds-2.9.0.jar`）成功 `mvn -DskipTests package` 出 **34MB fat jar**（`target/pet-park-server-1.0.0.jar`，含新 `WorldPhysicsService.class`），已 kill 旧 8080 进程并重启新 jar（持续监听 8080）。Playwright E2E（`tools/_verify_no_jump.mjs`）实测 ~10s：**渲染 Y 全程稳定 `2.208`，range=0**；服务端 `serverPy=2.908`（信任客户端陆地 Y，不再拉回水面），`inWater=0`，**上下闪动彻底消失**。前端 4200（`ng serve` 源码，含 `snapSpawnToIsland` 出生钳制）无需改动即生效。
 2. **README 主文全面刷新**：v48 主文与当前代码（HY3D / 牧场 / 空气墙根治 / 幼崽蛋 / GLB 瘦身）仍脱节，需整体重写（本次仅刷新了本进度节）。
 
 ---
