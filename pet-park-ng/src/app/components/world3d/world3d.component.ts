@@ -3102,15 +3102,20 @@ export class World3dComponent implements OnInit, OnDestroy {
     //   直接 raycast 会命中在错误位置（全部 miss）→ 出生点钳制失效、玩家落到湖心。
     //   钳制前先强制刷新世界矩阵，确保岛屿实例位于真实 (cx,cz)。
     if (this.hy3dTerrainGroup) this.hy3dTerrainGroup.updateMatrixWorld(true);
+    const wl = this.config?.waterLevel ?? -5;
+    const LAND_MIN = wl + 0.5;        // 🔴 安全线以上才算「陆地」，低于此（湖底/水面/湖心空洞）一律不当陆地
     const hit = (x: number, z: number) => this.hy3dSurfaceHeightAt(x, z);
+    // 优先：当前 (px,pz) 已是清晰陆地（高于安全线）→ 直接落地，不进螺旋。
     let y = hit(this.px, this.pz);
-    if (y != null) { this.py = y; this.dpy = y; return; }
+    if (y != null && y > LAND_MIN) { this.py = y; this.dpy = y; return; }
     const c = this.islandCenters[this._spawnIslandIdx];
     if (!c) return;
-    // 🔴 螺旋外扩搜索：从岛心向外（步长 0.12r，覆盖到 1.08r），16 方向，首个实体岛面命中即钳制。
-    //   湖岛形态为「中央隐藏湖面(raycast 跳过不可见水面→null) + 外圈陆地」，固定 0.9r 环带会全部落在湖面而失效；
-    //   外扩到陆地环带才能命中。命中后把出生点（含 px/pz/dpx/dpz/py/dpy）钳到实体岛面，配合延后 join 让服务端权威出生点=岛面。
+    // 🔴 螺旋外扩搜索：从岛心向外（步长 0.12r，覆盖到 1.08r），16 方向，收集所有「清晰陆地」命中点，
+    //   钳到其中最高的陆地（最可靠），避免钳到湖心空洞(null)或湖底/水面(低于安全线)。
+    //   这正是「湖岛出生 playerInWater=1（hy3dGround=null）」的根因修复：旧逻辑「首个非 null 即钳制」，
+    //   会把湖岛中央薄几何/湖底误当陆地，导致玩家落到水里。
     const DIRS = 16;
+    let best: { x: number; z: number; y: number } | null = null;
     for (let step = 1; step <= 9; step++) {
       const rf = step * 0.12;            // 0.12r ~ 1.08r
       const rr = rf * c.r;
@@ -3119,12 +3124,15 @@ export class World3dComponent implements OnInit, OnDestroy {
         const tx = c.cx + rr * Math.cos(a);
         const tz = c.cz + rr * Math.sin(a);
         const hy = hit(tx, tz);
-        if (hy != null) {
-          this.px = tx; this.pz = tz; this.py = hy;
-          this.dpx = tx; this.dpz = tz; this.dpy = hy; this.dprot = 0;
-          return;
+        if (hy != null && hy > LAND_MIN) {
+          if (!best || hy > best.y) best = { x: tx, z: tz, y: hy };
         }
       }
+      if (best) break;                   // 找到陆地环带即停止外扩
+    }
+    if (best) {
+      this.px = best.x; this.pz = best.z; this.py = best.y;
+      this.dpx = best.x; this.dpz = best.z; this.dpy = best.y; this.dprot = 0;
     }
   }
 
@@ -3141,7 +3149,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       const name = (o.name || '').toLowerCase();
       // 策略 1：名称匹配
       if (/water|ocean|sea|lake|river|oceano|mar|agua|sui/.test(name)) {
-        o.visible = false; hidden++; return;
+        o.visible = false; o.raycast = () => {}; hidden++; return;
       }
       // 策略 2：材料特征
       const mat = o.material as THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
@@ -3151,7 +3159,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         // 蓝色判定：B 通道最大且饱和度够
         const maxCh = Math.max(c.r, c.g, c.b);
         if (c.b === maxCh && c.b > 0.25 && (c.b - Math.min(c.r, c.g)) > 0.1) {
-          o.visible = false; hidden++; return;
+          o.visible = false; o.raycast = () => {}; hidden++; return;
         }
       }
       // 策略 3：大扁平平面（排除角色/树等立体模型）
@@ -3163,7 +3171,7 @@ export class World3dComponent implements OnInit, OnDestroy {
           const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
           const maxDim = Math.max(sx, sy, sz);
           if (maxDim > 0 && sy / maxDim < 0.08) {
-            o.visible = false; hidden++;
+            o.visible = false; o.raycast = () => {}; hidden++;
           }
         }
       }
