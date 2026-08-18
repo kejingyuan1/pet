@@ -24,6 +24,8 @@ export interface WorldConfigResp {
   waterLevel: number;
   viewRadius: number;
   singleRoom: boolean;
+  /** 服务端权威岛屿中心（cx/cz 世界坐标，r 半径，单位米）；前端 HY3D 视觉层据此对齐，根除前后端错位 */
+  islandCenters?: { cx: number; cz: number; r: number }[];
 }
 
 /** chunk 响应 */

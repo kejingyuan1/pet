@@ -45,14 +45,16 @@ public class ChunkController {
         this.chunkMapper = chunkMapper;
     }
 
-    /** GET /api/world/config —— 世界配置 + 出生点（客户端初始化） */
+    /** GET /api/world/config —— 世界配置 + 出生点 + 服务端权威岛屿中心（客户端初始化） */
     @GetMapping("/config")
     public Result<WorldConfigResp> config() {
         int[] spawn = spawn();
-        return Result.ok(new WorldConfigResp(
+        WorldConfigResp resp = new WorldConfigResp(
                 world.seed(), world.version(), world.chunkSize(), world.worldRadius(),
                 spawn[0], spawn[1], terrain.heightAt(spawn[0], spawn[1]),
-                2, true, world.waterLevel()));
+                2, true, world.waterLevel());
+        resp.setIslandCenters(terrain.islandCenters());
+        return Result.ok(resp);
     }
 
     /**

@@ -111,7 +111,7 @@ public class WorldConfigService {
         WorldConfig w = new WorldConfig();
         w.setId(1L);
         w.setSeed("dudu2019");
-        w.setVersion(1);
+        w.setVersion(3);
         w.setChunkSize(64);
         w.setWorldRadius(1024);
         w.setWaterLevel(new BigDecimal("-5.00"));

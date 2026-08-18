@@ -71,6 +71,8 @@ export class AssetService {
     //   离线/弱网/无头环境下 CDN 拉取会 pending 卡死 → HY3D 岛屿/动物永远加载不出来
     this.dracoLoader = new DRACOLoader();
     this.dracoLoader.setDecoderPath('assets/draco/');
+    // 🔴 无头/弱网环境下 wasm 解码器易失败 → 岛屿/动物 GLB 加载不出来；改用 JS 解码器兜底
+    this.dracoLoader.setDecoderConfig({ type: 'js' });
     this.gltfLoader.setDRACOLoader(this.dracoLoader);
     this.textureLoader = new THREE.TextureLoader();
   }

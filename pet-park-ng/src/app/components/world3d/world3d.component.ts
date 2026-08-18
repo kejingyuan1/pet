@@ -470,8 +470,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   // ====== 天空装饰（星星 + 云朵） ======
   private starField!: THREE.Points;          // 夜晚星空粒子
   private starMaterial!: THREE.ShaderMaterial; // 星星材质（透明度随昼夜变化）
-  private starTexture!: THREE.CanvasTexture;   // 夜晚星空底图（CanvasTexture，作 scene.background）
-  private skyColor = new THREE.Color(0x87CEEB); // 昼夜插值后的天空色（白天背景）
+  private skyColor = new THREE.Color(0x87CEEB); // 昼夜插值后的天空色（夜=skyNight 0x0B1026，昼=skyDay 0x7EC8E8）
   private cloudGroup!: THREE.Group;           // 云朵容器
 
   // （已移除旧 waterPlane — 大平面穿透地形导致蓝色三角碎片）
@@ -853,7 +852,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         if (n.startsWith('tree_') || (o as any).type === 'Group') treeGroups++;
       });
       return {
-        bg: this.scene.background instanceof THREE.Color ? '#' + (this.scene.background as THREE.Color).getHexString() : (this.scene.background === this.starTexture ? 'startex' : 'tex'),
+        bg: this.scene.background instanceof THREE.Color ? '#' + (this.scene.background as THREE.Color).getHexString() : 'tex',
         exposure: this.renderer.toneMappingExposure,
         sunIntensity: this.sunLight.intensity,
         blend: this.dayNightBlend,
@@ -870,8 +869,10 @@ export class World3dComponent implements OnInit, OnDestroy {
       let minY = Infinity;
       if (pos) { for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); if (y < minY) minY = y; } }
       return {
-        hasStarTexture: !!this.starTexture,
-        bgIsStarTexture: this.scene?.background === this.starTexture,
+        // 星空背景已改为纯色，不再使用 CanvasTexture；3D Points 星 dome 负责真实星点
+        hasNightSkyTexture: false,
+        bgIsNightSkyTexture: false,
+        bgIsSolidColor: this.scene?.background instanceof THREE.Color,
         pointsCount: pos ? pos.count : 0,
         pointsMinY: isFinite(minY) ? +minY.toFixed(1) : null,
         starOpacity: this.starMaterial?.uniforms?.['uOpacity']?.value ?? null,
@@ -1144,8 +1145,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     const phases = new Float32Array(COUNT);     // 闪烁相位（随机偏移）
     const twinkleSpeeds = new Float32Array(COUNT); // 闪烁速度
 
-    // 生成夜晚星空底图（CanvasTexture），作为夜晚 scene.background 显示
-    this.starTexture = this.makeStarTexture();
+    // 夜晚天空背景直接使用 updateDayNight 里的 this.skyColor（深色纯色），
+    // 不再使用带星点的 CanvasTexture，避免 2D 背景透过半透明水面铺满屏幕。
     // Points 层：压缩到上半球「上 1/3 cap」，最低星距地平线 ≥ 20°，彻底消除地平环弧线
     const MAX_PHI = Math.PI / 2 - (20 * Math.PI / 180); // 距天顶最大 70° → 距地平线 ≥ 20°
     const cosMax = Math.cos(MAX_PHI);
@@ -1213,36 +1214,6 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.scene.add(this.starField);
   }
 
-  /** 生成夜晚星空底图：canvas 2048×1024 画 ~3000 颗随机白点，作为夜晚 scene.background */
-  private makeStarTexture(): THREE.CanvasTexture {
-    const cw = 2048, ch = 1024;
-    const canvas = document.createElement('canvas');
-    canvas.width = cw; canvas.height = ch;
-    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-    // 夜空底色：顶深底略亮的深蓝渐变（模拟地平线辉光）
-    const grad = ctx.createLinearGradient(0, 0, 0, ch);
-    grad.addColorStop(0, '#03060f');
-    grad.addColorStop(0.72, '#0a1330');
-    grad.addColorStop(1, '#142249');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, cw, ch);
-    // ~3000 颗随机白点：位置随机、大小 0.5~2.5px、亮度 0.3~1.0
-    const N = 3000;
-    for (let i = 0; i < N; i++) {
-      const x = Math.random() * cw;
-      const y = Math.random() * ch;
-      const r = 0.5 + Math.random() * 2.0;       // 0.5 ~ 2.5 px
-      const b = 0.3 + Math.random() * 0.7;       // 0.3 ~ 1.0 亮度
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${b.toFixed(3)})`;
-      ctx.fill();
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.encoding = THREE.sRGBEncoding; // three 0.128：sRGB 编码（对应规格的 sRGB encoding）
-    tex.needsUpdate = true;
-    return tex;
-  }
 
   /** 创建程序化云朵：12 朵云由多个球体簇组成，漂浮在天空 Y=120~180 */
   private createClouds(): void {
@@ -1306,9 +1277,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     return group;
   }
 
-  /** 更新星空透明度（每帧调用）：根据昼夜混合系数调整星星可见性 */
+  /** 更新星空透明度（每帧调用）：根据昼夜混合系数调整星星可见性，并让星 dome 跟随相机 */
   private updateStars(time: number): void {
-    if (!this.starMaterial) return;
+    if (!this.starMaterial || !this.starField || !this.camera) return;
     // 夜晚 (t→0): opacity→1；白天 (t→1): opacity→0
     // 用平滑阶梯函数：t<0.35 全亮，t>0.65 全灭，中间过渡
     const t = this.dayNightBlend;
@@ -1318,6 +1289,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     else opacity = 0;
     this.starMaterial.uniforms['uOpacity'].value = opacity;
     this.starMaterial.uniforms['uTime'].value = time;
+    // 星 dome 跟随相机，确保玩家在任何位置抬头都能看到完整星空穹顶
+    this.starField.position.copy(this.camera.position);
   }
 
   /** 更新云朵漂移（每帧调用）：缓慢绕场景旋转 + 上下浮动 */
@@ -1354,7 +1327,8 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (this.scene) {
       this.skyColor.copy(this.skyNight).lerp(this.skyDay, t);
       // 夜晚（t < 0.5）用星空 CanvasTexture 作背景底图；白天保持天空色不变
-      this.scene.background = (t < 0.5 && this.starTexture) ? this.starTexture : this.skyColor;
+      // 夜晚用纯色天空背景（skyColor 已插值为 dark 0x0B1026），不用 CanvasTexture 防止透过水面显示星点
+      this.scene.background = this.skyColor;
       if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(this.fogNight).lerp(this.fogDay, t);
     }
     if (this.sunLight) {
@@ -1407,7 +1381,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       //   直接用服务端 py → 要么被判定"在地下"反复上推（正反馈），要么追着服务端的跳跃高值飞走
       //   正确做法：算出"离服务端地面的高度"，叠加到 HY3D 视觉地面上
       const serverGround = this.heightAt(st.gx, st.gz);           // 服务端认为的地面
-      const visualGround = this.hy3dSurfaceHeightAt(st.gx, st.gz); // 客户端可见的 HY3D 地面
+      const visualGround = this.groundHeightCached(this._pgCache, st.gx, st.gz); // 客户端可见的 HY3D 地面（移动阈值缓存，避免每帧 raycast）
       const vG = (visualGround != null ? visualGround : (serverGround ?? 0)); // 视觉地面优先
       const sG = (serverGround ?? -0.2); // 服务端地面 fallback
       if (st.y < -50 || st.y > 100 || !Number.isFinite(st.y)) {
@@ -1438,7 +1412,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     const pgx = Math.floor(this.dpx);
     const pgz = Math.floor(this.dpz);
     const wl = this.config?.waterLevel ?? -5;
-    const hy3dGroundHere = this.hy3dSurfaceHeightAt(this.dpx, this.dpz);
+    const hy3dGroundHere = this.groundHeightCached(this._pgCache, this.dpx, this.dpz);
     // 🔴 2026-08-17 空气墙根治：废弃 onIslandCircle 圆近似判定水体。
     //   旧逻辑「圈外即水」会把真实草地（位于 1.2r 圆外、却在群岛 falloff 内的格子）误判为水中 →
     //   玩家在草地上走着走着突然进入游泳模式、无法继续正常行走 = 错误空气墙。
@@ -2030,7 +2004,10 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   /** 🔴 暴露场景内所有对象的世界坐标与地形高度，供 playwright 断言"无对象在水中" */
   private publishWorldDebug(): void {
+    // 🔴 性能：调试钩子默认关闭，仅 playwright/调试显式开启（window.__worldDebugEnabled=true）。
+    //   否则每 8 帧的全量 chunk 顶点遍历 + 多次 raycast 会周期性卡顿整个游戏（含人物走动）。
     if (this.disposed) return;
+    if (!(window as any).__worldDebugEnabled) return;
     this._dbgTick++;
     if ((this._dbgTick & 7) !== 0) return; // 每 8 帧刷新一次（降开销）
     // 🔴 SHORE-CLIP：计算湖岛实例世界包围盒 y.min（诊断根因：是否低于水面）
@@ -2066,12 +2043,13 @@ export class World3dComponent implements OnInit, OnDestroy {
     const trees = this.treeList.map(t => { const s = sample(t.x, t.z); return { x: +t.x.toFixed(2), z: +t.z.toFixed(2), ...s }; });
     const chars = this.charList.map(c => { const s = sample(c.x, c.z); return { x: +c.x.toFixed(2), z: +c.z.toFixed(2), y: +c.y.toFixed(2), ...s }; });
     const animals = this.animalList.map(a => { const s = sample(a.x, a.z); return { x: +a.x.toFixed(2), z: +a.z.toFixed(2), y: +a.y.toFixed(2), ...s }; });
-    const ores = this.oreList.map(o => { const s = sample(o.x, o.z); return { x: +o.x.toFixed(2), z: +o.z.toFixed(2), y: +o.y.toFixed(3), type: o.type, ...s }; });
+    const ores = this.oreList.map(o => { const s = sample(o.x, o.z); const hy = this.hy3dSurfaceHeightAt(o.x, o.z); return { x: +o.x.toFixed(2), z: +o.z.toFixed(2), y: +o.y.toFixed(3), type: o.type, hy3d: hy == null ? null : +hy.toFixed(3), ...s }; });
     const ps = sample(this.dpx, this.dpz);
     const player = { x: +this.dpx.toFixed(2), z: +this.dpz.toFixed(2), y: +this.dpy.toFixed(2), ...ps, swimMode: this.swimMode, inWater: this.isInWater };
-    // 🔴🔴 chunk mesh 诊断（2026-08-15：地形消失排查）—— 深挖"mesh 在 scene 里却不渲染"的根因
+    // 🔴🔴 chunk mesh 诊断（仅 __worldDebugFull 开启时执行：全量顶点遍历开销大，会周期性卡顿）
     const chunkMeshDiag: { key: string; visible: boolean; worldVisible: boolean; verts: number; indexCount: number; drawCount: number; materialVisible: boolean; materialOpacity: number; materialType: string; renderOrder: number; parentIsScene: boolean; sphereR: number; yRange: [number, number] }[] = [];
-    let totalChunkVerts = 0, chunkYMin = Infinity, chunkYMax = -Infinity;
+    let totalChunkVerts = 0, chunkYMin = 0, chunkYMax = 0;
+    if ((window as any).__worldDebugFull) {
     this.chunkMeshes.forEach((m, k) => {
       const geo = m.geometry;
       const pa = geo.getAttribute('position');
@@ -2105,10 +2083,15 @@ export class World3dComponent implements OnInit, OnDestroy {
         yRange: [+cMin.toFixed(2), +cMax.toFixed(2)]
       });
     });
-    
+    }
+
     (window as any).__worldDebug = {
       navfix: 'L0WATER_PARABOLA_20260816', // 🔴 修复标记：水域Layer0+跳跃抛物线（playwright 验证用）
       waterLevel: wl,
+      // 🔴 岛屿来源（server=消费 /api/world/config 下发的权威中心；fallback-grid=本地兜底）
+      islandSource: (this.config?.islandCenters && this.config.islandCenters.length) ? 'server' : 'fallback-grid',
+      hy3dIslands: this.islandCenters.length,
+      islandCentersCount: this.islandCenters.length,
       ready: trees.length > 0 || chars.length > 0 || animals.length > 0 || ores.length > 0,
       player,
       trees, chars, animals, ores,
@@ -2166,7 +2149,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         fov: this.camera.fov, near: this.camera.near, far: this.camera.far
       },
       scene: {
-        bg: this.scene.background instanceof THREE.Color ? '#' + this.scene.background.getHexString() : (this.scene.background === this.starTexture ? 'startex' : 'tex'),
+        bg: this.scene.background instanceof THREE.Color ? '#' + this.scene.background.getHexString() : 'tex',
         fog: !!this.scene.fog,
         childCount: this.scene.children.length
       },
@@ -2377,7 +2360,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         //   physics st.y 基于旧隐藏网格（y≈-0.2），但视觉上 HY3D 岛屿在 y≈4+
         //   不修正 → 下半身埋进草地
         let ry = st.y;
-        const hy3dY = this.hy3dSurfaceHeightAt(st.gx, st.gz);
+        const hy3dY = this.groundHeightCached(g.userData, st.gx, st.gz);
         if (hy3dY != null && hy3dY > ry) {
           ry = hy3dY; // 脚底贴岛屿表面
         }
@@ -2474,6 +2457,17 @@ export class World3dComponent implements OnInit, OnDestroy {
   private _hy3dSurfCache = new Map<string, { y: number | null; ts: number }>();
   /** Raycaster 实例（复用） */
   private _hy3dRaycaster: THREE.Raycaster | null = null;
+
+  /** 🔴🔴 通用地面高度缓存：holder 持有上次 raycast 的位置/结果；仅当查询位置移动超过 0.5 单位才重算，
+   *  避免每帧 raycast 造成的「行走卡顿 / 联机多人卡顿」。holder 可为本地玩家缓存对象或远端玩家 userData。 */
+  private _pgCache: { _gx?: number; _gz?: number; _gy?: number | null } = {};
+  private groundHeightCached(holder: { _gx?: number; _gz?: number; _gy?: number | null }, x: number, z: number): number | null {
+    if (holder._gx == null || Math.abs(x - holder._gx) + Math.abs(z - (holder._gz ?? 0)) > 0.5) {
+      holder._gx = x; holder._gz = z;
+      holder._gy = this.hy3dSurfaceHeightAt(x, z);
+    }
+    return holder._gy ?? null;
+  }
 
   // ================= Chunk 流式 =================
 
@@ -2604,7 +2598,8 @@ export class World3dComponent implements OnInit, OnDestroy {
   private createWaterPlane(): void {
     const wl = this.config?.waterLevel ?? -5;
     const size = 3200;
-    // 高细分以支持 GPU 顶点波浪位移（128×128 = 16384 顶点，GPU 完全无压力）
+    // 中等细分（128×128 = 16384 顶点）即可平滑呈现 GPU 顶点波浪位移，
+    // 顶点数压到原来的 ~44%，降低中低端 GPU 负担（波浪卡顿根因其实是调试钩子每 8 帧全量遍历，已修复）。
     const geo = new THREE.PlaneGeometry(size, size, 128, 128);
     geo.rotateX(-Math.PI / 2);
 
@@ -2612,7 +2607,7 @@ export class World3dComponent implements OnInit, OnDestroy {
     const vertexShader = `
       uniform float uTime;
       uniform vec3  uSunDir;
-      // Gerstner 波参数：方向(xy归一化)、波长(越小波越密)、陡度(0~1)、振幅
+      // Gerstner 波参数：方向(xy归一化)、陡度(0~1)、波长
       uniform vec4  uWaveA; // direction.x, direction.y, steepness, wavelength
       uniform vec4  uWaveB;
       uniform vec4  uWaveC;
@@ -2622,43 +2617,75 @@ export class World3dComponent implements OnInit, OnDestroy {
       varying float vFoamFactor;  // 波峰泡沫因子
       varying float vDistToShore; // 到岛屿中心的近似距离
 
-      vec3 gerstner(vec4 wave, vec3 p) {
-        float k = 2.0 * 3.14159 / wave.z;           // 波数
-        float c = sqrt(9.8 / k);                     // 相速度（深水近似）
-        vec2  d = normalize(wave.xy);                // 方向
-        float f = k * (dot(d, p.xz) - c * uTime);   // 相位
-        float a = wave.w * wave.z * 0.08;            // 振幅 = 陡度 × 波长 × 缩放（原0.15太陡→0.08平缓）
-        return vec3(
-          d.x * (a * cos(f)),       // x 水平位移
-          a * sin(f),                 // y 垂直位移
-          d.y * (a * cos(f))         // z 水平位移
-        );
+      // 单波 Gerstner 输出：位移 + 法线求导所需量
+      struct GerstnerOut {
+        vec3 disp;    // 局部空间位移
+        float y;      // y 向位移（用于泡沫）
+        float a_k;    // 振幅 × 波数
+        float sin_f;  // sin(相位)
+        float cos_f;  // cos(相位)
+      };
+
+      GerstnerOut gerstner(vec4 wave, vec3 worldP) {
+        float k = 2.0 * 3.14159 / wave.z;              // 波数
+        float c = sqrt(9.8 / k);                       // 相速度（深水近似）
+        vec2  d = normalize(wave.xy);                  // 方向
+        float f = k * (dot(d, worldP.xz) - c * uTime); // 相位（用世界坐标，保证水面跟随相机时波纹不抖）
+        float a = wave.w * wave.z * 0.08;               // 振幅 = 陡度 × 波长 × 缩放
+
+        GerstnerOut o;
+        o.sin_f = sin(f);
+        o.cos_f = cos(f);
+        o.disp = vec3(d.x * a * o.cos_f, a * o.sin_f, d.y * a * o.cos_f);
+        o.y = a * o.sin_f;
+        o.a_k = a * k;
+        return o;
       }
 
       void main() {
-        vec3 p = position;
+        // 未位移的世界坐标（用于相位计算，水面可跟随相机而不产生波纹漂移）
+        vec3 worldBase = (modelMatrix * vec4(position, 1.0)).xyz;
 
         // 三层 Gerstner 波叠加（不同方向/波长/陡度 → 真实海面）
-        vec3 g1 = gerstner(uWaveA, p);
-        vec3 g2 = gerstner(uWaveB, p);
-        vec3 g3 = gerstner(uWaveC, p);
-        p += g1 + g2 * 0.6 + g3 * 0.35;
+        GerstnerOut g1 = gerstner(uWaveA, worldBase);
+        GerstnerOut g2 = gerstner(uWaveB, worldBase);
+        GerstnerOut g3 = gerstner(uWaveC, worldBase);
 
-        // 用位移梯度算法线（有限差分）
-        float eps = 0.5;
-        vec3 px = position + vec3(eps, 0.0, 0.0);
-        vec3 pz = position + vec3(0.0, 0.0, eps);
-        px += gerstner(uWaveA, px) + gerstner(uWaveB, px) * 0.6 + gerstner(uWaveC, px) * 0.35;
-        pz += gerstner(uWaveA, pz) + gerstner(uWaveB, pz) * 0.6 + gerstner(uWaveC, pz) * 0.35;
-        vNormal = normalize(cross(pz - p, px - p));
+        vec3 disp = g1.disp + g2.disp * 0.6 + g3.disp * 0.35;
+        vec3 p = position + disp;
+
+        // 解析法线：由 Gerstner 偏导数累加切线向量
+        // TangentX = dP/dx, TangentZ = dP/dz；Normal = normalize(cross(TangentZ, TangentX))
+        float tx_x = 1.0, tx_y = 0.0, tx_z = 0.0;
+        float tz_x = 0.0, tz_y = 0.0, tz_z = 1.0;
+
+        float q1 = g1.a_k * g1.sin_f;
+        float q2 = g2.a_k * g2.sin_f;
+        float q3 = g3.a_k * g3.sin_f;
+
+        vec2 d1 = normalize(uWaveA.xy);
+        vec2 d2 = normalize(uWaveB.xy);
+        vec2 d3 = normalize(uWaveC.xy);
+
+        tx_x -= d1.x * d1.x * q1 + d2.x * d2.x * q2 * 0.6 + d3.x * d3.x * q3 * 0.35;
+        tx_y += d1.x * g1.a_k * g1.cos_f + d2.x * g2.a_k * g2.cos_f * 0.6 + d3.x * g3.a_k * g3.cos_f * 0.35;
+        tx_z -= d1.x * d1.y * q1 + d2.x * d2.y * q2 * 0.6 + d3.x * d3.y * q3 * 0.35;
+
+        tz_x -= d1.x * d1.y * q1 + d2.x * d2.y * q2 * 0.6 + d3.x * d3.y * q3 * 0.35;
+        tz_y += d1.y * g1.a_k * g1.cos_f + d2.y * g2.a_k * g2.cos_f * 0.6 + d3.y * g3.a_k * g3.cos_f * 0.35;
+        tz_z -= d1.y * d1.y * q1 + d2.y * d2.y * q2 * 0.6 + d3.y * d3.y * q3 * 0.35;
+
+        vec3 tangentX = vec3(tx_x, tx_y, tx_z);
+        vec3 tangentZ = vec3(tz_x, tz_y, tz_z);
+        vNormal = normalize(cross(tangentZ, tangentX));
 
         vWorldPos = (modelMatrix * vec4(p, 1.0)).xyz;
 
         // 泡沫因子：波峰处 y 位移大 → 白沫多
-        vFoamFactor = smoothstep(0.12, 0.55, (g1.y + g2.y + g3.y) / 1.95);
+        vFoamFactor = smoothstep(0.12, 0.55, (g1.y + g2.y * 0.6 + g3.y * 0.35) / 1.95);
 
         // 近似到中心距离（用于岸边颜色过渡）
-        vDistToShore = length(position.xz) * 0.0018;
+        vDistToShore = length(worldBase.xz) * 0.0018;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
       }
@@ -2719,14 +2746,14 @@ export class World3dComponent implements OnInit, OnDestroy {
       uFoamColor: { value: new THREE.Color(0xE8F4FC) },     // 泡沫白
       uWaterLevel: { value: wl },
       // Gerstner 波：方向(x,y), 陡度, 波长
-      // 🔴🔴 2026-08-16 优化：原参数频率太快、波太陡
-      //   调整策略：增大波长(降低频率) + 降低陡度(更平缓) + 减小时间系数(慢速)
-      //   WaveA 主浪：长波长40m（原18）+ 低陡度0.12（原0.25）→ 宽缓涌浪
-      //   WaveB 二次浪：波长22m（原10）+ 陡度0.10（原0.20）→ 中等交叉浪
-      //   WaveC 涟漪：波长12m（原5.5）+ 陡度0.06（原0.15）→ 细微纹理
-      uWaveA: { value: new THREE.Vector4( 1.0,  0.2, 0.12, 40.0) },  // 主浪（宽缓长浪）
-      uWaveB: { value: new THREE.Vector4(-0.6,  0.8, 0.10, 22.0) },  // 二次浪（交叉中浪）
-      uWaveC: { value: new THREE.Vector4( 0.3, -1.0, 0.06, 12.0) },  // 涟漪（细微纹理）
+      // 🔴🔴 2026-08-18 再优化：波长翻倍 + 陡度略降 + 解析法线
+      //   16.7m/quad（192×192）对 96m/56m/40m 波 → 5.7/3.4/2.4 samples/λ，消除锯齿/跳跃感
+      //   WaveA 主浪：波长 96m / 陡度 0.10 → 宽缓长涌
+      //   WaveB 交叉浪：波长 56m / 陡度 0.08 → 中尺度过渡
+      //   WaveC 细浪：波长 40m / 陡度 0.05 → 水面细节
+      uWaveA: { value: new THREE.Vector4( 1.0,  0.2, 0.10, 96.0) },  // 主浪（宽缓长浪）
+      uWaveB: { value: new THREE.Vector4(-0.6,  0.8, 0.08, 56.0) },  // 交叉中浪
+      uWaveC: { value: new THREE.Vector4( 0.3, -1.0, 0.05, 40.0) },  // 细浪
     };
 
     const mat = new THREE.ShaderMaterial({
@@ -2752,7 +2779,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   /** 更新水面着色器 uniform（时间 + 相机位置），波浪由 GPU Gerstner 算法驱动 */
   private updateWaterPlane(now: number): void {
     if (!this.waterPlane || !this.waterUniforms) return;
-    (this.waterUniforms['uTime'] as { value: number }).value = now * 0.00025;  // 🔴 波浪时间（原0.0008太快→0.00025平缓）
+    (this.waterUniforms['uTime'] as { value: number }).value = now * 0.00020;  // 更长波长后相速度变快，略降时间系数保持平缓
     (this.waterUniforms['uCameraPos'] as { value: THREE.Vector3 }).value.copy(this.camera.position);
   }
 
@@ -3071,9 +3098,24 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   // ================= HY3D 地图地形（实例化为 22 岛视觉层） =================
 
-  /** 复算 22 岛中心 + 半径（与后端 TerrainService.buildIslands 确定性一致）
-   *  用 BigInt 精确复刻 Java long 位运算，避免前端浮点/移位差异导致岛屿错位 */
+  /** 🔴 服务端权威岛屿中心（单一事实来源）
+   *  后端 TerrainService.buildIslands 现已改为 GRID×GRID 规则网格（与前端 HY3D 视觉层一致），
+   *  并通过 /api/world/config 下发 islandCenters。前端直接消费，不再各自复刻撒点/网格，
+   *  根除"前端 GRID vs 后端 scatter"错位 → 矿产飞天上 / 玩家落水。
+   *  保留本地 GRID 复算作为离线 / 旧后端兜底（字段缺失时）。
+   */
   private computeIslandCenters(): void {
+    const svr = this.config?.islandCenters;
+    if (svr && svr.length) {
+      // 🔴 服务端权威：直接采信后端下发的中心 + 半径（含每岛随机半径浮动）
+      this.islandCenters = svr.map(c => ({ cx: c.cx, cz: c.cz, r: c.r }));
+      const dbg = (window as any).__worldDebug || ((window as any).__worldDebug = {});
+      dbg.islandSource = 'server';
+      dbg.hy3dIslands = this.islandCenters.length;
+      return;
+    }
+
+    // —— 兜底：旧后端未下发 islandCenters 时使用本地 GRID 复算（与后端 buildIslands 同参） ——
     const seedText = this.config?.seed || 'dudu2019';
     const MASK = 0xFFFFFFFFFFFFFFFFn;
     let base = 1125899906842597n;
@@ -3088,17 +3130,12 @@ export class World3dComponent implements OnInit, OnDestroy {
       h = (h ^ (h >> 16n)) & MASK;
       h = (h * 0x94D049BB133111EBn) & MASK;
       h = h ^ (h >> 31n);
-      // Java: gz 为 int，gz<<32 因 int 移位掩码(0x1F) ≡ gz；long 提升后 XOR
       h = (h + ((BigInt(gz) * 0x9E3779B97F4A7C15n) ^ BigInt(gz))) & MASK;
       h = (((h ^ (h >> 13n)) & MASK) * 0xBF58476D1CE4E5B9n) & MASK;
       h = h ^ (h >> 16n);
       const low32 = h & 0xFFFFFFFFn;
       return Number(low32) / 4294967296.0;
     };
-    // 🔴🔴🔴 2026-08-18 网格布局（根治岛屿重叠导致 raycast 命中非确定性 → 上下闪）：
-    //   旧版用 scatterHash 随机撒 22 岛于 2600×2600 + LOD 600m → 同时加载 4 岛且两两 mesh 重叠。
-    //   现改为 GRID×GRID 规则网格，中心间距 CELL=700，最大岛直径 380 → 边缘间留 320m 净空，
-    //   几何上保证任意两岛永不重叠；再配 ISLAND_LOD_RADIUS=300（<CELL/2）使任意位置最多只加载 1 个岛。
     const ISLAND_COUNT = 22, GRID = 5, CELL = 700, BASE_R = 115, R_VAR = 75;
     this.islandCenters = [];
     let placed = 0;
@@ -3106,11 +3143,14 @@ export class World3dComponent implements OnInit, OnDestroy {
       for (let col = 0; col < GRID && placed < ISLAND_COUNT; col++) {
         const cx = (col - (GRID - 1) / 2) * CELL;
         const cz = (row - (GRID - 1) / 2) * CELL;
-        const hr = scatterHash(placed * 3 + 3, 999, SALT_ISLAND); // 仅用于半径随机变化
+        const hr = scatterHash(placed * 3 + 3, 999, SALT_ISLAND);
         this.islandCenters.push({ cx, cz, r: BASE_R + hr * R_VAR });
         placed++;
       }
     }
+    const dbg = (window as any).__worldDebug || ((window as any).__worldDebug = {});
+    dbg.islandSource = 'fallback-grid';
+    dbg.hy3dIslands = this.islandCenters.length;
   }
 
   /** 加载 HY3D 岛屿变体模板（4 个变体 GLB），不立即实例化

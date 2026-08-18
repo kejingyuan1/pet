@@ -1,6 +1,7 @@
 package com.petpark.world.service;
 
 import com.petpark.world.entity.TerrainMod;
+import com.petpark.world.dto.IslandCenter;
 import com.petpark.world.geo.CellType;
 import com.petpark.world.geo.ChunkKey;
 import com.petpark.world.geo.OpenSimplex2;
@@ -100,20 +101,46 @@ public class TerrainService {
         this.buildIslands();
     }
 
-    /** 确定性岛屿中心（Voronoi 撒点，均匀分布 + 半径浮动） */
+    /**
+     * 确定性岛屿中心。
+     * 🔴 2026-08-18（后端侧对齐）：由「随机撒点」改为「GRID×GRID 规则网格」，
+     * 与前端 world3d.component.ts 的 HY3D 视觉层布局完全一致（前端改为消费本服务
+     * 经 /api/world/config 下发的 islandCenters，单一事实来源）。
+     *
+     * 采用规则网格的原因：
+     *  1. 前端 ISLAND_LOD_RADIUS=300 < CELL/2=350，规则网格保证任意位置最多只加载 1 座岛，
+     *     彻底消除两座 HY3D 岛屿 mesh 重叠导致的 raycast 命中不确定 → 上下闪（M4 修复）；
+     *  2. 后端地形/矿脉/出生点与前端 HY3D 视觉岛屿现在由同一组中心驱动，根除"矿产飞天上 /
+     *     玩家落水"的错位问题（之前的散点布局与前端 GRID 永远对不齐）。
+     *
+     * 半径仍带每岛随机浮动（用与前端一致的 scatterHash + SALT_ISLAND + 盐 999 复刻），
+     * 仅用于半径变化，不影响中心对齐。
+     */
     private void buildIslands() {
-        for (int i = 0; i < ISLAND_COUNT; i++) {
-            double hx = scatterHash(i * 3 + 1, 777, SALT_ISLAND);
-            double hz = scatterHash(i * 3 + 2, 888, SALT_ISLAND);
-            double hr = scatterHash(i * 3 + 3, 999, SALT_ISLAND);
-            islandCx[i] = (hx - 0.5) * ISLAND_SPREAD;
-            islandCz[i] = (hz - 0.5) * ISLAND_SPREAD;
-            islandR[i] = ISLAND_BASE_RADIUS + hr * ISLAND_RADIUS_VAR;
+        final int GRID = 5, CELL = 700;
+        int placed = 0;
+        for (int row = 0; row < GRID && placed < ISLAND_COUNT; row++) {
+            for (int col = 0; col < GRID && placed < ISLAND_COUNT; col++) {
+                islandCx[placed] = (col - (GRID - 1) / 2.0) * CELL;
+                islandCz[placed] = (row - (GRID - 1) / 2.0) * CELL;
+                double hr = scatterHash(placed * 3 + 3, 999, SALT_ISLAND);
+                islandR[placed] = ISLAND_BASE_RADIUS + hr * ISLAND_RADIUS_VAR;
+                placed++;
+            }
         }
-        log.info("[world] 群岛生成完成：{} 座岛屿，撒布范围 ±{}，半径 {}~{}",
-                ISLAND_COUNT, (long) (ISLAND_SPREAD / 2),
+        log.info("[world] 群岛生成完成（GRID 布局）：{} 座岛屿，网格 {}×{} 间距 {}，半径 {}~{}",
+                ISLAND_COUNT, GRID, GRID, CELL,
                 String.format("%.1f", ISLAND_BASE_RADIUS),
                 String.format("%.1f", ISLAND_BASE_RADIUS + ISLAND_RADIUS_VAR));
+    }
+
+    /** 服务端权威岛屿中心（供前端 HY3D 视觉层对齐，避免前后端错位） */
+    public List<IslandCenter> islandCenters() {
+        List<IslandCenter> list = new java.util.ArrayList<>(ISLAND_COUNT);
+        for (int i = 0; i < ISLAND_COUNT; i++) {
+            list.add(new IslandCenter(islandCx[i], islandCz[i], islandR[i]));
+        }
+        return list;
     }
 
     // ================= 噪声 =================

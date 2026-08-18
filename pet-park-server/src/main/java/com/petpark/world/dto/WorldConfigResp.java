@@ -22,6 +22,8 @@ public class WorldConfigResp {
     private boolean singleRoom;
     /** 海平面高度（前端水面网格 + 水语义格钳制共用） */
     private double waterLevel;
+    /** 服务端权威岛屿中心（前端 HY3D 视觉层对齐，根除前后端岛屿错位） */
+    private java.util.List<IslandCenter> islandCenters;
 
     public WorldConfigResp(String seed, int version, int chunkSize, int worldRadius,
                            int spawnGx, int spawnGz, float spawnY, int viewRadius, boolean singleRoom, double waterLevel) {

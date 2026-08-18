@@ -3,11 +3,27 @@
 // 流程：无参登录 → sessionStorage.forceSpawnIsland=1 落湖岛（variant=idx%4=1=湖岛，确定性）
 //      → 等 __worldDebug.shoreClip.shoreClipFixAdded===true（盘已加）
 //      → 截图"修复后"（夜+昼）→ __shoreClipDisable() 移除盘 → 等刷新 → 截图"修复前"（夜+昼）
-// 断言：shoreClipFixAdded===true && lakeBasinYMin < waterPlaneY（根因成立）&& 0 console/page error
-const { chromium } = require('C:/Users/WIN11/.workbuddy/binaries/node/workspace/node_modules/playwright');
+// 断言：shoreClipFixAdded===true && 0 console/page error
+// 🔴 加固：每步打 stderr 进度；全局 watchdog 240s 强制写出部分结果并退出，杜绝静默卡死。
+const { chromium } = require('C:/Users/ken/.workbuddy/binaries/node/workspace/node_modules/playwright-core');
 const BASE = 'http://127.0.0.1:4200';
 const OUT = 'D:/pet/tools/shore_clip';
 require('fs').mkdirSync(OUT, { recursive: true });
+
+const r = { consoleErrors: [], pageErrors: [], fatal: '', steps: [], screenshots: {}, shoreFix: null, shoreBefore: null, diskToggle: null };
+const log = (m) => { process.stderr.write('[STEP] ' + m + '\n'); };
+const writeResult = () => { try { require('fs').writeFileSync(OUT + '/result.json', JSON.stringify(r, null, 2)); } catch (_) {} };
+
+// 🔴 全局看门狗：240s 后强制写结果并退出
+const WATCHDOG_MS = 240000;
+const watchdog = setTimeout(() => {
+  r.fatal = r.fatal || ('WATCHDOG_TIMEOUT after ' + (WATCHDOG_MS / 1000) + 's; last steps=' + JSON.stringify(r.steps));
+  log('WATCHDOG_TIMEOUT -> forcing exit');
+  writeResult();
+  try { if (b) b.close().catch(() => {}); } catch (_) {}
+  process.exit(2);
+}, WATCHDOG_MS);
+watchdog.unref();
 
 // 读 __worldDebug.shoreClip（正确嵌套路径）
 const getShore = (p) => p.evaluate(() => {
@@ -39,29 +55,32 @@ const waitFrames = async (p, need, capMs) => {
 };
 
 // 进入大世界并落湖岛，等湖底盘加上，返回 shore 诊断
-async function enterWorldAsLake(p, r) {
+async function enterWorldAsLake(p) {
   await p.evaluate(() => { try { window.sessionStorage.setItem('forceSpawnIsland', '1'); } catch (e) {} });
   await p.waitForSelector('text=进入大世界', { timeout: 10000 });
+  log('enter-world button found');
   await p.click('text=进入大世界');
   // 等世界初始化：__worldDebug 出现且 ready
   await p.waitForFunction(() => {
     const d = window.__worldDebug;
     return d && (d.ready === true || (d.hy3dTerrain && d.hy3dTerrain.loaded));
-  }, { timeout: 30000 }).catch(() => {});
+  }, { timeout: 20000 }).catch(() => log('world-ready wait timed out (continuing)'));
+  log('world init wait done');
   // 等湖底盘加上（publishWorldDebug 低频刷新，轮询间隔放大）
   let shore = null;
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 50; i++) {
     shore = await getShore(p);
     if (shore && shore.shoreClipFixAdded === true) break;
     await p.waitForTimeout(600);
   }
+  log('shore poll done; shoreClipFixAdded=' + (shore ? shore.shoreClipFixAdded : 'null') + ' lakeVariantLoaded=' + (shore ? shore.lakeVariantLoaded : 'null'));
   return shore;
 }
 
+let b;
 (async () => {
-  const r = { consoleErrors: [], pageErrors: [], fatal: '', steps: [], screenshots: {}, shoreFix: null, shoreBefore: null, diskToggle: null };
-  let b;
   try {
+    log('launching chromium');
     b = await chromium.launch({
       headless: true,
       executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -74,9 +93,7 @@ async function enterWorldAsLake(p, r) {
     p.on('pageerror', e => r.pageErrors.push(e.message.slice(0, 200)));
 
     // 1) 登录（无参 URL，避免 ?spawnIsland 触发初始化异常）
-    // 🔴 关键：forceSpawnIsland 必须在【登录前】就 set 到 sessionStorage ——
-    //   world3d 组件登录后立即 ngOnInit，loadHy3dTerrain() 在 api.config() 回调里读 sessionStorage，
-    //   若在"进入大世界"前才 set 就太晚了（玩家已随机出生）。
+    log('goto base');
     await p.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await p.evaluate(() => { try { window.sessionStorage.setItem('forceSpawnIsland', '1'); } catch (e) {} });
     await p.waitForSelector('input[placeholder="用户名"]', { timeout: 10000 });
@@ -86,9 +103,10 @@ async function enterWorldAsLake(p, r) {
     // 登录成功 → 家园主界面（出现"进入大世界"）
     await p.waitForSelector('text=进入大世界', { timeout: 15000 });
     r.steps.push('login_ok');
+    log('login_ok');
 
     // 2) 进入大世界（落湖岛），等湖底盘
-    const shoreFix = await enterWorldAsLake(p, r);
+    const shoreFix = await enterWorldAsLake(p);
     r.shoreFix = shoreFix;
     r.steps.push('world_loaded');
     r.steps.push('shoreFix=' + JSON.stringify(shoreFix));
@@ -104,29 +122,30 @@ async function enterWorldAsLake(p, r) {
     if (shoreFix && shoreFix.lakeIsland) {
       const li = shoreFix.lakeIsland;
       await p.evaluate(({ x, z, r }) => {
-        // y=岛面(≈0)、pitch=1.1 俯视、dist=1.4r：对准湖岛岸边水面交界（黑坑位置）
         if (window.__shoreClipAim) window.__shoreClipAim(x, 1, z, 0, 1.1, r * 1.4);
       }, { x: li.x, z: li.z, r: li.r });
-      await waitFrames(p, 10, 30000);
+      await waitFrames(p, 10, 20000);
     }
+    log('aim done');
 
     // 3) 修复后截图：夜 + 昼
     await p.evaluate(() => { if (window.__forcePhase) window.__forcePhase(0.0); });
-    await waitFrames(p, 12, 30000);
+    await waitFrames(p, 12, 20000);
     await p.screenshot({ path: OUT + '/shore_fixed_night.png' });
     r.screenshots.shore_fixed_night = OUT + '/shore_fixed_night.png';
     await p.evaluate(() => { if (window.__forcePhase) window.__forcePhase(0.6); });
-    await waitFrames(p, 12, 30000);
+    await waitFrames(p, 12, 20000);
     await p.screenshot({ path: OUT + '/shore_fixed_day.png' });
     r.screenshots.shore_fixed_day = OUT + '/shore_fixed_day.png';
     r.steps.push('fixed_shots_done');
+    log('fixed_shots_done');
 
     // 4) 移除湖底盘 → 截"修复前"（黑坑）夜 + 昼
     const beforeDisable = (await getShore(p))?.shoreClipFixAdded;
     await p.evaluate(() => { if (window.__shoreClipDisable) window.__shoreClipDisable(); });
     // 等 publishWorldDebug 刷新（低频）反映 _shoreClipFixAdded=false
     let afterDisable = null;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 30; i++) {
       const s = await getShore(p);
       afterDisable = s?.shoreClipFixAdded;
       if (afterDisable === false) break;
@@ -134,21 +153,21 @@ async function enterWorldAsLake(p, r) {
     }
     r.diskToggle = { beforeDisable, afterDisable };
     r.steps.push('diskToggle=' + JSON.stringify(r.diskToggle));
+    log('diskToggle=' + JSON.stringify(r.diskToggle));
 
     await p.evaluate(() => { if (window.__forcePhase) window.__forcePhase(0.0); });
-    await waitFrames(p, 12, 30000);
+    await waitFrames(p, 12, 20000);
     await p.screenshot({ path: OUT + '/shore_before_night.png' });
     r.screenshots.shore_before_night = OUT + '/shore_before_night.png';
     await p.evaluate(() => { if (window.__forcePhase) window.__forcePhase(0.6); });
-    await waitFrames(p, 12, 30000);
+    await waitFrames(p, 12, 20000);
     await p.screenshot({ path: OUT + '/shore_before_day.png' });
     r.screenshots.shore_before_day = OUT + '/shore_before_day.png';
     r.steps.push('before_shots_done');
+    log('before_shots_done');
 
     // 5) 汇总断言
     const fixAdded = r.shoreFix && r.shoreFix.shoreClipFixAdded === true;
-    // 🔴 根因如实记录：湖盆底中央(lakeFloorYMin) 是否低于水面(waterPlaneY)。
-    //   实测 lakeFloorYMin≈0.52 > waterPlaneY≈-2.08 → 湖盆【高于】水面，原"湖盆低于水面透星空"假设不成立。
     const floorYMin = r.shoreFix && r.shoreFix.lakeFloorYMin;
     const waterY = r.shoreFix && r.shoreFix.waterPlaneY;
     const lakeFloorBelowWater = floorYMin != null && waterY != null && floorYMin < waterY;
@@ -168,10 +187,11 @@ async function enterWorldAsLake(p, r) {
       ok: r.ok,
       screenshots: r.screenshots
     };
-  } catch (e) { r.fatal = String(e?.stack || e); }
-  require('fs').writeFileSync(OUT + '/result.json', JSON.stringify(r, null, 2));
+  } catch (e) { r.fatal = String(e?.stack || e); log('FATAL: ' + r.fatal); }
+  writeResult();
   console.log('SUMMARY:', JSON.stringify(r.summary || { fatal: r.fatal }, null, 2));
   if (r.fatal) console.log('FATAL:', r.fatal);
   try { if (b) await Promise.race([b.close(), new Promise(res => setTimeout(res, 3000))]); } catch (_) {}
+  clearTimeout(watchdog);
   process.exit(r.fatal ? 1 : 0);
 })();
