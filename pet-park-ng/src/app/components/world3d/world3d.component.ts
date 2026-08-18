@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, ViewChild, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as THREE from 'three';
@@ -73,6 +73,7 @@ interface GridData {
       <button (click)="exitInteract()" [class.on]="!buildMode && !fishMode && !mineMode && !removeMode && !upgradeMode && !harvestMode">🎥 跟随</button>
       <button (click)="toggleHelp()" [class.on]="showHelp">❓ 帮助</button>
       <button (click)="toggleCult()" [class.on]="showCult">📖 养成</button>
+      <button *ngIf="isLoggedIn" class="ranch-btn" (click)="openRanchRequest.emit()" title="进入牧场（需先拥有自己的房屋）">🐮 牧场</button>
     </div>
     <div class="w3d-hud">
       <div class="hud-row">金币 {{coins}} · 在线 {{onlineCount}}</div>
@@ -125,11 +126,6 @@ interface GridData {
           <li>手机：左摇杆移动，右下 ⤴️跳 / 🏃跑；靠近矿/水会自动出现 ⛏️/🎣 按钮</li>
         </ul>
       </div>
-    </div>
-
-    <!-- 连接状态指示（P0-3） -->
-    <div class="hud-conn conn-{{connState}}">
-      <span class="conn-dot"></span><span>{{connLabel}}</span>
     </div>
 
     <!-- P1-昼夜：连接状态下方显示游戏内时间 + 阶段图标 -->
@@ -225,6 +221,8 @@ interface GridData {
     .w3d-toolbar button { padding: 5px 11px; border: none; border-radius: 10px; background: rgba(255,255,255,.90); color: #444; font-size: 13px; cursor: pointer; box-shadow: 0 1px 5px rgba(0,0,0,.14); transition: background .15s, transform .1s; }
     .w3d-toolbar button:hover { background: rgba(255,255,255,.98); }
     .w3d-toolbar button.on { background: rgba(80,160,220,.88); color: #fff; box-shadow: 0 1px 8px rgba(80,160,220,.35); }
+    .w3d-toolbar button.ranch-btn { background: linear-gradient(135deg, rgba(76,201,96,.95), rgba(255,140,66,.95)); color: #fff; font-weight: 700; border: 1px solid rgba(255,255,255,.55); }
+    .w3d-toolbar button.ranch-btn:hover { background: linear-gradient(135deg, rgba(76,201,96,1), rgba(255,140,66,1)); }
     .w3d-hud { position: absolute; left: 10px; bottom: 54px; z-index: 5; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.55); font-size: 12px; line-height: 1.55; pointer-events: none; }
     @media (max-width: 768px) {
       .w3d-hud { bottom: auto; top: 52px; left: 8px; right: 8px; font-size: 11px; }
@@ -320,17 +318,6 @@ interface GridData {
     .unlock-state { font-size: 13px; }
     .help-list li { margin: 2px 0; }
     .help-list b { color: #d2691e; }
-
-    /* P0-3：连接状态指示 */
-    .hud-conn { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; background: rgba(0,0,0,.42); pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
-    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; box-shadow: 0 0 6px rgba(0,0,0,.3); }
-    .hud-conn.conn-connected { background: rgba(40,150,80,.85); }
-    .hud-conn.conn-connected .conn-dot { background: #6cff9e; }
-    .hud-conn.conn-connecting, .hud-conn.conn-reconnecting { background: rgba(200,140,30,.9); }
-    .hud-conn.conn-connecting .conn-dot, .hud-conn.conn-reconnecting .conn-dot { background: #ffd27f; animation: connPulse 1s infinite; }
-    .hud-conn.conn-disconnected { background: rgba(190,50,50,.9); }
-    .hud-conn.conn-disconnected .conn-dot { background: #ff8c8c; }
-    @keyframes connPulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
 
     /* P1-昼夜：连接状态下方游戏内时钟 */
     .hud-time { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; background: rgba(0,0,0,.36); pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
@@ -483,13 +470,15 @@ export class World3dComponent implements OnInit, OnDestroy {
   // ====== 天空装饰（星星 + 云朵） ======
   private starField!: THREE.Points;          // 夜晚星空粒子
   private starMaterial!: THREE.ShaderMaterial; // 星星材质（透明度随昼夜变化）
+  private starTexture!: THREE.CanvasTexture;   // 夜晚星空底图（CanvasTexture，作 scene.background）
+  private skyColor = new THREE.Color(0x87CEEB); // 昼夜插值后的天空色（白天背景）
   private cloudGroup!: THREE.Group;           // 云朵容器
 
   // （已移除旧 waterPlane — 大平面穿透地形导致蓝色三角碎片）
   // 新版水面：自定义 ShaderMaterial 着色器水面（Gerstner 波浪 + 颜色渐变 + 泡沫 + 高光）
   private waterPlane!: THREE.Mesh;
   private waterUniforms!: { [key: string]: THREE.IUniform };
-  private static readonly STAR_COUNT = 1800;   // 星星数量
+  private static readonly STAR_COUNT = 1500;   // 星星数量（压缩到上半球上 1/3 cap，消除地平环弧线）
   private static readonly CLOUD_COUNT = 12;    // 云朵数量
 
   // 🔴 水域调试钩子：记录所有已放置对象的世界坐标，供 playwright 断言"无对象在水中"
@@ -506,6 +495,15 @@ export class World3dComponent implements OnInit, OnDestroy {
   private _hy3dMeta: { radius: number; baseY: number; height: number }[] = [];
   private _hy3dLoaded = false;                           // 模板是否已加载完
   private _activeIslands = new Set<number>();            // 当前已实例化的岛屿索引
+  // 🔴🔴 SHORE-CLIP（2026-08-18 湖岛岸边穿模黑坑修复）诊断/修复状态字段
+  private _lakeVariantTpl: THREE.Group | null = null;    // hy3_island_lake_draco.glb 模板（湖底补盘 + 湖盆诊断）
+  private _lakeBasinRadiusLocal = 0;                     // 湖盆水平半径（模板局部空间；LOD 实例化时 ×horizScale 得世界半径）
+  private _lakeLocalMinY = 0;                            // 湖盆底（中央）最低顶点局部 Y（诊断：与 waterLevel-0.08 比较）
+  private _shoreClipFixAdded = false;                    // 是否已为湖岛添加不透明湖底盘（验证断言）
+  private _shoreClipDisabled = false;                    // SHORE-CLIP 临时禁用（验证脚本截"修复前"黑坑用，默认 false）
+  private _lakeIslandInfo: { x: number; z: number; r: number } | null = null; // 玩家所在湖岛中心（截图定位用）
+  private _lakeIslandBoxYMin: number | null = null;      // 湖岛实例世界包围盒 y.min（诊断：与 wl-0.08 比较）
+  private _lakeFloorYMinWorld: number | null = null;     // 湖盆底（中央）世界最低 Y（诊断：更精确根因证据）
   private _needSpawnSnap = false;                        // 出生落地钳制待执行（LOD 首次就绪后触发）
   private _spawnIslandIdx = -1;                          // 随机出生所选岛屿索引
   private _wsConnected = false;                          // WS 已连（join 前置条件）
@@ -608,6 +606,11 @@ export class World3dComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** 牧场入口请求（子→父）：点击工具栏 🐮 牧场 时 emit，由 AppComponent 调 openRanch() */
+  @Output() openRanchRequest = new EventEmitter<void>();
+  /** 登录态（供模板 *ngIf 使用，auth 为私有） */
+  get isLoggedIn(): boolean { return this.auth.isLoggedIn; }
+
   // 相机
   private follow = { yaw: 0.5, pitch: 0.55, dist: 22 }; // 聚焦岛屿：近距离+适中俯角，看清陆地细节
   private dragging = false;
@@ -634,6 +637,11 @@ export class World3dComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.uid = this.auth.user?.userId ?? 0;
     this.nickname = this.auth.user?.nickname || '我';
+    // 🔴 2026-08-18：进入大世界时主动 blur 聊天输入框，避免其偷焦点导致 WASD 被吞为聊天文字
+    setTimeout(() => {
+      const ci = document.querySelector('input.chat-input') as HTMLInputElement | null;
+      ci?.blur();
+    }, 0);
     // 调试钩子：首次带 ?debug=1 时启用，并写入 sessionStorage 以便在 SPA 路由/重登后依然生效（不影响正常游戏）
     if ((typeof location !== 'undefined') && new URLSearchParams(location.search).has('debug')) {
       (window as any).__charAnimDebugEnabled = true;
@@ -728,7 +736,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     // 🔴 水面：半透明波浪平面（createWaterPlane），chunk 网格已不渲染水三角
     const waterLevel = this.config?.waterLevel ?? -5;
 
-    this.camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 1500);
+    // 🔴 相机 near 0.1→1.0：场景尺度大（far=1500），0.1 近平面使深度比达 15000:1，
+    // 远距离深度精度极差→水面与地形/岛基在 waterLevel 附近共面时严重 z-fighting（画面一闪一闪）。
+    // 抬到 1.0 深度比降为 1500:1，远距离精度提升约 10×，是 z-fighting 的主放大器修复。
+    this.camera = new THREE.PerspectiveCamera(55, W / H, 1.0, 1500);
     // 相机初始位置：高俯视（群岛世界需要更陡的视角才能看到岛屿全貌，避免"全在水上"感）
     // 相机初始位置：降低高度+拉近距离，聚焦岛屿陆地（避免"全看海洋"）
     this.camera.position.set(this.px, this.py + 18, this.pz + 16);
@@ -787,8 +798,10 @@ export class World3dComponent implements OnInit, OnDestroy {
     el.addEventListener('pointerup', this.onPointerUp);
     el.addEventListener('dblclick', this.onDoubleClick);
     el.addEventListener('wheel', this.onWheel);
-    window.addEventListener('keydown', this.onKeyDown);
-    window.addEventListener('keyup', this.onKeyUp);
+    // 🔴 2026-08-18 修复"WASD 在聊天框有焦点时被吞为文字"BUG：改 capture 阶段，配合 onKeyDown
+    //   内的输入框焦点守护，实现"聊天开着 → 只打字不移动"的业界标准行为。
+    window.addEventListener('keydown', this.onKeyDown, { capture: true });
+    window.addEventListener('keyup', this.onKeyUp, { capture: true });
     window.addEventListener('resize', this.onResize);
 
     // 调试钩子（E2E 昼夜验证用，无害）：强制相位 + 立即应用光照（跳过插值，便于 headless 确定性读取）
@@ -804,6 +817,25 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.timeLabel = `${String(this.worldTime.hour).padStart(2, '0')}:${String(this.worldTime.minute).padStart(2, '0')}`;
       this.phaseIcon = this.worldTime.isNight ? '🌙' : '☀️';
       (window as any).__petWorldTime = this.worldTime;
+    };
+    // 🔴🔴 SHORE-CLIP 诊断钩子（verify_shore_clip.cjs 用，无害）：
+    //   __shoreClipAim：将跟随相机对准指定世界坐标（俯视湖岛），供确定性截图
+    //   __shoreClipDisable：临时移除湖底盘（截"修复前"黑坑用）；重新加载页面即恢复
+    (window as any).__shoreClipAim = (x: number, y: number, z: number, yaw: number, pitch: number, dist: number) => {
+      this.viewTarget = { x, y, z };
+      this.follow.yaw = yaw; this.follow.pitch = pitch; this.follow.dist = dist;
+    };
+    (window as any).__shoreClipDisable = () => {
+      this._shoreClipDisabled = true;
+      if (this.hy3dTerrainGroup) {
+        const kids = this.hy3dTerrainGroup.children;
+        for (let j = kids.length - 1; j >= 0; j--) {
+          if ((kids[j] as any).userData && (kids[j] as any).userData['lakeBottomFix']) {
+            this.hy3dTerrainGroup.remove(kids[j]);
+          }
+        }
+      }
+      this._shoreClipFixAdded = false;
     };
     (window as any).__petSceneInfo = () => {
       let chunkMeshes = 0, treeGroups = 0, totalVerts = 0;
@@ -821,7 +853,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         if (n.startsWith('tree_') || (o as any).type === 'Group') treeGroups++;
       });
       return {
-        bg: (this.scene.background as THREE.Color).getHexString(),
+        bg: this.scene.background instanceof THREE.Color ? '#' + (this.scene.background as THREE.Color).getHexString() : (this.scene.background === this.starTexture ? 'startex' : 'tex'),
         exposure: this.renderer.toneMappingExposure,
         sunIntensity: this.sunLight.intensity,
         blend: this.dayNightBlend,
@@ -829,6 +861,21 @@ export class World3dComponent implements OnInit, OnDestroy {
         sampleBoxes: boxes.slice(0, 4),
         player: { px: this.px.toFixed(1), py: this.py.toFixed(1), pz: this.pz.toFixed(1) },
         sceneChildren: this.scene.children.length
+      };
+    };
+    // 星空诊断（E2E 用，无害）：确认星空底图 + Points 分布已消除地平环弧线
+    (window as any).__starDiag = () => {
+      const g = this.starField?.geometry as THREE.BufferGeometry | undefined;
+      const pos = g ? (g.attributes['position'] as THREE.BufferAttribute) : undefined;
+      let minY = Infinity;
+      if (pos) { for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); if (y < minY) minY = y; } }
+      return {
+        hasStarTexture: !!this.starTexture,
+        bgIsStarTexture: this.scene?.background === this.starTexture,
+        pointsCount: pos ? pos.count : 0,
+        pointsMinY: isFinite(minY) ? +minY.toFixed(1) : null,
+        starOpacity: this.starMaterial?.uniforms?.['uOpacity']?.value ?? null,
+        blend: +this.dayNightBlend.toFixed(3)
       };
     };
     // 首次进入触发新手引导（localStorage 去重）
@@ -1088,7 +1135,7 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   // ================= 天空装饰（星星 + 云朵） =================
 
-  /** 创建星空粒子球：~1800 颗星分布在半径 R 的球壳上，用 ShaderMaterial 控制闪烁 + 昼夜淡入淡出 */
+  /** 创建星空粒子球：~1500 颗星（压缩到上半球上 1/3 cap）做头顶闪烁叠加；夜晚另有 CanvasTexture 底图 */
   private createStarField(): void {
     const COUNT = World3dComponent.STAR_COUNT;
     const R = 900; // 星空球半径（远大于视距，跟随相机无需移动）
@@ -1097,16 +1144,19 @@ export class World3dComponent implements OnInit, OnDestroy {
     const phases = new Float32Array(COUNT);     // 闪烁相位（随机偏移）
     const twinkleSpeeds = new Float32Array(COUNT); // 闪烁速度
 
+    // 生成夜晚星空底图（CanvasTexture），作为夜晚 scene.background 显示
+    this.starTexture = this.makeStarTexture();
+    // Points 层：压缩到上半球「上 1/3 cap」，最低星距地平线 ≥ 20°，彻底消除地平环弧线
+    const MAX_PHI = Math.PI / 2 - (20 * Math.PI / 180); // 距天顶最大 70° → 距地平线 ≥ 20°
+    const cosMax = Math.cos(MAX_PHI);
     for (let i = 0; i < COUNT; i++) {
-      // 均匀分布球面（避免极地密集：用 sqrt 校正）
       const u = Math.random();
       const v = Math.random();
       const theta = 2 * Math.PI * u;
-      const phi = Math.acos(2 * v - 1);
-      // 只在上半球（略过地平线下方）
-      const phiTop = Math.min(phi, Math.PI / 2 - 0.05);
+      // 均匀面积分布，phiTop ∈ [0, MAX_PHI]（保证最低星 ≥ 20° 高于地平线）
+      const phiTop = Math.acos(1 - u * (1 - cosMax));
       positions[i * 3] = R * Math.sin(phiTop) * Math.cos(theta);
-      positions[i * 3 + 1] = Math.max(R * Math.cos(phiTop), 30); // 确保高度 > 0
+      positions[i * 3 + 1] = R * Math.cos(phiTop);   // 不再贴地平线（min ≈ R*cos(70°) ≈ 307）
       positions[i * 3 + 2] = R * Math.sin(phiTop) * Math.sin(theta);
       sizes[i] = 1.5 + Math.random() * 3.5;       // 大小变化
       phases[i] = Math.random() * Math.PI * 2;      // 随机初始相位
@@ -1161,6 +1211,37 @@ export class World3dComponent implements OnInit, OnDestroy {
     this.starField = new THREE.Points(geo, this.starMaterial);
     this.starField.renderOrder = -999; // 最先渲染（背景层）
     this.scene.add(this.starField);
+  }
+
+  /** 生成夜晚星空底图：canvas 2048×1024 画 ~3000 颗随机白点，作为夜晚 scene.background */
+  private makeStarTexture(): THREE.CanvasTexture {
+    const cw = 2048, ch = 1024;
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+    // 夜空底色：顶深底略亮的深蓝渐变（模拟地平线辉光）
+    const grad = ctx.createLinearGradient(0, 0, 0, ch);
+    grad.addColorStop(0, '#03060f');
+    grad.addColorStop(0.72, '#0a1330');
+    grad.addColorStop(1, '#142249');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, cw, ch);
+    // ~3000 颗随机白点：位置随机、大小 0.5~2.5px、亮度 0.3~1.0
+    const N = 3000;
+    for (let i = 0; i < N; i++) {
+      const x = Math.random() * cw;
+      const y = Math.random() * ch;
+      const r = 0.5 + Math.random() * 2.0;       // 0.5 ~ 2.5 px
+      const b = 0.3 + Math.random() * 0.7;       // 0.3 ~ 1.0 亮度
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${b.toFixed(3)})`;
+      ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.encoding = THREE.sRGBEncoding; // three 0.128：sRGB 编码（对应规格的 sRGB encoding）
+    tex.needsUpdate = true;
+    return tex;
   }
 
   /** 创建程序化云朵：12 朵云由多个球体簇组成，漂浮在天空 Y=120~180 */
@@ -1271,7 +1352,9 @@ export class World3dComponent implements OnInit, OnDestroy {
     const t = this.dayNightBlend;
 
     if (this.scene) {
-      (this.scene.background as THREE.Color).copy(this.skyNight).lerp(this.skyDay, t);
+      this.skyColor.copy(this.skyNight).lerp(this.skyDay, t);
+      // 夜晚（t < 0.5）用星空 CanvasTexture 作背景底图；白天保持天空色不变
+      this.scene.background = (t < 0.5 && this.starTexture) ? this.starTexture : this.skyColor;
       if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(this.fogNight).lerp(this.fogDay, t);
     }
     if (this.sunLight) {
@@ -1291,6 +1374,7 @@ export class World3dComponent implements OnInit, OnDestroy {
   private animate(): void {
     if (this.disposed) return;
     this.rafId = requestAnimationFrame(() => this.animate());
+    (window as any).__worldFrame = ((window as any).__worldFrame || 0) + 1; // E2E 帧号（headless/swiftshader 确定性等待用）
     let __bizErr: any = null;
     try {
 
@@ -1949,6 +2033,19 @@ export class World3dComponent implements OnInit, OnDestroy {
     if (this.disposed) return;
     this._dbgTick++;
     if ((this._dbgTick & 7) !== 0) return; // 每 8 帧刷新一次（降开销）
+    // 🔴 SHORE-CLIP：计算湖岛实例世界包围盒 y.min（诊断根因：是否低于水面）
+    if (this.hy3dTerrainGroup) {
+      let found: number | null = null;
+      for (const ch of this.hy3dTerrainGroup.children) {
+        const ud = (ch as any).userData;
+        if (ud && ud['isLake'] && ud['islandIdx'] != null) {
+          const box = new THREE.Box3().setFromObject(ch);
+          found = box.min.y;
+          break;
+        }
+      }
+      this._lakeIslandBoxYMin = found;
+    }
     const wl = this.config?.waterLevel ?? -5;
     const sample = (x: number, z: number) => {
       const gx = Math.floor(x), gz = Math.floor(z);
@@ -2069,7 +2166,7 @@ export class World3dComponent implements OnInit, OnDestroy {
         fov: this.camera.fov, near: this.camera.near, far: this.camera.far
       },
       scene: {
-        bg: this.scene.background ? ('#' + (this.scene.background as any).color?.getHexString?.() || String(this.scene.background)) : 'none',
+        bg: this.scene.background instanceof THREE.Color ? '#' + this.scene.background.getHexString() : (this.scene.background === this.starTexture ? 'startex' : 'tex'),
         fog: !!this.scene.fog,
         childCount: this.scene.children.length
       },
@@ -2126,6 +2223,21 @@ export class World3dComponent implements OnInit, OnDestroy {
         const lx = gx - cc.cx * CHUNK, lz = gz - cc.cz * CHUNK;
         if (lx < 0 || lz < 0 || lx >= CHUNK || lz >= CHUNK) return -1;
         return g.semantic[lz * CHUNK + lx];
+      },
+      // 🔴🔴 SHORE-CLIP 诊断（2026-08-18 湖岛岸边穿模黑坑修复）：
+      //   waterPlaneY = waterLevel - 0.08（全局半透明水面位置）
+      //   lakeBasinYMin = 湖岛实例世界包围盒 y.min；若 < waterPlaneY → 湖盆低于水面、透出星空 → 黑坑根因
+      //   shoreClipFixAdded = 是否已为湖岛添加不透明湖底盘（验证断言）
+      shoreClip: {
+        waterLevel: this.config?.waterLevel ?? -5,
+        waterPlaneY: (this.config?.waterLevel ?? -5) - 0.08,
+        lakeBasinYMin: this._lakeIslandBoxYMin,
+        lakeBasinVsWater: (this._lakeIslandBoxYMin != null) ? +(this._lakeIslandBoxYMin - ((this.config?.waterLevel ?? -5) - 0.08)).toFixed(3) : null,
+        lakeFloorYMin: this._lakeFloorYMinWorld,
+        lakeFloorVsWater: (this._lakeFloorYMinWorld != null) ? +(this._lakeFloorYMinWorld - ((this.config?.waterLevel ?? -5) - 0.08)).toFixed(3) : null,
+        lakeVariantLoaded: !!this._lakeVariantTpl,
+        lakeIsland: this._lakeIslandInfo,
+        shoreClipFixAdded: this._shoreClipFixAdded
       },
       isObstacle: (gx: number, gz: number) => this.isObstacle(gx, gz)
     };
@@ -2622,6 +2734,10 @@ export class World3dComponent implements OnInit, OnDestroy {
       fragmentShader,
       uniforms: this.waterUniforms,
       transparent: true,
+      // 🔴🔴 治本修复：水面为半透明覆盖层，关闭深度写入后，凡是与地形/岛基在 waterLevel
+      // 附近共面的位置，均由先绘制的不透明地形稳定胜出（深度测试），水面仅在无地形处显示，
+      // 彻底消除「水面 vs 地形/岛基」的 z-fighting 闪烁（原 depthWrite 默认 true → 共面深度竞争→一闪一闪）。
+      depthWrite: false,
       side: THREE.DoubleSide,
       fog: false,
     });
@@ -3039,7 +3155,11 @@ export class World3dComponent implements OnInit, OnDestroy {
       'assets/3d_build/terrain-hy3d/hy3_island_peninsula_draco.glb',
       'assets/3d_build/terrain-hy3d/hy3_island_mountain_draco.glb',
     ];
-    Promise.all(variantPaths.map(p => this.assets.loadModel(p)))
+    Promise.all(variantPaths.map(async (p) => {
+      const g = await this.assets.loadModel(p);
+      if (g) (g as any).userData['variantPath'] = p; // 🔴 SHORE-CLIP：标记变体路径，便于识别 lake 变体
+      return g;
+    }))
       .then((templates: (THREE.Group | null)[]) => {
         const valid = templates.filter((t): t is THREE.Group => !!t);
         if (valid.length === 0 || this.disposed) return;
@@ -3051,6 +3171,10 @@ export class World3dComponent implements OnInit, OnDestroy {
           const sy = box.max.y - box.min.y;
           return { radius: Math.max(sx, sz) / 2, baseY: box.min.y, height: sy };
         });
+        // 🔴 SHORE-CLIP：识别 lake 变体模板 + 计算湖盆指标（半径 / 盆底最低 Y）
+        const lakePath = variantPaths[1]; // hy3_island_lake_draco.glb
+        this._lakeVariantTpl = valid.find(t => (t.userData as any)?.variantPath === lakePath) ?? null;
+        if (this._lakeVariantTpl) this.computeLakeBasinMetrics(this._lakeVariantTpl);
         this._hy3dTemplates = valid;
         this._hy3dLoaded = true;
         // 创建空 Group（后续动态添加岛屿实例）
@@ -3066,6 +3190,48 @@ export class World3dComponent implements OnInit, OnDestroy {
         dbg.hy3dLOD = 'radius=' + this.ISLAND_LOD_RADIUS + 'm';
       })
       .catch(err => console.warn('[hy3d-terrain] 加载失败', err));
+  }
+
+  /** 🔴 SHORE-CLIP 诊断：计算湖岛模板的湖盆指标（仅中央区域，排除外缘裙边）
+   *  - _lakeBasinRadiusLocal：湖盆（下半部）水平半径（模板局部空间），LOD 实例化时 ×horizScale 得世界半径
+   *  - _lakeLocalMinY：湖盆底（中央）最低顶点局部 Y（诊断：与 waterLevel-0.08 比较，验证"湖盆低于水面"假设） */
+  private computeLakeBasinMetrics(lakeTpl: THREE.Group): void {
+    lakeTpl.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(lakeTpl);
+    const tcx = (box.min.x + box.max.x) / 2;
+    const tcz = (box.min.z + box.max.z) / 2;
+    const tRadius = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+    const centralR = tRadius * 0.6; // 仅中央 60% 半径 = 湖盆+内岸，排除外缘裙边
+    let minYall = Infinity, maxYall = -Infinity;
+    lakeTpl.traverse(o => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const pos = o.geometry.getAttribute('position');
+      if (!pos) return;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(o.matrixWorld);
+        if (v.y < minYall) minYall = v.y;
+        if (v.y > maxYall) maxYall = v.y;
+      }
+    });
+    if (!isFinite(minYall)) return;
+    const lowerThr = minYall + (maxYall - minYall) * 0.5; // 下半部阈值
+    let basinMinY = Infinity, basinR = 0;
+    lakeTpl.traverse(o => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const pos = o.geometry.getAttribute('position');
+      if (!pos) return;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(o.matrixWorld);
+        const r = Math.hypot(v.x - tcx, v.z - tcz);
+        if (r > centralR) continue;            // 仅中央湖盆区域
+        if (v.y < basinMinY) basinMinY = v.y;   // 湖盆底最低 Y（局部）
+        if (v.y < lowerThr && r > basinR) basinR = r; // 下半部最大水平半径 = 湖盆半径
+      }
+    });
+    this._lakeLocalMinY = isFinite(basinMinY) ? basinMinY : minYall;
+    this._lakeBasinRadiusLocal = basinR;
   }
 
   /** 🔴🔴 动态岛屿 LOD：根据玩家位置增删岛屿实例（100m 内显示，130m 外隐藏）
@@ -3091,7 +3257,13 @@ export class World3dComponent implements OnInit, OnDestroy {
         const horizScale = (c.r * 1.1) / m.radius;
         const vertScale = horizScale * 0.35;
         inst.scale.set(horizScale, vertScale, horizScale);
-        const groundH = this.heightAt(c.cx, c.cz) ?? 0;
+        // 🔴 修复湖岛沉水（2026-08-18）：heightAt 读服务端原始高度，水域格可能是深水（如 -13），
+        //   但 chunk 渲染时水域格被钳到 waterLevel（-2）。若用原始高度放岛，chunk 加载前后 groundH
+        //   从 0（undefined 兜底）跳到 -13（深水海底），湖岛上下跳 13 米沉水、岸边穿模。
+        //   钳到至少 waterLevel：陆地岛用真实高度、水域岛稳定浮在水面，不依赖 chunk 加载时序。
+        const wlIsland = this.config?.waterLevel ?? -5;
+        const rawGround = this.heightAt(c.cx, c.cz);
+        const groundH = (rawGround != null && Number.isFinite(rawGround) && rawGround > wlIsland) ? rawGround : wlIsland;
         inst.position.set(c.cx, groundH - m.baseY * vertScale, c.cz);
         inst.rotation.y = (i * 2.39996) % (Math.PI * 2);
         inst.traverse(o => { o.userData['shared'] = true; });
@@ -3099,14 +3271,36 @@ export class World3dComponent implements OnInit, OnDestroy {
         // 🔴🔴 隐藏 HY3D 岛屿模型自带的水面 mesh（避免与着色器水面双层叠加 + 颜色冲突）
         this.hideHy3dWaterMeshes(inst);
         this.hy3dTerrainGroup.add(inst);
+        // 🔴🔴 SHORE-CLIP（2026-08-18 湖岛岸边穿模黑坑修复 · 方案 A）：湖岛(lake 变体)加不透明湖底盘
+        //   全局水面为半透明+depthWrite:false；若湖盆/湖岸某处缺不透明几何，半透明水面下会透出
+        //   scene.background（星空）→ 黑坑+星点。湖底盘 y=wl-0.09（水面之下），depthWrite:true，
+        //   提供不透明背衬阻断"透出星空"。不动 createWaterPlane 的 transparent/depthWrite，不碰 GLB/后端/camera。
+        if (tpl === this._lakeVariantTpl && !this._shoreClipDisabled && this._lakeVariantTpl) {
+          const wl = this.config?.waterLevel ?? -5;
+          const lakeWorldR = Math.max(Math.min(this._lakeBasinRadiusLocal * horizScale * 1.1, c.r * 0.85), c.r * 0.5);
+          const disk = new THREE.Mesh(
+            new THREE.CircleGeometry(Math.max(lakeWorldR, 1), 48),
+            new THREE.MeshBasicMaterial({ color: 0x5a6e3a, depthWrite: true, transparent: false, side: THREE.DoubleSide, fog: true })
+          );
+          disk.rotation.x = -Math.PI / 2;
+          disk.position.set(c.cx, wl - 0.09, c.cz);
+          disk.name = 'shore_clip_lake_bottom';
+          disk.userData['islandIdx'] = i;
+          disk.userData['lakeBottomFix'] = true;
+          this.hy3dTerrainGroup.add(disk);
+          this._shoreClipFixAdded = true;
+          // 诊断：记录玩家所在湖岛中心 + 湖盆底（中央）世界最低 Y
+          this._lakeIslandInfo = { x: c.cx, z: c.cz, r: c.r };
+          this._lakeFloorYMinWorld = groundH + (this._lakeLocalMinY - m.baseY) * (horizScale * 0.35);
+          inst.userData['isLake'] = true; // 供 publishWorldDebug 计算湖岛实例世界包围盒 y.min
+        }
         this._activeIslands.add(i);
       } else if (dist2 > unloadR2 && isActive) {
-        // 超出卸载缓冲 → 从场景移除
+        // 超出卸载缓冲 → 从场景移除（🔴 去掉 break：inst + 湖底盘 两个子节点都要删，否则湖底盘泄漏）
         const children = this.hy3dTerrainGroup.children;
         for (let j = children.length - 1; j >= 0; j--) {
           if ((children[j] as any).userData['islandIdx'] === i) {
             this.hy3dTerrainGroup.remove(children[j]);
-            break;
           }
         }
         this._activeIslands.delete(i);
@@ -4434,6 +4628,13 @@ export class World3dComponent implements OnInit, OnDestroy {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    // 🔴 2026-08-18：输入框/textarea/contentEditable 有焦点时，让输入框处理按键（打字/回车发送），
+    //   游戏不抢。capture 阶段直接 return（未 stopPropagation），事件继续传到 target 输入框，
+    //   实现"聊天开着 → WASD 当文字输入、游戏不动"。避免出现"按 W 却跑去聊天当字、玩家不动"。
+    const ae = document.activeElement as HTMLElement | null;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || (ae as any).isContentEditable)) {
+      return;
+    }
     this.keys[e.code] = true;
     const code = e.code ?? '';
     // H 键开关操作帮助面板（成熟竞品标配：不必逐个试功能）

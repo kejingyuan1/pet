@@ -7,6 +7,23 @@ import { StateService } from '../../services/state.service';
 import { HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS, RANCH_BABIES, RANCH_EGGS, EGG_LAYERS, EGG_COINS } from '../../models';
 
 /**
+ * 单个动物的行为状态：栅栏内随机游走 + 走路/低头吃草
+ * 关键事实：HY3D 导出的动物 GLB（hy3_xxx_draco.glb）只有 1 个 node + 1 个 mesh 且不含 animation clip，
+ * 因此走/吃无法用 AnimationMixer 播放，只能由代码程序化驱动：游走 + 身体 bob + 俯仰吃草。
+ */
+interface AnimalState {
+  pivot: THREE.Group;          // 动物所在的 Group（fitModel 后底部贴 y=0）
+  code: string;                // 动物 code（cat/dog/chicken/duck/cow/sheep/fish）—— 鱼走「悬浮漂移」特殊处理
+  targetX: number;             // 当前游走目标 x（栅栏内，盘面 r≤3.4，避开房屋与幼崽/蛋区）
+  targetZ: number;             // 当前游走目标 z
+  speed: number;               // 移动速度（u/s）
+  phase: number;               // 随机相位，避免 7 只动物同步 bob/sway
+  baseY: number;               // 基础 y：陆生动物 0；鱼 0.35（悬浮，避开地面穿插）
+  busyUntil: number;           // 忙到何时（秒）：吃草/闲歇期间不移动
+  isEating: boolean;           // busy 期间是「吃草（前倾）」还是「闲歇（站立）」
+}
+
+/**
  * 牧场（3D 展厅 + 动物商店 + 房屋中心）
  *
  * 设计要点（第一性原理）：
@@ -140,6 +157,19 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
   private housePivot: THREE.Group | null = null;
   private resizeObs?: ResizeObserver;
   private loadToken = 0;   // 展厅加载代次：使在途的异步 loadShowroom 过期，避免连续购买时重复叠加模型
+  /** 动物行为状态：每个动物 pivot 配一个 AnimalState，用于栅栏内游走 + 走路/吃草 */
+  private animalStates: AnimalState[] = [];
+  /** 环境（天空贴图 / 草地 / 围栏 / 草簇）共享的 geometry/material/texture，组件销毁时统一 dispose 避免 GPU 泄漏 */
+  /** 环境共享资源（草地/围栏/天空/云 一次性创建，离开牧场统一 dispose） */
+  private envDisposables: { dispose(): void }[] = [];
+  /** 天空云朵 Mesh 列表（animate 里慢漂移，让画面更"活"）；用 PlaneGeometry billboard 面向相机 */
+  private cloudSprites: THREE.Mesh[] = [];
+  private cloudBaseX: number[] = [];
+  private cloudSpeed: number[] = [];
+  /** 上一帧时间（秒），用于 animate 计算 dt */
+  private lastT = 0;
+  /** 帧计数：每 ~30 帧（≈0.5s）发布一次 __ranchDebug，给 E2E/调试实时读位姿用 */
+  private dbgFrame = 0;
 
   constructor(public state: StateService, private asset: AssetService) {}
 
@@ -162,7 +192,9 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 200);
     this.camera.position.set(0, 5.2, 13);
-    this.camera.lookAt(0, 1.2, 0);
+    // lookAt(0,2.6,0) 而不是 (0,1.2,0)：原值仰角太小，fov=45° 下 z=-15 处视野上沿只到 y≈7.5，
+    // 云朵放在 y≥9 会被裁掉；抬高 look-at 后上沿到 y≈10，给远景天空留出可见带
+    this.camera.lookAt(0, 2.6, 0);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -179,17 +211,191 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     const amb = new THREE.AmbientLight(0xffffff, 0.35);
     this.scene.add(amb);
 
-    // 地面圆盘（淡绿草地）
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(11, 48),
-      new THREE.MeshStandardMaterial({ color: 0x9bd37a, roughness: 1 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.01;
-    this.scene.add(ground);
+    // 环境：天空 + 双层草地（外圈 meadow / 内圈 paddock）+ 木围栏 + 草簇装饰
+    this.buildEnvironment();
 
     this.resizeObs = new ResizeObserver(() => this.onResize());
     this.resizeObs.observe(host);
+  }
+
+  // ================= 环境（天空 / 草地 / 围栏 / 草簇） =================
+  /**
+   * 搭建围栏圈起的草地 + 渐变天空
+   * 关键事实：HY3D 导出的 7 个动物 GLB 全部是 1 node + 1 mesh + 0 animation clip（实测 gltf.animations=[]），
+   * 因此"走路/吃草"无法用 AnimationMixer 播放，本组件改为程序化驱动（见 updateAnimal / pickTarget）。
+   */
+  private buildEnvironment(): void {
+    if (!this.scene) return;
+
+    // 1) 天空：Canvas 渐变贴图作为 scene.background（替换之前粗糙的 CSS 蓝渐变）
+    const skyTex = this.makeSkyTexture();
+    this.scene.background = skyTex;
+    this.envDisposables.push(skyTex);
+
+    // 2) 外圈大草地（meadow）
+    const outerGeo = new THREE.CircleGeometry(12, 64);
+    const outerMat = new THREE.MeshStandardMaterial({ color: 0x9bd37a, roughness: 0.95 });
+    const outer = new THREE.Mesh(outerGeo, outerMat);
+    outer.rotation.x = -Math.PI / 2;
+    outer.position.y = -0.02;
+    this.scene.add(outer);
+    this.envDisposables.push(outerGeo, outerMat);
+
+    // 3) 围栏内 paddock（更深、更饱和的草绿，替换"光秃白地板"的单色圆盘）
+    const paddockGeo = new THREE.CircleGeometry(4.85, 48);
+    const paddockMat = new THREE.MeshStandardMaterial({ color: 0x6BBF59, roughness: 0.9 });
+    const paddock = new THREE.Mesh(paddockGeo, paddockMat);
+    paddock.rotation.x = -Math.PI / 2;
+    paddock.position.y = 0;
+    this.scene.add(paddock);
+    this.envDisposables.push(paddockGeo, paddockMat);
+
+    // 4) 木围栏：2 圈横栏（torus 旋转到 XZ 平面）+ 32 根立柱
+    this.buildFence(4.9);
+
+    // 5) 草簇装饰：~30 根小锥体（4 面），70% 撒在 paddock 内，30% 撒在外圈 meadow
+    this.buildGrassTufts(4.75, 30);
+
+    // 6) 云朵：4 朵 Sprite 浮在空中，慢漂移——让"蓝渐变"天空不再显得"过于粗糙"
+    this.buildClouds(4);
+  }
+
+/**
+ * 云朵：canvas 画 3 个白色椭圆合成 puff，返回透明 CanvasTexture；
+ * 用 PlaneGeometry + MeshBasicMaterial（共享几何/贴图，各 mesh 独立 material）做 sky billboard。
+ * 位置放在「可见远景天空带」 y∈[5.5,9]，z∈[-20,-8]——位置由 camera.lookAt=2.6 + fov=45° 决定，
+ * 必须落在 z=-15 处的视野上沿 y≈10 以下才不会被裁掉。
+ */
+private buildClouds(count: number): void {
+  if (!this.scene) return;
+  const tex = this.makeCloudTexture();
+  this.envDisposables.push(tex);
+  const geo = new THREE.PlaneGeometry(4, 2.2);
+  this.envDisposables.push(geo);
+  for (let i = 0; i < count; i++) {
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0.95
+    });
+    this.envDisposables.push(mat);
+    const m = new THREE.Mesh(geo, mat);
+    const x = (Math.random() - 0.5) * 32;
+    const y = 5.5 + Math.random() * 3.5;
+    const z = -20 + Math.random() * 12;
+    m.position.set(x, y, z);
+    const sc = 0.9 + Math.random() * 0.6;
+    m.scale.set(sc, sc * 0.6, 1);
+    this.scene.add(m);
+    this.cloudSprites.push(m);
+    this.cloudBaseX.push(x);
+    this.cloudSpeed.push(0.12 + Math.random() * 0.18);
+  }
+}
+
+  /**
+   * 云朵贴图：透明底上画 3 个白色椭圆（soft alpha），合成一朵蓬松云
+   * 128x64 拉伸到 sprite 上是 3~5 单位宽，足够装饰天空又不会喧宾夺主
+   */
+  private makeCloudTexture(): THREE.Texture {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 64;
+    const g = c.getContext('2d')!;
+    g.clearRect(0, 0, 128, 64);
+    const puffs = [
+      { x: 38, y: 38, r: 22 },
+      { x: 64, y: 28, r: 28 },
+      { x: 92, y: 40, r: 24 }
+    ];
+    for (const p of puffs) {
+      const grd = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+      grd.addColorStop(0.00, 'rgba(255,255,255,0.95)');
+      grd.addColorStop(0.55, 'rgba(255,255,255,0.55)');
+      grd.addColorStop(1.00, 'rgba(255,255,255,0.00)');
+      g.fillStyle = grd;
+      g.beginPath();
+      g.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      g.fill();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    try { (tex as any).encoding = (THREE as any).sRGBEncoding; } catch { /* r152+ 忽略 */ }
+    return tex;
+  }
+
+  /**
+   * 木围栏：radius 处一圈 2 道横栏（torus）+ N 根立柱
+   * torus 默认在 XY 平面，绕 X 转 90° 后平放成水平环
+   */
+  private buildFence(r: number): void {
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x8B5A2B, roughness: 0.85 });
+    const railGeo = new THREE.TorusGeometry(r, 0.045, 6, 64);
+    const postGeo = new THREE.CylinderGeometry(0.07, 0.085, 0.62, 6);
+
+    // 上、下两道横栏（y=0.18 / y=0.5）
+    for (const y of [0.18, 0.5]) {
+      const rail = new THREE.Mesh(railGeo, woodMat);
+      rail.rotation.x = Math.PI / 2;
+      rail.position.y = y;
+      this.scene!.add(rail);
+    }
+    // 立柱（每 ~0.2 弧度一根 → 32 根），柱高 0.62，中心 y=0.31
+    const N = 32;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const post = new THREE.Mesh(postGeo, woodMat);
+      post.position.set(Math.sin(a) * r, 0.31, Math.cos(a) * r);
+      this.scene!.add(post);
+    }
+    this.envDisposables.push(railGeo, postGeo, woodMat);
+  }
+
+  /**
+   * 草簇：4 面小锥体（高 0.2，底径 0.18），分内外两块撒
+   * 70% 落在 paddock 内（r<rMax），30% 落在外圈 meadow（rMax<r<11）
+   * 跳过房屋周围 1.6 单位，避免戳进房子
+   */
+  private buildGrassTufts(rMax: number, count: number): void {
+    const tuftMat = new THREE.MeshStandardMaterial({ color: 0x4F9A3F, roughness: 1 });
+    const tuftGeo = new THREE.ConeGeometry(0.09, 0.2, 4);
+    const outerMax = 11;
+    const insideCount = Math.round(count * 0.7);
+    for (let i = 0; i < count; i++) {
+      const inside = i < insideCount;
+      let x = 0, z = 0, ok = false;
+      for (let t = 0; t < 6; t++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = inside
+          ? Math.random() * rMax * 0.96
+          : (rMax + 0.3 + Math.random() * (outerMax - rMax - 0.3));
+        x = Math.sin(a) * r;
+        z = Math.cos(a) * r;
+        if (Math.hypot(x, z + 3.6) > 1.6) { ok = true; break; }
+      }
+      if (!ok) continue;
+      const m = new THREE.Mesh(tuftGeo, tuftMat);
+      m.position.set(x, 0.1, z);
+      m.rotation.y = Math.random() * Math.PI;
+      this.scene!.add(m);
+    }
+    this.envDisposables.push(tuftGeo, tuftMat);
+  }
+
+  /**
+   * 渐变天空贴图：顶深天蓝 → 中浅蓝 → 接近地平线偏暖白
+   * 16x256 的窄条即可（scene.background 拉伸铺满），用 CanvasTexture 避免外部资源依赖
+   */
+  private makeSkyTexture(): THREE.Texture {
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 256;
+    const g = c.getContext('2d')!;
+    const grd = g.createLinearGradient(0, 0, 0, 256);
+    grd.addColorStop(0.00, '#4A8FD0');  // 顶部天蓝
+    grd.addColorStop(0.40, '#7EC0E8');  // 中部浅蓝
+    grd.addColorStop(0.80, '#BDE0F0');  // 地平线上方淡蓝
+    grd.addColorStop(1.00, '#E8F2EA');  // 地平线偏暖白
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 16, 256);
+    const tex = new THREE.CanvasTexture(c);
+    try { (tex as any).encoding = (THREE as any).sRGBEncoding; } catch { /* r152+ 忽略 */ }
+    return tex;
   }
 
   private onResize(): void {
@@ -228,16 +434,16 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
         if (g) {
           this.fitModel(g, 3.6);
           const pivot = new THREE.Group();
-          pivot.position.set(0, 0, -4.8);
+          pivot.position.set(0, 0, -3.6);
           pivot.add(g);
           this.scene.add(pivot);
           this.housePivot = pivot;
         }
       }
-      // 7 个动物：始终展示，便于检查模型是否可用
+      // 7 个动物：初始分布在围栏内（盘面 r≤3.3），随即由 updateAnimal 接管随机游走
       const pos = [
-        { x: -3.3, z: 1.6 }, { x: -1.1, z: 1.6 }, { x: 1.1, z: 1.6 }, { x: 3.3, z: 1.6 },
-        { x: -2.2, z: -1.4 }, { x: 0, z: -1.4 }, { x: 2.2, z: -1.4 }
+        { x: -2.8, z: 1.0 }, { x: -0.95, z: 1.2 }, { x: 0.95, z: 1.2 }, { x: 2.8, z: 1.0 },
+        { x: -2.0, z: -0.9 }, { x: 0, z: -0.9 }, { x: 2.0, z: -0.9 }
       ];
       for (let i = 0; i < RANCH_ANIMALS.length; i++) {
         const a = RANCH_ANIMALS[i];
@@ -247,14 +453,33 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
           this.fitModel(g, 1.7);
           const pivot = new THREE.Group();
           pivot.position.set(pos[i].x, 0, pos[i].z);
+          // YXZ：先转 Y（朝向），再 pitch X（低头吃草），z 用于走路 sway；保证「低头」是沿身体前方俯仰
+          pivot.rotation.order = 'YXZ';
           pivot.add(g);
           this.scene.add(pivot);
           this.animalPivots.push(pivot);
+
+          // 行为状态：鱼走「悬浮漂移」（baseY=0.4 + 较慢速度），陆生动物贴地游走
+          const isFish = a.code === 'fish';
+          const state: AnimalState = {
+            pivot,
+            code: a.code,
+            targetX: pos[i].x,
+            targetZ: pos[i].z,
+            speed: isFish ? 0.5 : 0.9 + Math.random() * 0.6,
+            phase: Math.random() * Math.PI * 2,
+            baseY: isFish ? 0.4 : 0,
+            busyUntil: 0,
+            isEating: false
+          };
+          this.pickTarget(state);
+          this.animalStates.push(state);
         }
       }
       // 🔴 幼崽区：拥有对应成年动物才展示其幼崽（lifecycle 模型接入游戏）
+      // 位置放在 paddock 前排（z≈2.9..3.0），避开游走区（z<2.3）和围栏（r=4.85）
       const owned = this.state.state.ranch.ownedAnimals;
-      const babySpots = [{ x: -2.6, z: 4.0 }, { x: -0.9, z: 4.0 }, { x: 0.9, z: 4.0 }, { x: 2.6, z: 4.0 }];
+      const babySpots = [{ x: -2.2, z: 2.9 }, { x: -0.75, z: 3.0 }, { x: 0.75, z: 3.0 }, { x: 2.2, z: 2.9 }];
       let bi = 0;
       for (const code of owned) {
         const babyPath = RANCH_BABIES[code];
@@ -272,7 +497,8 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
         }
       }
       // 🔴 产蛋区：拥有下蛋动物在其「巢位」展示蛋模型（lifecycle 蛋模型接入游戏）
-      const eggSpots = [{ x: -4.6, z: 2.4 }, { x: -3.7, z: 3.0 }, { x: -2.8, z: 3.6 }];
+      // 放在 paddock 左前侧（z=2.5..3.3），避开游走区（z<2.3），全部在围栏内（r<4.1）
+      const eggSpots = [{ x: -3.3, z: 2.5 }, { x: -2.9, z: 2.9 }, { x: -2.5, z: 3.3 }];
       let ei = 0;
       for (const code of owned) {
         const eggPath = RANCH_EGGS[code];
@@ -293,7 +519,7 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     this.publishDebug();
   }
 
-  /** 暴露给 E2E/调试：展厅里已加载的幼崽/蛋数量与场景节点数 */
+  /** 暴露给 E2E/调试：展厅里已加载的幼崽/蛋数量与场景节点数 + 每只动物的实时位姿（用于确认「在栅栏里走动」） */
   private publishDebug(): void {
     (window as any).__ranchDebug = {
       babyCount: this.babyPivots.length,
@@ -301,7 +527,20 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
       animalCount: this.animalPivots.length,
       sceneChildren: this.scene ? this.scene.children.length : 0,
       availableEggs: this.state.availableEggs(),
-      coins: this.state.state.coins
+      coins: this.state.state.coins,
+      // 每只动物：code + 位置（x/z/y，保留 2 位小数）+ 偏航/俯仰 + 是否忙（吃草/闲歇）
+      animals: this.animalStates.map(s => ({
+        code: s.code,
+        x: +s.pivot.position.x.toFixed(2),
+        z: +s.pivot.position.z.toFixed(2),
+        y: +s.pivot.position.y.toFixed(2),
+        ry: +s.pivot.rotation.y.toFixed(2),
+        rx: +s.pivot.rotation.x.toFixed(2),
+        eating: s.isEating,
+        busy: s.busyUntil > performance.now() / 1000
+      })),
+      fenceRadius: 4.85,
+      ts: performance.now() | 0
     };
   }
 
@@ -323,6 +562,7 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     };
     this.animalPivots.forEach(remove);
     this.animalPivots = [];
+    this.animalStates = [];   // 行为状态随 pivot 一同清空
     this.babyPivots.forEach(remove);
     this.babyPivots = [];
     this.eggPivots.forEach(remove);
@@ -334,8 +574,41 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
   private animate = (): void => {
     this.rafId = requestAnimationFrame(this.animate);
     const t = performance.now() * 0.001;
-    this.animalPivots.forEach((p, i) => { p.rotation.y = t * 0.5 + i * 0.9; });
+    const dt = Math.min(0.05, this.lastT ? t - this.lastT : 0.016);
+    this.lastT = t;
+    // 7 只动物：程序化游走 + 走路/吃草（HY3D GLB 无 animation clip，故代码驱动；详见 buildEnvironment 注释）
+    this.animalStates.forEach(s => this.updateAnimal(s, t, dt));
+    // 房屋：保持轻微左右摇摆
     if (this.housePivot) this.housePivot.rotation.y = Math.sin(t * 0.2) * 0.15;
+    // 云朵慢漂移：到 +16 处回卷到 -16，让天空"活"起来而不是死贴图
+    for (let i = 0; i < this.cloudSprites.length; i++) {
+      const sp = this.cloudSprites[i];
+      sp.position.x = this.cloudBaseX[i] + t * this.cloudSpeed[i];
+      if (sp.position.x > 16) {
+        sp.position.x -= 32;
+        this.cloudBaseX[i] -= 32;
+      }
+    }
+    // 周期性发布调试位姿（给 E2E 验证游走用）
+    if (++this.dbgFrame % 30 === 0) this.publishDebug();
+    // 原始诊断（每帧）：帧号 + 状态数 + 第一只动物的 raw 位姿/target —— 排查「游走是否真正在跑」
+    const first = this.animalStates[0];
+    (window as any).__animDbg = {
+      frame: this.dbgFrame,
+      states: this.animalStates.length,
+      t: +t.toFixed(3),
+      dt: +dt.toFixed(4),
+      first: first ? {
+        px: first.pivot.position.x,
+        pz: first.pivot.position.z,
+        py: first.pivot.position.y,
+        tx: first.targetX,
+        tz: first.targetZ,
+        speed: first.speed,
+        baseY: first.baseY,
+        busyUntil: +first.busyUntil.toFixed(3)
+      } : null
+    };
     if (this.renderer && this.scene && this.camera) this.renderer.render(this.scene, this.camera);
   };
 
@@ -343,6 +616,15 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     cancelAnimationFrame(this.rafId);
     this.resizeObs?.disconnect();
     this.clearShowroom();
+    // 释放环境资源（天空贴图 / 草地 / 围栏 / 草簇 / 云 的共享 geometry & material），避免反复进出牧场累积 GPU 泄漏
+    this.envDisposables.forEach(d => { try { d.dispose(); } catch { /* 忽略重复 dispose */ } });
+    this.envDisposables = [];
+    // 移除云朵 sprite（它们独立 add 到 scene，clearShowroom 不管）
+    this.cloudSprites.forEach(s => { this.scene?.remove(s); (s.material as THREE.Material)?.dispose?.(); });
+    this.cloudSprites = [];
+    this.cloudBaseX = [];
+    this.cloudSpeed = [];
+    if (this.scene) this.scene.background = null;
     this.renderer?.dispose();
     if (this.renderer?.domElement.parentElement) {
       this.renderer.domElement.parentElement.removeChild(this.renderer.domElement);
@@ -350,6 +632,7 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     this.renderer = undefined;
     this.scene = undefined;
     this.camera = undefined;
+    this.lastT = 0;
   }
 
   // ================= 面板交互 =================
@@ -385,5 +668,75 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
   private reloadShowroom(): void {
     this.clearShowroom();
     this.loadShowroom();
+  }
+
+  // ================= 动物行为（程序化游走 + 走路/吃草） =================
+  /**
+   * 在栅栏内挑一个目标点（盘面 r≤3.4，避开房屋 1.5 与前排幼崽/蛋区 z>2.3）
+   * 最多重试 8 次；失败回落到 (0, 1.0)
+   */
+  private pickTarget(s: AnimalState): void {
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 0.4 + Math.sqrt(Math.random()) * 3.0;   // 0.4..3.4
+      const x = Math.sin(a) * r;
+      const z = Math.cos(a) * r;
+      if (z > 2.3) continue;                            // 跳过前排幼崽/蛋区
+      if (Math.hypot(x, z + 3.6) < 1.5) continue;       // 跳过房屋
+      s.targetX = x; s.targetZ = z; return;
+    }
+    s.targetX = 0; s.targetZ = 1.0;
+  }
+
+  /**
+   * 逐帧更新一只动物：
+   * - busy 期间（吃草/闲歇）：停下，pitch→0.55（前倾吃草）或 0（站立），body 微微起伏
+   * - 非 busy：朝 target 走，平滑转向（rotation.y→heading），身体上下 bob（baseY+0~0.05），左右 sway（rotation.z）
+   * - 到达目标：以 32% 概率进入「吃草」1.8~3.2s；其余「闲歇」0.5~1.4s；同时 pickTarget 选下一个目标
+   */
+  private updateAnimal(s: AnimalState, t: number, dt: number): void {
+    const p = s.pivot;
+    if (t < s.busyUntil) {
+      // 吃草 or 闲歇
+      p.rotation.x = this.lerp(p.rotation.x, s.isEating ? 0.55 : 0, Math.min(1, dt * 6));
+      p.rotation.z = this.lerp(p.rotation.z, 0, Math.min(1, dt * 6));
+      p.position.y = s.baseY + (s.isEating ? Math.sin(t * 7) * 0.02 : 0);
+      return;
+    }
+    // 朝目标走
+    const dx = s.targetX - p.position.x;
+    const dz = s.targetZ - p.position.z;
+    const dist = Math.hypot(dx, dz);
+    const heading = Math.atan2(dx, dz);
+    // 最短路径 lerp 到 heading
+    const curY = p.rotation.y;
+    let diff = heading - curY;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    p.rotation.y = curY + diff * Math.min(1, dt * 3.5);
+    p.rotation.x = this.lerp(p.rotation.x, 0, Math.min(1, dt * 6));
+    p.rotation.z = Math.sin(t * 9 + s.phase) * 0.05;
+    if (dist > 0.08) {
+      const step = Math.min(s.speed * dt, dist);
+      p.position.x += (dx / dist) * step;
+      p.position.z += (dz / dist) * step;
+      // 步态 bob：始终 ≥ baseY（避免脚穿地）
+      p.position.y = s.baseY + (Math.sin(t * 9 + s.phase) + 1) * 0.5 * 0.05;
+    } else {
+      p.position.y = s.baseY;
+      // 到达：决定 busy 类型 + 选下一个目标
+      if (Math.random() < 0.32) {
+        s.isEating = true;
+        s.busyUntil = t + 1.8 + Math.random() * 1.4;     // 吃草 1.8~3.2s
+      } else {
+        s.isEating = false;
+        s.busyUntil = t + 0.5 + Math.random() * 0.9;     // 闲歇 0.5~1.4s
+      }
+      this.pickTarget(s);
+    }
+  }
+
+  private lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * t;
   }
 }

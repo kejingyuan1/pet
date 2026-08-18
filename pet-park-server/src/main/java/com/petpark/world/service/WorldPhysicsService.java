@@ -6,8 +6,11 @@ import com.petpark.world.mapper.PhysicsSnapshotMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import java.util.Map;
@@ -29,12 +32,16 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 @Slf4j
 @Service
-public class WorldPhysicsService {
+public class WorldPhysicsService implements InitializingBean {
 
     private final TerrainService terrain;
     private final WorldConfigService world;
     private final RegionBroker regionBroker;
     @Autowired private SimpMessagingTemplate messaging;
+    /** 物理 tick 专用调度器（独立线程，避免被其他 @Scheduled 任务饿死 → 移动过慢） */
+    @Autowired
+    @Qualifier("physicsTaskScheduler")
+    private TaskScheduler physicsScheduler;
     /** 物理快照持久化（崩溃恢复，M2 核心功能） */
     private final PhysicsSnapshotMapper snapshotMapper;
 
@@ -170,8 +177,8 @@ public class WorldPhysicsService {
         q.offer(new double[]{dx, dz, run ? 1.0 : 0.0, jump ? 1.0 : 0.0});
     }
 
-    /** 60Hz 主循环 */
-    @Scheduled(fixedRate = 1000L / 60)
+    /** 物理主循环：由 physicsTaskScheduler 以固定 16ms 间隔调度（独立线程，恒定 ~60Hz）。
+     *  不再用 @Scheduled 共享默认单线程，避免被持久化/矿脉再生等定时任务饿死。 */
     public void tick() {
         tick++;
         // 🔴 2026-08-16 修复：用真实流逝时间算 dt，避免 Spring 调度实际帧率低于 60Hz 时
@@ -273,30 +280,45 @@ public class WorldPhysicsService {
                 }
             }
         }
-        // 10Hz 广播：批量 POSITION_SNAPSHOT 到 /topic/world（前端 WorldPhysicsService 订阅此 topic）
+        // 🔴 广播已拆到独立的 broadcastSnapshot()（@Scheduled 10Hz，跑在默认调度线程，
+        //   不占用物理专用线程，避免 WebSocket 背压/序列化阻塞拖慢 60Hz 物理循环）
+    }
+
+    /** 启动物理循环：绑定到专用调度器物理线程（独立于其他 @Scheduled 定时任务） */
+    @Override
+    public void afterPropertiesSet() {
+        physicsScheduler.scheduleAtFixedRate(this::tick, 16L);
+        log.info("[physics] 60Hz tick 已绑定到专用物理线程（physicsTaskScheduler）");
+    }
+
+    /**
+     * 10Hz 广播 POSITION_SNAPSHOT 到 /topic/world（前端订阅）。
+     * 与物理 tick 解耦：跑在默认调度线程，即使 WebSocket 发送阻塞也绝不拖慢物理积分。
+     * 此处只读玩家最新位置（double 字段，瞬时撕裂对渲染无影响），不修改物理状态。
+     */
+    @Scheduled(fixedRate = 100)
+    public void broadcastSnapshot() {
+        if (players.isEmpty()) return;
         long now = System.currentTimeMillis();
-        if (now - lastSnapshotAt >= 100) { // 10Hz
-            lastSnapshotAt = now;
-            // 写回 broker.PlayerInfo（让 snapshot() 拿得到最新）
-            for (Player p : players.values()) {
-                String sid = uid2sid.get(p.uid);
-                if (sid != null) {
-                    RegionBroker.PlayerInfo info = regionBroker.getPlayers().get(sid);
-                    if (info != null) { info.gx = (int)p.gx; info.gz = (int)p.gz; info.y = p.y; info.rot = p.rot; }
-                }
-            }
-            // 构建批量 bodies 数组，按前端期望格式发送
-            if (messaging != null && !players.isEmpty()) {
-                java.util.List<Map<String, Object>> bodies = new java.util.ArrayList<>();
-                for (Player p : players.values()) {
-                    bodies.add(java.util.Map.of(
-                        "uid", p.uid, "gx", p.gx, "gz", p.gz, "y", p.y,
-                        "rot", p.rot, "vx", p.vx, "vz", p.vz));
-                }
-                messaging.convertAndSend("/topic/world", java.util.Map.of(
-                    "t", "POSITION_SNAPSHOT", "tick", tick, "bodies", bodies));
+        if (now - lastSnapshotAt < 100) return; // 10Hz 节流
+        lastSnapshotAt = now;
+        // 写回 broker.PlayerInfo（让 join 快照也带最新位置）
+        for (Player p : players.values()) {
+            String sid = uid2sid.get(p.uid);
+            if (sid != null) {
+                RegionBroker.PlayerInfo info = regionBroker.getPlayers().get(sid);
+                if (info != null) { info.gx = (int) p.gx; info.gz = (int) p.gz; info.y = p.y; info.rot = p.rot; }
             }
         }
+        if (messaging == null) return;
+        java.util.List<Map<String, Object>> bodies = new java.util.ArrayList<>();
+        for (Player p : players.values()) {
+            bodies.add(java.util.Map.of(
+                "uid", p.uid, "gx", p.gx, "gz", p.gz, "y", p.y,
+                "rot", p.rot, "vx", p.vx, "vz", p.vz));
+        }
+        messaging.convertAndSend("/topic/world", java.util.Map.of(
+            "t", "POSITION_SNAPSHOT", "tick", tick, "bodies", bodies));
     }
 
     /** 移动可达判定（替代原 canStand）：

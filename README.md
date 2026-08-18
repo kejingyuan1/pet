@@ -1,33 +1,51 @@
-# 我的宠物乐园 · 发布版 v48（已上线生产 · 含学历模块）
+# 我的宠物乐园 · 3D 大世界联机版（Angular 19 + Three.js + Spring Boot 3 + WebSocket）
 
-> 单文件 HTML 离线版 + Angular 19 前端 + Spring Boot 3 后端 + MySQL 5.7
-> 一站式「种植 / 养鱼 / 放牧 / 学习 + **学历选择**」个人数字工作台
-> **v48 生产部署：阿里云 ECS jar 直跑 + Nginx（绕开被墙的 Docker Hub）→ http://118.31.124.251**
-> **v47 新增：学历模块**（注册时选学历 / 考试页下拉按学历过滤题库 · 16 级 小学~大学）
-> **v48 新增：全字段 COMMENT（4 表 48 字段 + 表级注释）+ 部署包目录按生产实际重构**（`pet-park/{front, pet-park-server, sql}` 匹配阿里云宝塔目录）
+> **多人在线 3D 宠物乐园**：3D 大世界（22 岛 HY3D 地形 / 星空 / 云朵 / 昼夜）+ 牧场（幼崽 / 蛋 / 动物游走吃草）+ 学习（241 题 6 科目 + 16 级学历）
+> **联机架构**：WebSocket 实时同步（自动重连 + 心跳）+ 玩家实时位置广播（10Hz）
+> **技术栈**：Angular 19 前端（4200）+ Spring Boot 3 后端（8080）+ Three.js r128 + MySQL 5.7
+> **生产部署**：阿里云 ECS jar 直跑 + Nginx → http://118.31.124.251（域名 kjyxf.cn / www.kjyxf.cn）
 
 ---
 
-## ✅ HY3D 地图修复 + 牧场幼崽/蛋 · 进度（2026-08-17 收尾）
+## ✅ 近期攻坚进度（2026-08-18 收尾）
 
-> 本节记录近期攻坚项。相关代码：`pet-park-ng/src/app/components/world3d/world3d.component.ts`（地图）、`ranch.component.ts` + `models.ts` + `state.service.ts`（牧场）、`pet-park-server/.../WorldPhysicsService.java`（服务端物理）。
+> 相关代码：`pet-park-ng/src/app/components/world3d/world3d.component.ts`（大世界 / 星空 / 湖岛）、`ranch.component.ts`（牧场）、`app.component.html/css`（入口 / 工具栏）、`pet-park-server/.../WorldPhysicsService.java` + `PetParkApplication.java` + `schema.sql`（物理 / 登录）。
 
-### ✅ 已完成（已提交 + Playwright 验证）
+### 大世界（world3d）
 
 | 项 | 说明 |
 |---|---|
-| HY3D 岛屿系统 | 22 个岛屿、4 种 GLB 变体（普通/湖/半岛/山，`assets/3d_build/terrain-hy3d/`，仅 draco 版入库）、LOD 600m 动态加载/卸载 |
-| 方案A：随机岛出生 | 玩家出生随机落在某个 HY3D 岛屿；移除程序化草地 fallback |
-| **出生钳制 `snapSpawnToIsland`（客户端）** | 只接受高于水位安全线（`waterLevel+0.5`）的命中，螺旋搜索钳到「最高陆地」而非首个命中；对隐藏水面网格禁用 raycast（three r128 `Mesh.raycast` 不检查 `visible`） |
-| **湖岛出生修复（完整根因）** | **客户端**（`world3d` 75e107e）：湖心空洞/湖底不再被误判为陆地。**服务端**（`WorldPhysicsService`）：10Hz 广播 `POSITION_SNAPSHOT` 时强制 `p.y = groundY`（`terrain.heightAt()+0.7`），对 HY3D 湖岛环带返回水面 → 客户端陆地 Y 与服务端水面 Y 每 100ms 拉锯 = 「上下闪动」。修复：`p.y > wl+1.2`（客户端已在陆地）时跳过水浮力/低地面强拉，信任客户端的陆地 Y（详见 `WorldPhysicsService` 两条 `🔴 HY3D 湖岛修正` 守卫） |
-| **牧场幼崽/蛋接入** | `models.ts` 登记 `RANCH_BABIES`/`RANCH_EGGS`（lifecycle_*.glb）；牧场组件「幼崽区」展示已购动物幼崽、「产蛋区」展示蛋模型；拾蛋玩法（每蛋 +6 金，每日每只下蛋动物产 1 枚） |
-| **牧场 Playwright 验证** | E2E：登录→建屋→购鸡/鸭→幼崽/蛋模型加载（babyCount/eggCount≥1）→拾蛋金币增加，VERDICT pass |
-| GLB 瘦身 | 仓库只留 draco/小体积版（成年 7 只 ~800K、地形 4 只 4.7–6M、幼崽 lifecycle 36–167K）；19 个几十 M 源 GLB（合计 385M）已从仓库移除、本地磁盘已删 |
+| HY3D 岛屿系统 | 22 岛、4 种 GLB 变体（普通/湖/半岛/山）、网格布局 `CELL=700`（根治岛屿重叠 → raycast 上下闪）、LOD 300m 动态加载（任意位置最多 1 岛） |
+| 星空 | CanvasTexture 星空底图 + Points 闪烁层；星点压缩到上半球 `phiTop∈[0°,70°]` 根治地平环弧线；`updateDayNight` 昼夜切换背景 |
+| 云朵 | 4 朵 CanvasTexture 漂移云（牧场内）；大世界云由天空渐变 + 漂移精灵 |
+| 水面 | 全局半透明水面 `transparent + depthWrite:false`（治本 z-fight）+ 着色器波光 |
+| **湖岛沉水修复（2026-08-18）** | `groundH = heightAt()` 读服务端原始高度（水域格是深水 -13）→ 湖岛沉海底；钳到 `waterLevel` 后湖岛稳定浮水面（水域岛浮水面、陆地岛用真实高度） |
 
-### ⏳ 待办 / 部署
+### 牧场（ranch）
 
-1. ~~**服务端湖岛修复部署**（已完成并验证）~~：**✅ 已部署并 E2E 验证通过**。沙箱内绕过坏掉的 `mvn` bash 脚本（直接调 `org.codehaus.plexus.classworlds.launcher.Launcher` + `plexus-classworlds-2.9.0.jar`）成功 `mvn -DskipTests package` 出 **34MB fat jar**（`target/pet-park-server-1.0.0.jar`，含新 `WorldPhysicsService.class`），已 kill 旧 8080 进程并重启新 jar（持续监听 8080）。Playwright E2E（`tools/_verify_no_jump.mjs`）实测 ~10s：**渲染 Y 全程稳定 `2.208`，range=0**；服务端 `serverPy=2.908`（信任客户端陆地 Y，不再拉回水面），`inWater=0`，**上下闪动彻底消失**。前端 4200（`ng serve` 源码，含 `snapSpawnToIsland` 出生钳制）无需改动即生效。
-2. **README 主文全面刷新**：v48 主文与当前代码（HY3D / 牧场 / 空气墙根治 / 幼崽蛋 / GLB 瘦身）仍脱节，需整体重写（本次仅刷新了本进度节）。
+| 项 | 说明 |
+|---|---|
+| 场景 | 双层草地 + 32 立柱 2 横栏围栏 + 30 草簇（替代白地板）+ CanvasTexture 渐变天空 + 4 朵漂移云 |
+| 动物行为 | 7 只动物程序化状态机（wander→到达→吃草/闲歇→pickTarget），随机游走 + 低头吃草（YXZ 欧拉），全在围栏内 |
+| 幼崽/蛋 | `RANCH_BABIES`/`RANCH_EGGS`（lifecycle_*.glb）；幼崽区 + 产蛋区展示；拾蛋 +6 金 |
+
+### 联机 + 入口
+
+| 项 | 说明 |
+|---|---|
+| WebSocket 联机 | 自动重连 + 心跳（WEB 联网游戏生命线）；「在线 N」玩家数；删掉「已连接」徽章（联网常态=视觉噪声，逻辑保留） |
+| 牧场入口 | 从顶栏浮动按钮 → 大世界工具栏 `🐮 牧场` 按钮（`@Output openRanchRequest` 解耦循环 import） |
+
+### 后端（物理 / 登录）
+
+| 项 | 说明 |
+|---|---|
+| 移动提速 | 物理 tick 独立调度器 `physicsTaskScheduler`（单线程 60Hz）+ 普通 `taskScheduler`（poolSize=4），根治 @Scheduled 物理循环被 DB 写任务饿死（原移动速度被钳到 ~0.9 u/s，仅正常 1/4） |
+| 登录 500 修复 | `schema.sql` 补幂等 `gender` 列 ALTER（此前 `SELECT gender` 报 Unknown column → 登录全挂） |
+
+### 验证
+
+- E2E（Playwright + Chromium headless/swiftshader）：`tools/verify_ranch.cjs`（牧场动物游走 7/7）、`tools/verify_world_polish.cjs`（星空/徽章/牧场按钮）、`tools/verify_shore_clip.cjs`（湖岛稳定浮水 + 0 报错）。全部 0 console error。
 
 ---
 
@@ -74,27 +92,28 @@ pet-park/
 
 ## 🎮 核心功能
 
-### 单文件 HTML 版（独立 · 零依赖）
-- 直接双击 `pet-park/index.html` 即可玩
-- 数据存浏览器 localStorage（`wb_petpark_v7`）
-- 离线可用，不需后端
-- 纯本地模式（已清理后端对接兜底代码）
+### 3D 大世界（主场景 · Three.js r128）
+- **22 座 HY3D 岛屿**（4 种 GLB 变体：普通 / 湖 / 半岛 / 山），网格布局根治重叠
+- **动态昼夜**：星空（CanvasTexture 底图 + Points 闪烁）/ 渐变天空 / 漂移云朵 / 半透明水面
+- **实时联机**：WebSocket 多人在线，玩家位置 10Hz 广播，自动重连 + 心跳
+- **探索玩法**：WASD 移动 + 跳跃 + 游泳 / 采矿 / 钓鱼 / 聊天
 
-### Angular 19 前端（主版本 · v48）
-- **6 标签页**：家园 / 菜地 / 鱼塘 / 牧场 / 学习 / 数据管理
-- **注册选学历**（v47）：注册页有学历下拉（默认小学一年级，16 级可选）
-- **考试下拉按学历过滤**（v47）：考试页下拉只显示 ≤ 用户学历的题库
-- 实时 3D 场景（Three.js r128 · OrbitControls · 资源化架构）
-- JWT 鉴权 / 云端存档 / 题库动态拉取
-- **今天要处理工作台**（v48 BUG 修复：仅首页 `mod==='home'` 显示 · 切 Tab 消失）
-- **用户管理**（admin · 学历下拉编辑 + 修复：切到管理时 `mod='admin'` 隐藏工作台）
+### 牧场（幼崽养成）
+- 围栏草地场景（双层草地 + 围栏 + 草簇）+ 渐变天空 + 漂移云
+- **动物程序化行为**：7 只动物随机游走 + 低头吃草（状态机驱动，非动画）
+- **幼崽 / 蛋**：幼崽区展示已购幼崽、产蛋区展示蛋模型、拾蛋 +6 金
+- 入口：大世界工具栏 `🐮 牧场` 按钮（登录后可见）
 
-### Spring Boot 3 后端（v48）
-- **users/questions 加 `education` 列**（v46 · 16 级）
-- **全表字段 COMMENT**（v48 · 4 表 48 字段 + 4 表级注释）
-- JWT 鉴权（jjwt 0.12.6 + BCrypt）
-- 5 表 CRUD（users / questions / logs / categories · 4 表）
-- 19 类目 + **241 题**题库（含一年级三科 yuwen 60 / math 30 / english 35 + 多科）
+### 学习模块（学历 + 题库）
+- **注册选学历**（16 级：小学 1~6 / 初中 1~3 / 高中 1~3 / 大学 1~4）
+- **考试下拉按学历过滤**：只显示 ≤ 用户学历的题库
+- **241 题** 6 科目（英语 / 数学 / 汉字 / 成语 / 思维 / 语文）
+- 错题自动收录到「今日学习」
+
+### Spring Boot 3 后端
+- **联机物理**：60Hz 独立物理 tick 调度器（与 DB 写定时任务隔离，移动速度恒定）
+- **玩家状态**：`gender` 字段决定男孩/女孩建模；JWT 鉴权（jjwt + BCrypt）
+- **题库**：19 类目 + 241 题 + `education` 学历过滤
 - CORS / 统一响应 `Result<T>` / 全局异常处理
 
 ### 数据库表结构（v48）
@@ -115,6 +134,7 @@ pet-park/
 |---|---|---|
 | 前端框架 | Angular standalone + CommonModule | 19.2.27 |
 | 3D | Three.js + OrbitControls + GLTFLoader | 0.128.0 |
+| 联机 | WebSocket（自动重连 + 心跳）+ 10Hz 位置广播 | — |
 | 后端 | Spring Boot + MyBatis-Plus + jjwt + BCrypt | 3.3.5 / 3.5.7 / 0.12.6 |
 | 数据库 | MySQL utf8mb4_unicode_ci | 5.7 |
 | 构建 | Maven + Angular CLI (esbuild) + npx | 3.9.12 |
@@ -341,6 +361,7 @@ pkill -f pet-park-server
 | v44-v46 | 学问体题库扩充（241 题）+ 全字段 COMMENT 准备 |
 | **v47** | **学历模块**：users/questions 加 `education`（16 级小学~大学）+ 注册选学历 + 考试下拉按学历过滤题库 + DB_PASS 修复 + 全字段 COMMENT |
 | **v48** | **部署包目录重构**（按生产实际：`pet-park/{front, pet-park-server, sql}` · jar 在 `target/pet-park-server-1.0.0.jar` · 顶层 sql/ 备份）+ **今天要处理工作台限定 `mod==='home'`** + **用户管理切到时 `mod='admin'` 隐藏工作台** + **学历下拉样式美化**（::ng-deep 破 encapsulation + 自定义橙三角 SVG）+ **破缓存文件名 `bundle.v48.v*.js`** + **polyfills 单独引** + **start.sh 变量名 `DB_PASSWORD`** |
+| **v49** | **3D 大世界联机化**：22 岛网格布局根治重叠 + 星空 CanvasTexture + 云朵 + 半透明水面；**牧场打磨**（草地围栏 / 动物游走吃草 / 幼崽蛋）；**移动提速**（物理独立调度器 60Hz）；**登录 500 修复**（补 gender 列）；**湖岛沉水修复**（heightAt 钳到 waterLevel）；删「已连接」徽章、牧场入口移到工具栏 |
 
 ---
 
@@ -362,4 +383,4 @@ pkill -f pet-park-server
 - **题库内容**：开源 + 原创混合
 - **致谢**：Three.js / Angular / Spring Boot / MyBatis-Plus / MySQL 社区
 
-> 最后更新：2026-08-12 · v48 学历模块 + 全字段 COMMENT + 部署包重构已上线
+> 最后更新：2026-08-18 · v49 3D 大世界联机 + 牧场打磨 + 移动提速 + 湖岛沉水修复

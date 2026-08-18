@@ -63,9 +63,6 @@
   </div>
 </header>
 
-<!-- 游戏左上方：进入牧场按钮（拥有房屋才能进入） -->
-<button class="enter-ranch-btn" *ngIf="auth.isLoggedIn" (click)="openRanch()" title="进入牧场（需先拥有自己的房屋）">🐮 进入牧场</button>
-
 <!-- 今日待办（仅首页显示） -->
 <section class="today" *ngIf="mod==='home'">
   <h2><span class="dot"></span>今天要处理</h2>
@@ -138,7 +135,7 @@
   <!-- 大世界（M1 原型：程序化地形 + Chunk 流式 + 放置/养鱼 + WS 广播；双场景分离见 01 §9.3） -->
   <section class="module" [class.on]="mod==='world'">
     <div class="scene3d-wrap">
-      <app-world3d></app-world3d>
+      <app-world3d (openRanchRequest)="openRanch()"></app-world3d>
       <!-- 聊天面板（嵌入游戏画面内，背景虚化） -->
       <div class="world-chat-bar" *ngIf="auth.isLoggedIn && mod==='world'">
         <div class="w3d-chat" [class.collapsed]="!chatOpen">

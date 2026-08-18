@@ -539,6 +539,13 @@ SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='
 SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN energy_updated_at DATETIME DEFAULT NULL COMMENT ''采矿能量最后再生时间戳（懒再生基准）'' AFTER experience', 'SELECT 1');
 PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- 🔴 补丁：gender 列在 User 实体/LoginResp 中已引用，但此前 CREATE TABLE 与所有 ALTER 均未包含，
+--   导致每次登录 SELECT ... gender ... 报 Unknown column 'gender' → 500，登录全挂。
+--   此处补幂等 ALTER（2026-08-18 修复登录 500，与移动速度修复同期发现）。
+SET @col = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE table_schema='pet_park' AND table_name='users' AND column_name='gender');
+SET @ddl = IF(@col = 0, 'ALTER TABLE users ADD COLUMN gender VARCHAR(8) DEFAULT NULL COMMENT ''性别：M 男 / F 女（决定玩家使用男孩/女孩建模）'' AFTER education', 'SELECT 1');
+PREPARE s FROM @ddl; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- ------------------------------------------------------------
 -- categories 追加：大世界建筑/鱼塘设施 + 矿石种子（03 §4.2；type 已为 VARCHAR，无需 ALTER）
 -- 矿石 code 必须与 CellType.typeName() 对齐：ore_coal / ore_iron / ore_gold（M4 采矿，WorldMiningService 按 t.typeName() 查 categories）

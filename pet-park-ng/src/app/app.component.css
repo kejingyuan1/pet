@@ -825,17 +825,4 @@ p { line-height: 1.55; }
 .chat-send { border: none; border-radius: 8px; padding: 6px 12px; background: #FF8C42; color: #fff; cursor: pointer; font-size: 13px; }
 .chat-send:active { background: #e6782e; }
 
-/* ===== 游戏左上方：进入牧场按钮（固定定位，悬浮在 3D 画面之上） ===== */
-.enter-ranch-btn {
-  position: fixed; top: 60px; left: 12px; z-index: 60;
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 10px 16px; border: none; border-radius: 14px;
-  background: linear-gradient(135deg, #FF8B3D 0%, #E5500D 100%);
-  color: #fff; font-size: .92rem; font-weight: 900; cursor: pointer;
-  box-shadow: 0 6px 18px rgba(255, 139, 61, .5), inset 0 -2px 6px rgba(0, 0, 0, .18);
-  -webkit-text-fill-color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .3);
-  transition: transform .15s var(--ease);
-}
-.enter-ranch-btn:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 10px 26px rgba(255, 139, 61, .7); }
-.enter-ranch-btn:active { transform: scale(.95); }
+/* ===== 顶栏：牧场入口已移至大世界 3D 工具栏（w3d-toolbar 🐮牧场） ===== */
