@@ -7,7 +7,7 @@
 
 ---
 
-## ✅ 近期攻坚进度（2026-08-18 收尾）
+## ✅ 近期攻坚进度（v49–v52）
 
 > 相关代码：`pet-park-ng/src/app/components/world3d/world3d.component.ts`（大世界 / 星空 / 湖岛）、`ranch.component.ts`（牧场）、`app.component.html/css`（入口 / 工具栏）、`pet-park-server/.../WorldPhysicsService.java` + `PetParkApplication.java` + `schema.sql`（物理 / 登录）。
 
@@ -19,7 +19,7 @@
 | 星空 | CanvasTexture 星空底图 + Points 闪烁层；星点压缩到上半球 `phiTop∈[0°,70°]` 根治地平环弧线；`updateDayNight` 昼夜切换背景 |
 | 云朵 | 4 朵 CanvasTexture 漂移云（牧场内）；大世界云由天空渐变 + 漂移精灵 |
 | 水面 | 全局半透明水面 `transparent + depthWrite:false`（治本 z-fight）+ 着色器波光 |
-| **湖岛沉水修复（2026-08-18）** | `groundH = heightAt()` 读服务端原始高度（水域格是深水 -13）→ 湖岛沉海底；钳到 `waterLevel` 后湖岛稳定浮水面（水域岛浮水面、陆地岛用真实高度） |
+| **湖岛沉水修复** | `groundH = heightAt()` 读服务端原始高度（水域格是深水 -13）→ 湖岛沉海底；钳到 `waterLevel` 后湖岛稳定浮水面（水域岛浮水面、陆地岛用真实高度） |
 
 ### 牧场（ranch）
 
@@ -52,47 +52,6 @@
 
 ---
 
-## 🎯 v48 vs v32 关键变化
-
-| 维度 | v32 | v48（当前）|
-|---|---|---|
-| 学历系统 | ❌ 无 | ✅ **16 级学历**（小学1~6 / 初中1~3 / 高中1~3 / 大学1~4）+ 注册选 + 考试按学历过滤题库 |
-| 数据库 | 5 表（users/players/logs/categories/questions）| 4 表（players 合并入 users）+ **users/questions 加 `education` 列 + 48 字段 COMMENT** |
-| 部署包 | 平铺（`app.jar` + `dist/` + `mysql/`）| **按生产目录结构**（`pet-park/{front, pet-park-server, sql}` · jar 在 `target/` 下）|
-| 后端 jar 名 | `app.jar` | **`pet-park-server-1.0.0.jar`**（Maven default · `target/` 下）|
-| 部署脚本 | `deploy-direct.sh` 一键 | **`start.sh` + `stop.sh` + `.env.example`**（含 JDK17 检测 / DB 密码 / 日志 / app.pid）|
-| 前端 bundle | 单 `bundle.js`（单文件）| **`bundle.v48.v*.js`**（多版本 + polyfills 单独引 `polyfills-5CFQRCPP.js` · Angular 19 必须保留）|
-| 破缓存 | 改内容 | **改文件名 `bundle.v48.v*.js`**（防 nginx 7d expires 缓存）|
-| 题库量 | 60 题 | **241 题**（含一年级三科 yuwen/math/english）|
-| 启动方式 | `java -jar app.jar` | **`bash start.sh`（source .env）** + `--spring.datasource.password=$DB_PASSWORD`（注意不是 `DB_PASS`）|
-
----
-
-## 📦 v48 部署包结构（`pet-park-deploy-v48.zip`）
-
-```
-pet-park/
-├── front/                                 # ★ Angular 19 生产包（match 生产 `/www/wwwroot/pet-park/front/`）
-│   ├── index.html                        # 入口（含 inline CSS + Cache-Control no-store）
-│   ├── polyfills-5CFQRCPP.js            # ★ 35KB · Angular 19 zone.js runtime（必须保留，缺则白屏）
-│   ├── bundle.v48.v5.js                 # ★ 879KB 主 bundle（含 v48 全部特性：学历模块 + 编辑器学历下拉 + 样式美化 + BUG 修复）
-│   ├── favicon.ico
-│   └── assets/
-│       ├── scene.config.json             # 3D 场景配置（model 路径/位置/缩放/fallback 颜色）
-│       └── models/                       # .glb/.gltf 3D 模型（房子/树/动物/鱼/宠物）
-├── pet-park-server/
-│   ├── target/pet-park-server-1.0.0.jar  # ★ 32.7MB Spring Boot fat jar（v47 含 education + v48 全 COMMENT）
-│   ├── sql/init.sql                      # DB 初始化（schema.sql + update.sql 拼接，幂等可重跑）
-│   ├── .env.example                      # 环境变量模板（cp 为 .env 后改 DB_PASS/JWT_SECRET）
-│   ├── start.sh                          # ★ 一键启动（source .env + nohup + 写 app.pid + 写 logs/app.log）
-│   └── stop.sh                           # 读 app.pid kill
-└── sql/                                   # 顶层 SQL 备份（与 pet-park-server/sql 同步）
-    ├── init.sql
-    └── update.sql
-```
-
----
-
 ## 🎮 核心功能
 
 ### 3D 大世界（主场景 · Three.js r128）
@@ -119,14 +78,15 @@ pet-park/
 - **题库**：19 类目 + 241 题 + `education` 学历过滤
 - CORS / 统一响应 `Result<T>` / 全局异常处理
 
-### 数据库表结构（v48）
+### 数据库表结构
 | 表 | 字段数 | 说明 |
 |---|---|---|
 | `users` | 11 | 含 `education`（学历）+ `role`（admin/user）+ `coins`（积分）+ `state_json`（存档）|
 | `questions` | 13 | 含 `subject` + `education`（题库学历）+ `q_type`（choice/match/fill/qa/card）+ `options`（JSON）+ `answer` |
 | `logs` | 5 | 事件流水（喂食/收获/学习/...）|
 | `categories` | 19 | 统一类目（植物/鱼/动物/家具 · `model` 路径 + `fallback` 颜色）|
-| `user_ranch_animals` | 3 | 牧场拥有动物（复合主键 `user_id`+`animal_code` · `bought_at` 默认 CURRENT_TIMESTAMP · v52 持久化"用户牧场有哪些动物"）|
+| `user_ranch_animals` | 3 | 牧场拥有动物（复合主键 `user_id`+`animal_code` · `bought_at` 默认 CURRENT_TIMESTAMP）|
+| `user_world_state` | — | 玩家大世界最后位置（业务持久化，治"刷新随机到新岛"）|
 
 `SHOW FULL COLUMNS FROM <table>` 可看完整字段 + COMMENT（Navicat / DBeaver 都能直接显示）。
 
@@ -164,9 +124,11 @@ pet/                                          # GitHub kejingyuan1/pet
 │   │   │   ├── models.ts                     # UserInfo + Education enum
 │   │   │   ├── services/
 │   │   │   │   ├── auth.service.ts           # login/register/me/updateProfile（register 传 education）
-│   │   │   │   ├── state.service.ts          # loadQuestions(edu) 按学历过滤
+│   │   │   │   ├── state.service.ts          # loadQuestions(edu) 按学历过滤 + loadOwnedAnimalsFromServer/buyAnimal
 │   │   │   │   └── asset.service.ts         # 3D 模型/贴图加载（loadModel fallback null）
-│   │   │   └── components/scene3d/scene3d.component.ts  # Three.js 主场景
+│   │   │   └── components/
+│   │   │       ├── scene3d/scene3d.component.ts  # Three.js 主场景（大世界）
+│   │   │       └── ranch/ranch.component.ts       # 牧场展厅（动物/鱼池/相机）
 │   │   └── styles.css                        # 全局样式（背景渐变 + CSS 变量 · body/:root 必须放这）
 │   └── public/
 │       └── assets/
@@ -179,78 +141,29 @@ pet/                                          # GitHub kejingyuan1/pet
 │   ├── pom.xml                                # spring-boot-starter-parent 3.3.5
 │   └── src/main/
 │       ├── java/com/petpark/
-│       │   ├── PetParkApplication.java
+│       │   ├── PetParkApplication.java        # ★ @MapperScan 含 ranch.mapper
 │       │   ├── common/                       # Result + BizException + GlobalExceptionHandler
 │       │   ├── config/                       # SecurityConfig + JwtAuthFilter
 │       │   ├── controller/
 │       │   │   ├── AuthController.java      # register/login/me/profile/password
-│       │   │   └── QuestionController.java  # ★ list() 支持 `?subject=&education=`（v47）
-│       │   ├── dto/                          # LoginReq/Resp + RegisterReq ★ @Pattern education + UpdateProfileReq
-│       │   ├── entity/                       # User ★ education + Question ★ education
-│       │   ├── mapper/                      # MyBatis-Plus BaseMapper
-│       │   └── service/                     # UserService（register/updateProfile 含 education）
+│       │   │   ├── QuestionController.java  # ★ list() 支持 `?subject=&education=`
+│       │   │   ├── RanchController.java     # ★ GET /api/ranch/animals · POST /api/ranch/buy（v52）
+│       │   │   └── PositionController.java  # ★ 玩家位置持久化（v50）
+│       │   ├── dto/                          # LoginReq/Resp + RegisterReq @Pattern education + UpdateProfileReq
+│       │   ├── entity/                       # User education + Question education + UserRanchAnimal + UserWorldState
+│       │   ├── mapper/                      # MyBatis-Plus BaseMapper（含 ranch.mapper）
+│       │   ├── service/                     # UserService + WorldPhysicsService（60Hz 物理）+ RanchService
+│       │   └── world/                       # 大世界相关业务（mapper/service 分包）
 │       └── resources/
 │           ├── application.yml              # 端口 8080 / DB / JWT
-│           ├── schema.sql                   # ★ 4 表 + 全字段 COMMENT（v48）
+│           ├── schema.sql                   # ★ 全部建表 + 全字段 COMMENT（幂等可重跑）
 │           └── update.sql                   # ★ 增量：role + education + COMMENT 幂等 ALTER
 │
-├── pet-park-deploy-v48.zip                   # ★ 一键部署包（30MB · 按生产目录结构 · 含 v48 全部修复）
-└── pet-update-v48.sql                        # ★ 今晚纯增量 SQL（只 role/education/COMMENT，不动业务）
+└── tools/                                     # E2E 验证脚本（Playwright / Node）
+    ├── verify_ranch.cjs / verify_world_polish.cjs / verify_shore_clip.cjs
+    ├── verify_ranch_fish.cjs / verify_ranch_pet.cjs   # v52 鱼池 + 抚摸回归
+    └── verify_ranch_db.mjs / verify_ranch_persist.mjs  # v52 后端端点 + 落库持久化
 ```
-
----
-
-## 🚀 生产部署（v48 · 阿里云 ECS · 宝塔）
-
-**环境信息**：
-| 项 | 值 |
-|---|---|
-| 服务器 | 阿里云 ECS `iZbp18sfxjpmt9coe7oznbZ`（宝塔 9.x） |
-| 公网 | `http://118.31.124.251`（Nginx 80 端口代理 Angular static） |
-| 后端 | `java -jar pet-park-server-1.0.0.jar`（端口 8080，nohup 后台） |
-| 数据库 | 宝塔 MySQL 5.7.44（`127.0.0.1:3306` · 库 `pet_park` · root / `83458848de46385e`） |
-| 部署目录 | `/www/wwwroot/pet-park/{front, pet-park-server, sql}` |
-
-### 部署步骤（3 步）
-
-```bash
-# ① 上传 + 解压（生产目录必须保留分层结构！）
-scp pet-park-deploy-v48.zip root@118.31.124.251:/tmp/
-ssh root@118.31.124.251
-cd /www/wwwroot/pet-park      # 已有生产目录就 cd 进去
-unzip -o /tmp/pet-park-deploy-v48.zip
-
-# ② 配 .env（生产必改 DB_PASS / JWT_SECRET；MySQL root 密码 83458848de46385e）
-cd pet-park-server
-cp .env.example .env
-vi .env                         # 改 DB_PASS=83458848de46385e + JWT_SECRET=openssl rand -hex 32
-
-# ③ 初始化 DB（幂等可重复）+ 启动后端
-mysql -uroot -p'83458848de46385e' --default-character-set=utf8mb4 < ../sql/init.sql
-bash start.sh
-# 验证
-sleep 8
-tail -10 logs/app.log                # 应见 "Started PetParkApplication" + 无 Access denied
-curl -s http://127.0.0.1:8080/api/categories | head -c 200
-curl 'http://127.0.0.1:8080/api/questions?education=PRIMARY_1&subject=math' | head -c 200
-```
-
-**浏览器强刷**（Ctrl+Shift+R）→ 看到完整登录页 + 温馨背景 + 学历下拉。
-
-### 关键部署坑（v48 必看）
-
-| # | 坑 | 解决 |
-|---|---|---|
-| 1 | **MySQL host 授权**：宝塔默认只授权 `root@'localhost'`，JDBC 用 `127.0.0.1` 连 → Access denied | `.env` 用 `DB_HOST=localhost`（走 Unix socket 匹配 `root@'localhost'`），或 `CREATE USER 'root'@'127.0.0.1' IDENTIFIED BY 'xxx'` |
-| 2 | **start.sh 变量名**：`application.yml` 用 `DB_PASSWORD`，我之前 start.sh 写 `DB_PASS` 不一致——直接 `java -jar` 会 fallback 到内置 123456 → Access denied | **必须用 `bash start.sh`**（它 `--spring.datasource.password=$DB_PASSWORD` 覆盖 yaml）|
-| 3 | **mysql 客户端字符集**：`mysql < init.sql` 必须带 `--default-character-set=utf8mb4`，否则中文 INSERT 超长 | `--default-character-set=utf8mb4` |
-| 4 | **Angular polyfills 必须保留**：`bundle.v48.v5.js` (= main) 是 minified 但**不**含 zone.js runtime（Angular 19 拆开了） | `index.html` 必须有 `<script src="polyfills-5CFQRCPP.js" type="module">` **在** bundle 之前；缺则 `bodyLen=80` 白屏 |
-| 5 | **nginx 7d 缓存**：`/assets/*` `expires 7d`，旧版 bundle.js 缓存导致 Angular 启动失败 | 改 bundle 文件名（`bundle.js` → `bundle.v48.v*.js`）破缓存；或让用户 F12 勾 Disable cache |
-| 6 | **Docker Hub 被墙**：ECS 到 registry-1.docker.io 超时 | 放弃 Docker，改 **jar 直跑 + Nginx**（deploy 包走这条路） |
-| 7 | **nginx 路径**：宝塔只 include `/www/server/panel/vhost/nginx/*.conf` | 放 vhost 目录（不要放 `/www/server/nginx/conf/`）+ `listen 80 default_server` |
-| 8 | **init.sql 幂等**：questions 表缺唯一索引时重复执行题库翻倍 | schema.sql 含 `UNIQUE KEY (subject, group_id, prompt(200))` + INSERT 前 DELETE 现有数据 |
-| 9 | **3D 模型缺失**：`public/assets/models/` 放 91 字节路径占位符 → GLTFLoader 失败 → 走 fallback 几何体（房子=方块、宠物=球） | 你给真 .glb 源文件放进 `public/assets/models/`，重 build；或我帮你从 Quaternius / PolyHaven 拉 CC0 资产 |
-| 10 | **`--ease` CSS 写错**（我 Write index.html 时手抖把 `0.36` 写成 `36`）| 已修，用 `cubic-bezier(.22, 1, 0.36, 1)` |
 
 ---
 
@@ -269,7 +182,7 @@ npm start                              # 4200 端口
 
 # 数据库
 mysql -uroot -p123456 --default-character-set=utf8mb4 < pet-park-server/src/main/resources/schema.sql
-# （含 4 表 + 全字段 COMMENT + 19 类目 + 241 题种子数据）
+# （含全部建表 + 全字段 COMMENT + 19 类目 + 241 题种子数据）
 ```
 
 **端到端**：Angular ng serve → 自动 proxy `/api` → 127.0.0.1:8080 → MySQL。
@@ -280,7 +193,7 @@ mysql -uroot -p123456 --default-character-set=utf8mb4 < pet-park-server/src/main
 
 | 接口 | 方法 | 鉴权 | 说明 |
 |---|---|---|---|
-| `/api/auth/register` | POST | 否 | 注册（含 `education` 字段，v47）|
+| `/api/auth/register` | POST | 否 | 注册（含 `education` 字段）|
 | `/api/auth/login` | POST | 否 | 登录返回 token |
 | `/api/auth/me` | GET | 是 | 当前用户信息（含 `education`）|
 | `/api/auth/profile` | PUT | 是 | 改 username/nickname/**education** |
@@ -289,22 +202,23 @@ mysql -uroot -p123456 --default-character-set=utf8mb4 < pet-park-server/src/main
 | `/api/auth/admin/users/:id` | PUT | admin | admin 改用户（username/nickname/role/coins/**education**）|
 | `/api/state` | GET | 是 | 拉存档 |
 | `/api/state` | PUT | 是 | 推存档 |
-| `/api/ranch/animals` | GET | 是 | 拉当前用户「已拥有牧场动物」权威列表（v52 · 后端 `user_ranch_animals` 表）|
-| `/api/ranch/buy` | POST | 是 | 购买动物（`{code}` · 白名单校验 + `INSERT IGNORE` 防重复 · v52）|
+| `/api/ranch/animals` | GET | 是 | 拉当前用户「已拥有牧场动物」权威列表（后端 `user_ranch_animals` 表）|
+| `/api/ranch/buy` | POST | 是 | 购买动物（`{code}` · 白名单校验 + `INSERT IGNORE` 防重复）|
+| `/api/world/position` | GET/PUT | 是 | 玩家大世界最后位置持久化（v50）|
 | `/api/categories` | GET | 否 | 19 类目 |
-| `/api/questions` | GET | 否 | 题库（`?subject=math&education=JUNIOR_2` · v47 按学历过滤）|
+| `/api/questions` | GET | 否 | 题库（`?subject=math&education=JUNIOR_2` · 按学历过滤）|
 | `/api/logs` | POST | 是 | 写日志 |
 
 所有响应 `{"code":0,"msg":"ok","data":...}`，错误 code≠0。鉴权头 `Authorization: Bearer <token>`。
 
 ---
 
-## 📐 数据库设计（v48 关键字段 + COMMENT）
+## 📐 数据库设计
 
 `schema.sql` / `update.sql` 都已带 COMMENT，可直接 `SHOW CREATE TABLE` 查看。下面是重点：
 
 ```sql
--- users 表（11 字段，v48 全 COMMENT）
+-- users 表（11 字段，全字段 COMMENT）
 education  VARCHAR(16) NOT NULL DEFAULT 'PRIMARY_1'  -- 学历：PRIMARY_1..6 小学 / JUNIOR_1..3 初中 / SENIOR_1..3 高中 / UNIVERSITY_1..4 大学
 role       VARCHAR(16) NOT NULL DEFAULT 'user'      -- 角色：user 普通 / admin 管理员
 coins      INT          NOT NULL DEFAULT 0          -- 积分（独立字段）
@@ -315,6 +229,17 @@ subject    VARCHAR(16) NOT NULL       -- 科目：english / math / hanzi / cheng
 education  VARCHAR(16) NOT NULL DEFAULT 'PRIMARY_1'  -- 题目所属学历（按此过滤）
 q_type     VARCHAR(16) NOT NULL DEFAULT 'choice'  -- 题型：choice / match / fill / qa / card
 options    JSON         NULL           -- 选择题 [{text, correct, icon}]
+
+-- user_ranch_animals 表（v52 牧场拥有动物，复合主键防重复）
+user_id     BIGINT       NOT NULL
+animal_code VARCHAR(32)  NOT NULL
+bought_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- PRIMARY KEY (user_id, animal_code) + INSERT IGNORE 防重复
+
+-- user_world_state 表（v50 玩家大世界最后位置）
+user_id   BIGINT      NOT NULL PRIMARY KEY
+pos_x/y/z DOUBLE      -- 最后落点
+updated_at TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP
 ```
 
 **16 级学历**（`regEducation` / `editForm.education` 枚举）：
@@ -332,14 +257,14 @@ UNIVERSITY_1 ~ UNIVERSITY_4  大学 1~4 年级
 ## 📞 关键运维
 
 ```bash
-# 后端启动 / 停止
+# 后端启动 / 停止（生产）
 cd /www/wwwroot/pet-park/pet-park-server
 bash start.sh                # 启动（source .env + nohup + 写 app.pid + 写 logs/app.log）
 bash stop.sh                 # 读 app.pid kill
 tail -f logs/app.log          # 实时日志
 
 # 数据库备份（宝塔计划任务每天 3 点）
-mysqldump -uroot -p'83458848de46385e' pet_park > /www/backup/pet_park_$(date +%Y%m%d).sql
+mysqldump -uroot -p'<DB_PASSWORD>' pet_park > /www/backup/pet_park_$(date +%Y%m%d).sql
 
 # Nginx 重载
 nginx -t && nginx -s reload
@@ -350,6 +275,8 @@ pkill -f pet-park-server
 # 启动登录页（已注册测试账号）
 用户名: edu_test1 / 密码: abc123 / 学历: JUNIOR_2（可登录测试考试下拉）
 ```
+
+> ⚠️ 生产数据库密码、JWT 密钥等敏感信息一律通过 `.env` / 环境变量注入，**不要明文写进 README 或提交到仓库**。
 
 ---
 
@@ -365,23 +292,11 @@ pkill -f pet-park-server
 | v25-v26 | 沙箱内 Angular 构建链 + 5 科目 60 题 + 单文件版清理 |
 | v32 | 生产部署：jar 直跑 + Nginx + 阿里云 ECS（绕开 Docker Hub）|
 | v44-v46 | 学问体题库扩充（241 题）+ 全字段 COMMENT 准备 |
-| **v47** | **学历模块**：users/questions 加 `education`（16 级小学~大学）+ 注册选学历 + 考试下拉按学历过滤题库 + DB_PASS 修复 + 全字段 COMMENT |
-| **v48** | **部署包目录重构**（按生产实际：`pet-park/{front, pet-park-server, sql}` · jar 在 `target/pet-park-server-1.0.0.jar` · 顶层 sql/ 备份）+ **今天要处理工作台限定 `mod==='home'`** + **用户管理切到时 `mod='admin'` 隐藏工作台** + **学历下拉样式美化**（::ng-deep 破 encapsulation + 自定义橙三角 SVG）+ **破缓存文件名 `bundle.v48.v*.js`** + **polyfills 单独引** + **start.sh 变量名 `DB_PASSWORD`** |
+| **v47** | **学历模块**：users/questions 加 `education`（16 级小学~大学）+ 注册选学历 + 考试下拉按学历过滤题库 + DB 密码变量修复 + 全字段 COMMENT |
 | **v49** | **3D 大世界联机化**：22 岛网格布局根治重叠 + 星空 CanvasTexture + 云朵 + 半透明水面；**牧场打磨**（草地围栏 / 动物游走吃草 / 幼崽蛋）；**移动提速**（物理独立调度器 60Hz）；**登录 500 修复**（补 gender 列）；**湖岛沉水修复**（heightAt 钳到 waterLevel）；删「已连接」徽章、牧场入口移到工具栏 |
-| **v50** | **阶段 E · 大世界四项修复**：A **海面扩展** `size` 3200→10000（半径 5000m，边界大幅外推）；B **水速降 4×** `uTime` 系数 0.00020→0.00005 + Gerstner 陡度降；C **湖岛岸边穿模黑坑根治** 4 变体 HY3D 加不透明 `addLakeBottomDisk` 湖底盘（`diskRadiusByVariant` plain/lake/peninsula/mountain 均 > 0）+ 入水回退硬保护 `dpy < wl-0.5` 推回 `wl-0.05`；D **玩家位置持久化根因修复** 新增 `user_world_state` 业务表 + `PositionController` + `WorldPhysicsService.addPlayer` 优先级反转（业务持久化 > 物理快照 > 随机）+ 前端 `restoreLastPosition`/`saveCurrentPosition` + **落地即保存** + **进世界每 10s 定时保存**（覆盖刷新/断线时 beforeunload 异步 POST 发不出的丢失，彻底解决"每次刷新随机到新岛"）|
-| **v51** | **牧场交互打磨**：进牧场鼠标变「小手」（`cursor: pointer` 覆盖展台与 canvas）；**点击动物抚摸触发低头**（`AnimalState.petUntil` + canvas `click` 射线拾取命中动物后开 ~2s 低头窗口，`rotation.x→0.5` 前倾 + 轻微点头）；**去掉随机游走低头**（`updateAnimal` 移除 32%「吃草」前倾分支，到达目标仅做站立闲歇 `rotation.x→0`，随机运动不再出现低头，低头只在抚摸时出现）|
-| **v52** | **牧场鱼池 + 拥有动物持久化（RANCH-FISH-DB-001）**：① **鱼入池**——鱼从围栏草地移出，新建围栏外圆形鱼池 `POND(-6,5)`、鱼沿池周（`FISH_SWIM_R=1.6`）游；**鱼池可见性根治**——外圈草地不透明平面 `y=-0.02` 会盖住下沉水池，故池底/水面/石圈以 `depth=0.0` 为基准上抬（`-0.01/+0.01`），水池真正浮在草地上；② **拥有动物后端持久化**——新增 `user_ranch_animals` 表（复合主键 user_id+animal_code）+ `RanchController`（`GET /api/ranch/animals` 拉权威列表 / `POST /api/ranch/buy` 购买，`INSERT IGNORE` 防重复）+ 动物代码白名单校验（不信任客户端枚举）；前端 `state.service` 新增 `loadOwnedAnimalsFromServer`/`buyAnimal`，进牧场先拉服务端覆盖本地（治"没买却已拥有"）；③ **相机改高位 3/4 俯视** `position(0,9,12) lookAt(-2,1.5,1) fov=50°` 以同时容纳围栏内 paddock + 围栏外鱼池 + 后方房屋，并避开右侧商店/左下房屋 HTML 面板遮挡；④ 验证：Playwright `verify_ranch_fish.cjs`（鱼在池周 distPond<2.2 且围栏外 + 6 陆生在 paddock，0 报错）、`verify_ranch_db.mjs`（注册→买鱼→重复购买拒 1001001→非法 code 拒，9/9）、`verify_ranch_persist.mjs`（重启后端鱼仍在，确证 DB 持久化非内存）、`verify_ranch_pet.cjs`（v51 抚摸交互在高位相机下无回归，rx 0.48>0.3）|
-
----
-
-## 🔗 关键部署文件
-
-| 文件 | 大小 | 用途 |
-|---|---|---|
-| `pet-park-deploy-v48.zip` | ~30MB | **★ 一键部署包**（v48 生产目录结构）|
-| `pet-update-v48.sql` | 7.5KB | **★ 今晚纯增量 SQL**（role/education/COMMENT 幂等 · 不碰已有数据）|
-| `pet-park-server/src/main/resources/schema.sql` | 18KB | 完整建库脚本（v48 含 COMMENT）|
-| `pet-park-server/src/main/resources/update.sql` | 13KB | 增量升级（v39-v48 全部 ALTER 累积，幂等）|
+| **v50** | **阶段 E · 大世界四项修复**：A **海面扩展** `size` 3200→10000；B **水速降 4×** + Gerstner 陡度降；C **湖岛岸边穿模黑坑根治**（4 变体加不透明湖底盘 + 入水回退硬保护）；D **玩家位置持久化根因修复**（`user_world_state` 表 + `PositionController` + 落地即保存 + 进世界每 10s 定时保存，彻底解决"每次刷新随机到新岛"）|
+| **v51** | **牧场交互打磨**：进牧场鼠标变「小手」；**点击动物抚摸触发低头**（`AnimalState.petUntil` + 射线拾取命中后开 ~2s 低头窗口）；**去掉随机游走低头**（低头只在抚摸时出现）|
+| **v52** | **牧场鱼池 + 拥有动物持久化（RANCH-FISH-DB-001）**：① **鱼入池**——鱼移出围栏草地，新建围栏外圆形鱼池 `POND(-6,5)`、鱼沿池周游；**鱼池可见性根治**（池底/水面/石圈以 `depth=0.0` 为基准上抬 `-0.01/+0.01`，浮在草地上）；② **拥有动物后端持久化**——`user_ranch_animals` 表（复合主键）+ `RanchController`（`GET /api/ranch/animals` / `POST /api/ranch/buy`，白名单校验 + `INSERT IGNORE`）+ 前端进牧场先拉服务端覆盖本地（治"没买却已拥有"）；③ **相机高位 3/4 俯视** `position(0,9,12) lookAt(-2,1.5,1) fov=50°`；④ 验证：Playwright `verify_ranch_fish.cjs` / `verify_ranch_db.mjs`（9/9）/ `verify_ranch_persist.mjs` / `verify_ranch_pet.cjs`（rx 0.48>0.3）|
 
 ---
 
