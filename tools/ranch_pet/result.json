@@ -1,0 +1,18 @@
+{
+  "allPass": true,
+  "cursor": "pointer",
+  "animalCount": 7,
+  "baselineMaxAbsRx": 0,
+  "petHit": {
+    "rx": 0.32,
+    "code": "cat",
+    "idx": 0,
+    "clicked": 5,
+    "rxDuringPet": 0.32,
+    "after": {
+      "rx": 0.32,
+      "petting": true
+    }
+  },
+  "errors": []
+}

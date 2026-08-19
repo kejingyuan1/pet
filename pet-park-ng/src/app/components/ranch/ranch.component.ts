@@ -21,6 +21,7 @@ interface AnimalState {
   baseY: number;               // 基础 y：陆生动物 0；鱼 0.35（悬浮，避开地面穿插）
   busyUntil: number;           // 忙到何时（秒）：吃草/闲歇期间不移动
   isEating: boolean;           // busy 期间是「吃草（前倾）」还是「闲歇（站立）」
+  petUntil: number;            // 抚摸窗口结束时间（秒）：t < petUntil 期间低头反馈；初始 0
 }
 
 /**
@@ -105,9 +106,9 @@ interface AnimalState {
     .ranch-close { width: 36px; height: 36px; border: none; border-radius: 10px; background: rgba(255,255,255,.12);
       color: #fff; font-size: 1.1rem; cursor: pointer; }
     .ranch-close:hover { background: rgba(255,255,255,.24); }
-    .ranch-stage { position: absolute; inset: 52px 0 0 0;
+    .ranch-stage { position: absolute; inset: 52px 0 0 0; cursor: pointer;
       background: linear-gradient(180deg, #bfe3ff 0%, #e9f7ff 55%, #d7f0d2 100%); }
-    .ranch-stage canvas { display: block; }
+    .ranch-stage canvas { display: block; cursor: pointer; }
     .ranch-panel { position: absolute; bottom: 16px; width: 250px; background: rgba(255,255,255,.96);
       border-radius: 14px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.28); z-index: 3; }
     .ranch-house { left: 16px; }
@@ -159,6 +160,8 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
   private loadToken = 0;   // 展厅加载代次：使在途的异步 loadShowroom 过期，避免连续购买时重复叠加模型
   /** 动物行为状态：每个动物 pivot 配一个 AnimalState，用于栅栏内游走 + 走路/吃草 */
   private animalStates: AnimalState[] = [];
+  /** 点击抚摸的 raycaster 回调引用（disposeThree 时 removeEventListener，避免反复进出牧场泄漏监听） */
+  private petClickHandler?: (e: MouseEvent) => void;
   /** 环境（天空贴图 / 草地 / 围栏 / 草簇）共享的 geometry/material/texture，组件销毁时统一 dispose 避免 GPU 泄漏 */
   /** 环境共享资源（草地/围栏/天空/云 一次性创建，离开牧场统一 dispose） */
   private envDisposables: { dispose(): void }[] = [];
@@ -201,6 +204,34 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     this.renderer.setSize(w, h);
     this.renderer.setClearColor(0x000000, 0);
     host.appendChild(this.renderer.domElement);
+
+    // 点击抚摸：在展台 canvas 上注册 raycaster 拾取，命中动物后开启 ~2s 低头反馈窗口
+    this.petClickHandler = (event: MouseEvent) => {
+      const renderer = this.renderer;
+      const scene = this.scene;
+      const cam = this.camera;
+      if (!renderer || !scene || !cam || this.animalPivots.length === 0) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, cam);
+      const hits = ray.intersectObjects(this.animalPivots, true);
+      if (hits.length === 0) return;
+      // 向上回溯命中 mesh 所属的 animalPivot 祖先
+      let obj: THREE.Object3D | null = hits[0].object;
+      let pivot: THREE.Group | null = null;
+      while (obj) {
+        if (this.animalPivots.indexOf(obj as THREE.Group) !== -1) { pivot = obj as THREE.Group; break; }
+        obj = obj.parent;
+      }
+      if (!pivot) return;
+      const st = this.animalStates.find(s => s.pivot === pivot);
+      if (st) st.petUntil = performance.now() * 0.001 + 2.0;
+    };
+    this.renderer.domElement.addEventListener('click', this.petClickHandler);
 
     // 灯光：半球光 + 平行光 + 环境光，确保模型可见且不发白（借鉴 world3d 教训）
     const hemi = new THREE.HemisphereLight(0xffffff, 0x8d9a8d, 0.95);
@@ -470,7 +501,8 @@ private buildClouds(count: number): void {
             phase: Math.random() * Math.PI * 2,
             baseY: isFish ? 0.4 : 0,
             busyUntil: 0,
-            isEating: false
+            isEating: false,
+            petUntil: 0
           };
           this.pickTarget(state);
           this.animalStates.push(state);
@@ -537,6 +569,7 @@ private buildClouds(count: number): void {
         ry: +s.pivot.rotation.y.toFixed(2),
         rx: +s.pivot.rotation.x.toFixed(2),
         eating: s.isEating,
+        petting: s.petUntil > performance.now() * 0.001,
         busy: s.busyUntil > performance.now() / 1000
       })),
       fenceRadius: 4.85,
@@ -626,6 +659,11 @@ private buildClouds(count: number): void {
     this.cloudSpeed = [];
     if (this.scene) this.scene.background = null;
     this.renderer?.dispose();
+    // 移除点击抚摸监听，避免反复进出牧场累积监听（内存/事件泄漏）
+    if (this.petClickHandler) {
+      this.renderer?.domElement.removeEventListener('click', this.petClickHandler);
+      this.petClickHandler = undefined;
+    }
     if (this.renderer?.domElement.parentElement) {
       this.renderer.domElement.parentElement.removeChild(this.renderer.domElement);
     }
@@ -690,17 +728,25 @@ private buildClouds(count: number): void {
 
   /**
    * 逐帧更新一只动物：
-   * - busy 期间（吃草/闲歇）：停下，pitch→0.55（前倾吃草）或 0（站立），body 微微起伏
+   * - pet 最高优先级：t < petUntil 期间低头（pitch→0.5）+ 轻微点头（position.y 起伏），覆盖一切其它状态
+   * - busy 期间（站立闲歇）：停下，pitch→0（绝不低头），body 不起伏
    * - 非 busy：朝 target 走，平滑转向（rotation.y→heading），身体上下 bob（baseY+0~0.05），左右 sway（rotation.z）
-   * - 到达目标：以 32% 概率进入「吃草」1.8~3.2s；其余「闲歇」0.5~1.4s；同时 pickTarget 选下一个目标
+   * - 到达目标：只做「短暂站立闲歇」0.5~1.4s（不再随机低头吃草）；同时 pickTarget 选下一个目标
    */
   private updateAnimal(s: AnimalState, t: number, dt: number): void {
     const p = s.pivot;
+    // 抚摸反馈（最高优先级）：低头 + 轻微点头，覆盖一切其它状态
+    if (t < s.petUntil) {
+      p.rotation.x = this.lerp(p.rotation.x, 0.5, Math.min(1, dt * 8));
+      p.rotation.z = this.lerp(p.rotation.z, 0, Math.min(1, dt * 8));
+      p.position.y = s.baseY + Math.sin(t * 6) * 0.02;
+      return;
+    }
     if (t < s.busyUntil) {
-      // 吃草 or 闲歇
-      p.rotation.x = this.lerp(p.rotation.x, s.isEating ? 0.55 : 0, Math.min(1, dt * 6));
+      // 闲歇（站立）：rotation.x 缓动到 0，绝不低头；body 不起伏
+      p.rotation.x = this.lerp(p.rotation.x, 0, Math.min(1, dt * 6));
       p.rotation.z = this.lerp(p.rotation.z, 0, Math.min(1, dt * 6));
-      p.position.y = s.baseY + (s.isEating ? Math.sin(t * 7) * 0.02 : 0);
+      p.position.y = s.baseY;
       return;
     }
     // 朝目标走
@@ -724,14 +770,9 @@ private buildClouds(count: number): void {
       p.position.y = s.baseY + (Math.sin(t * 9 + s.phase) + 1) * 0.5 * 0.05;
     } else {
       p.position.y = s.baseY;
-      // 到达：决定 busy 类型 + 选下一个目标
-      if (Math.random() < 0.32) {
-        s.isEating = true;
-        s.busyUntil = t + 1.8 + Math.random() * 1.4;     // 吃草 1.8~3.2s
-      } else {
-        s.isEating = false;
-        s.busyUntil = t + 0.5 + Math.random() * 0.9;     // 闲歇 0.5~1.4s
-      }
+      // 到达：只做「短暂站立闲歇」，不再随机低头吃草
+      s.isEating = false;
+      s.busyUntil = t + 0.5 + Math.random() * 0.9;     // 闲歇 0.5~1.4s
       this.pickTarget(s);
     }
   }

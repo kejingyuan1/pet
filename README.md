@@ -363,6 +363,7 @@ pkill -f pet-park-server
 | **v48** | **部署包目录重构**（按生产实际：`pet-park/{front, pet-park-server, sql}` · jar 在 `target/pet-park-server-1.0.0.jar` · 顶层 sql/ 备份）+ **今天要处理工作台限定 `mod==='home'`** + **用户管理切到时 `mod='admin'` 隐藏工作台** + **学历下拉样式美化**（::ng-deep 破 encapsulation + 自定义橙三角 SVG）+ **破缓存文件名 `bundle.v48.v*.js`** + **polyfills 单独引** + **start.sh 变量名 `DB_PASSWORD`** |
 | **v49** | **3D 大世界联机化**：22 岛网格布局根治重叠 + 星空 CanvasTexture + 云朵 + 半透明水面；**牧场打磨**（草地围栏 / 动物游走吃草 / 幼崽蛋）；**移动提速**（物理独立调度器 60Hz）；**登录 500 修复**（补 gender 列）；**湖岛沉水修复**（heightAt 钳到 waterLevel）；删「已连接」徽章、牧场入口移到工具栏 |
 | **v50** | **阶段 E · 大世界四项修复**：A **海面扩展** `size` 3200→10000（半径 5000m，边界大幅外推）；B **水速降 4×** `uTime` 系数 0.00020→0.00005 + Gerstner 陡度降；C **湖岛岸边穿模黑坑根治** 4 变体 HY3D 加不透明 `addLakeBottomDisk` 湖底盘（`diskRadiusByVariant` plain/lake/peninsula/mountain 均 > 0）+ 入水回退硬保护 `dpy < wl-0.5` 推回 `wl-0.05`；D **玩家位置持久化根因修复** 新增 `user_world_state` 业务表 + `PositionController` + `WorldPhysicsService.addPlayer` 优先级反转（业务持久化 > 物理快照 > 随机）+ 前端 `restoreLastPosition`/`saveCurrentPosition` + **落地即保存** + **进世界每 10s 定时保存**（覆盖刷新/断线时 beforeunload 异步 POST 发不出的丢失，彻底解决"每次刷新随机到新岛"）|
+| **v51** | **牧场交互打磨**：进牧场鼠标变「小手」（`cursor: pointer` 覆盖展台与 canvas）；**点击动物抚摸触发低头**（`AnimalState.petUntil` + canvas `click` 射线拾取命中动物后开 ~2s 低头窗口，`rotation.x→0.5` 前倾 + 轻微点头）；**去掉随机游走低头**（`updateAnimal` 移除 32%「吃草」前倾分支，到达目标仅做站立闲歇 `rotation.x→0`，随机运动不再出现低头，低头只在抚摸时出现）|
 
 ---
 
@@ -384,4 +385,4 @@ pkill -f pet-park-server
 - **题库内容**：开源 + 原创混合
 - **致谢**：Three.js / Angular / Spring Boot / MyBatis-Plus / MySQL 社区
 
-> 最后更新：2026-08-19 · v50 海面扩展 / 水速降 / 穿模根治 / 位置持久化（落地+定时保存）
+> 最后更新：2026-08-19 · v51 牧场鼠标小手 / 点击抚摸低头 / 去掉随机低头
