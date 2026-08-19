@@ -7,6 +7,22 @@ import { StateService } from '../../services/state.service';
 import { HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS, RANCH_BABIES, RANCH_EGGS, EGG_LAYERS, EGG_COINS } from '../../models';
 
 /**
+ * 牧场鱼池参数：围栏外圈草地上、**左前方**（x=-6, z=5）。
+ *
+ * 位置选择的两个硬约束：
+ *  1) 必须在默认固定相机（position(0,5.2,13) lookAt(0,2.6,0), fov=45°, aspect≈1.6）的视野内可被看见；
+ *     若放右侧 x=8 会被右侧「动物商店」HTML 面板遮挡，且超出视野右沿（鱼在围栏外用户根本看不见）。
+ *     放左前方 (-6, 5) 处于视野左下区域，无 UI 遮挡，距离原点 √61≈7.81 > 围栏半径 4.85+池半径 2.2=7.05，完全在围栏外。
+ *  2) depth 是鱼池的"参考高度"（非下沉深度）：外圈草地 meadow 是不透明平面、位于 y=-0.02，
+ *     会盖住任何在它下方的物体，故池底/水面/石圈都以 depth 为基准向上抬（depth-0.01 / depth+0.01），
+ *     让水池真正浮在草地上、可被看见。设 depth=0.0 → 池底 -0.01（高于草地）、水面/石圈 +0.01。
+ */
+const POND = { x: -6, z: 5, r: 2.2, depth: 0.0 };
+/** 鱼沿池周游：半径 1.6，6~8 秒一圈（取 7s） */
+const FISH_SWIM_R = 1.6;
+const FISH_PERIOD = 7;
+
+/**
  * 单个动物的行为状态：栅栏内随机游走 + 走路/低头吃草
  * 关键事实：HY3D 导出的动物 GLB（hy3_xxx_draco.glb）只有 1 个 node + 1 个 mesh 且不含 animation clip，
  * 因此走/吃无法用 AnimationMixer 播放，只能由代码程序化驱动：游走 + 身体 bob + 俯仰吃草。
@@ -173,13 +189,26 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
   private lastT = 0;
   /** 帧计数：每 ~30 帧（≈0.5s）发布一次 __ranchDebug，给 E2E/调试实时读位姿用 */
   private dbgFrame = 0;
+  /** 鱼池水面 ShaderMaterial 引用（animate 里更新 uTime；dispose 入 envDisposables） */
+  private pondWaterMat?: THREE.ShaderMaterial;
 
   constructor(public state: StateService, private asset: AssetService) {}
 
   ngAfterViewInit(): void {
     this.initThree();
-    this.loadShowroom();
     this.animate();
+    // 🔴 进牧场先从服务端拉权威 ownedAnimals（覆盖本地，防"没买却已拥有"），再建展厅
+    void this.enterRanch();
+  }
+
+  /** 进牧场流程：先服务端权威同步，再加载展厅（含鱼池与鱼） */
+  private async enterRanch(): Promise<void> {
+    try {
+      await this.state.loadOwnedAnimalsFromServer();
+    } catch (e) {
+      // 离线/未登录/后端不可达：保留本地 ownedAnimals，不影响进牧场
+    }
+    await this.loadShowroom();
   }
 
   ngOnDestroy(): void {
@@ -193,11 +222,13 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
     const h = host.clientHeight || 600;
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 200);
-    this.camera.position.set(0, 5.2, 13);
-    // lookAt(0,2.6,0) 而不是 (0,1.2,0)：原值仰角太小，fov=45° 下 z=-15 处视野上沿只到 y≈7.5，
-    // 云朵放在 y≥9 会被裁掉；抬高 look-at 后上沿到 y≈10，给远景天空留出可见带
-    this.camera.lookAt(0, 2.6, 0);
+    this.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 200);
+    // 相机改为「高位全景 3/4 俯视」：position(0,9,12) lookAt(-2,1.5,1) fov=50°。
+    // 硬约束：围栏内 paddock(0,0,r=4.85) + 围栏外鱼池 POND(-6,0,5) + 后方房屋(-0..0,z=-3.6) 必须在同一帧内可被看见，
+    // 且鱼池不可被右侧「动物商店」HTML 面板（屏幕 x>1020）或左下「我的房屋」面板（x<220,y∈520-640）遮挡。
+    // 几何投影验证：鱼池中心 → 屏幕 (294, 624) clear；paddock 中心 → (765, 453) clear；视野上沿 y≈10（云朵带不裁）。
+    this.camera.position.set(0, 9, 12);
+    this.camera.lookAt(-2, 1.5, 1);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -289,6 +320,81 @@ export class RanchComponent implements AfterViewInit, OnDestroy {
 
     // 6) 云朵：4 朵 Sprite 浮在空中，慢漂移——让"蓝渐变"天空不再显得"过于粗糙"
     this.buildClouds(4);
+    // 7) 鱼池：围栏外圈草地上新建圆形水池，把鱼从围栏移出、改在池中游
+    this.buildPond();
+  }
+
+  /**
+   * 圆形鱼池：池底（不透明深色圆盘，防穿模）+ 水面（半透明 Gerstner 风格 ShaderMaterial，
+   * depthWrite:false 防穿模，uTime 系数 0.00005 与 v50 对齐、轻摇）+ 池边石圈（torus 装饰）。
+   * 所有 geometry/material 入 envDisposables，离开牧场统一释放避免 GPU 泄漏。
+   */
+  private buildPond(): void {
+    if (!this.scene) return;
+    const { x, z, r, depth } = POND;
+
+    // 池底：不透明深色圆盘（略低于水面，但必须高于草地 -0.02，否则会被草地遮挡看不见）
+    // 关键：外圈草地 meadow 是半径 12 的不透明平面、位于 y=-0.02，会盖住任何在它下方的物体；
+    // 因此池底/水面/石圈都要抬到 y>-0.02 之上才能真正"浮"在草地上形成可见水池。
+    const bottomGeo = new THREE.CircleGeometry(r, 48);
+    const bottomMat = new THREE.MeshStandardMaterial({ color: 0x14506b, roughness: 1, metalness: 0 });
+    const bottom = new THREE.Mesh(bottomGeo, bottomMat);
+    bottom.rotation.x = -Math.PI / 2;
+    bottom.position.set(x, depth - 0.01, z);
+    this.scene.add(bottom);
+    this.envDisposables.push(bottomGeo, bottomMat);
+
+    // 水面：最简 Gerstner 风格 ShaderMaterial（半透明 + depthWrite:false），uTime 轻摇
+    const waterGeo = new THREE.CircleGeometry(r, 48);
+    const waterMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `
+        uniform float uTime;
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        varying vec2 vUv;
+        void main() {
+          // 池心为原点的径向坐标（uv 0..1 → -1..1）
+          vec2 p = (vUv - 0.5) * 2.0;
+          float d = length(p);
+          // 多重低频波纹（系数小，与 v50 的 0.00005 时间尺度一致 → 轻摇不急）
+          float w = sin(p.x * 6.0 + uTime) * 0.5
+                  + sin(p.y * 5.0 - uTime * 0.8) * 0.5
+                  + sin((p.x + p.y) * 4.0 + uTime * 0.6) * 0.4;
+          // 岸边稍深、中心稍亮，制造浅水通透感
+          vec3 shallow = vec3(0.20, 0.62, 0.78);
+          vec3 deep    = vec3(0.08, 0.32, 0.45);
+          vec3 col = mix(deep, shallow, smoothstep(1.0, 0.0, d));
+          col += w * 0.05;                         // 波纹明暗扰动
+          float edge = smoothstep(1.0, 0.92, d);   // 边缘柔和淡出，避免硬切
+          gl_FragColor = vec4(col, 0.72 * edge);
+        }
+      `
+    });
+    const water = new THREE.Mesh(waterGeo, waterMat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(x, depth + 0.01, z);   // 水面高于池底、高于草地，半透明可见
+    this.scene.add(water);
+    this.envDisposables.push(waterGeo, waterMat);
+    this.pondWaterMat = waterMat;
+
+    // 池边：石圈（torus 装饰，给水池边界感）
+    const ringGeo = new THREE.TorusGeometry(r, 0.12, 8, 48);
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x9a8c7a, roughness: 0.9 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(x, depth + 0.01, z);   // 池边石圈与水面临近平齐，浮在草地上
+    this.scene.add(ring);
+    this.envDisposables.push(ringGeo, ringMat);
   }
 
 /**
@@ -476,36 +582,67 @@ private buildClouds(count: number): void {
         { x: -2.8, z: 1.0 }, { x: -0.95, z: 1.2 }, { x: 0.95, z: 1.2 }, { x: 2.8, z: 1.0 },
         { x: -2.0, z: -0.9 }, { x: 0, z: -0.9 }, { x: 2.0, z: -0.9 }
       ];
+      // 陆生动物（跳过 fish）：分布到围栏内 pos 槽位，由 updateAnimal 接管随机游走
+      let pIdx = 0;
       for (let i = 0; i < RANCH_ANIMALS.length; i++) {
         const a = RANCH_ANIMALS[i];
+        if (a.code === 'fish') continue;   // 🔴 鱼移入鱼塘，不进围栏
         const g = await this.asset.loadModel(a.model);
         if (tok !== this.loadToken) return;
         if (g) {
           this.fitModel(g, 1.7);
           const pivot = new THREE.Group();
-          pivot.position.set(pos[i].x, 0, pos[i].z);
+          pivot.position.set(pos[pIdx].x, 0, pos[pIdx].z);
           // YXZ：先转 Y（朝向），再 pitch X（低头吃草），z 用于走路 sway；保证「低头」是沿身体前方俯仰
           pivot.rotation.order = 'YXZ';
           pivot.add(g);
           this.scene.add(pivot);
           this.animalPivots.push(pivot);
 
-          // 行为状态：鱼走「悬浮漂移」（baseY=0.4 + 较慢速度），陆生动物贴地游走
-          const isFish = a.code === 'fish';
           const state: AnimalState = {
             pivot,
             code: a.code,
-            targetX: pos[i].x,
-            targetZ: pos[i].z,
-            speed: isFish ? 0.5 : 0.9 + Math.random() * 0.6,
+            targetX: pos[pIdx].x,
+            targetZ: pos[pIdx].z,
+            speed: 0.9 + Math.random() * 0.6,
             phase: Math.random() * Math.PI * 2,
-            baseY: isFish ? 0.4 : 0,
+            baseY: 0,
             busyUntil: 0,
             isEating: false,
             petUntil: 0
           };
           this.pickTarget(state);
           this.animalStates.push(state);
+        }
+        pIdx++;
+      }
+      // 🔴 鱼：独立加载，放进鱼塘沿圆周游（baseY=0.05 贴水面），不再悬浮在围栏草地
+      const fishA = RANCH_ANIMALS.find(a => a.code === 'fish');
+      if (fishA) {
+        const fg = await this.asset.loadModel(fishA.model);
+        if (tok !== this.loadToken) return;
+        if (fg) {
+          this.fitModel(fg, 1.0);
+          const pivot = new THREE.Group();
+          // 初始位置：池周圆周一点（半径 1.6，angle=0）；baseY=0.0 介于池底(-0.01)与水面(+0.01)之间 → 半透明水下可见
+          pivot.position.set(POND.x + FISH_SWIM_R, 0.0, POND.z);
+          pivot.rotation.order = 'YXZ';
+          pivot.add(fg);
+          this.scene.add(pivot);
+          this.animalPivots.push(pivot);
+          const fstate: AnimalState = {
+            pivot,
+            code: 'fish',
+            targetX: POND.x + FISH_SWIM_R,
+            targetZ: POND.z,
+            speed: 0,
+            phase: Math.random() * Math.PI * 2,
+            baseY: 0.0,
+            busyUntil: 0,
+            isEating: false,
+            petUntil: 0
+          };
+          this.animalStates.push(fstate);
         }
       }
       // 🔴 幼崽区：拥有对应成年动物才展示其幼崽（lifecycle 模型接入游戏）
@@ -609,6 +746,10 @@ private buildClouds(count: number): void {
     const t = performance.now() * 0.001;
     const dt = Math.min(0.05, this.lastT ? t - this.lastT : 0.016);
     this.lastT = t;
+    // 鱼池水面：更新 uTime（系数 0.00005 与 v50 对齐，轻摇不急）
+    if (this.pondWaterMat) {
+      this.pondWaterMat.uniforms['uTime'].value = performance.now() * 0.00005;
+    }
     // 7 只动物：程序化游走 + 走路/吃草（HY3D GLB 无 animation clip，故代码驱动；详见 buildEnvironment 注释）
     this.animalStates.forEach(s => this.updateAnimal(s, t, dt));
     // 房屋：保持轻微左右摇摆
@@ -681,7 +822,8 @@ private buildClouds(count: number): void {
     if (this.state.upgradeHouse()) this.reloadShowroom();
   }
   onBuyAnimal(code: string): void {
-    if (this.state.buyAnimal(code)) this.reloadShowroom();
+    // buyAnimal 已改为异步（先落库后端）；成功后重建展厅以更新"已拥有 ✓"与幼崽/蛋展示
+    this.state.buyAnimal(code).then(ok => { if (ok) this.reloadShowroom(); });
   }
   onCollectEggs(): void {
     const coins = this.state.collectEggs();
@@ -737,7 +879,9 @@ private buildClouds(count: number): void {
     const p = s.pivot;
     // 抚摸反馈（最高优先级）：低头 + 轻微点头，覆盖一切其它状态
     if (t < s.petUntil) {
-      p.rotation.x = this.lerp(p.rotation.x, 0.5, Math.min(1, dt * 8));
+      // 鱼被抚摸 = 俯冲一点 + 点头（petPitch 取负值）；陆生 = 低头
+      const petPitch = s.code === 'fish' ? -0.3 : 0.5;
+      p.rotation.x = this.lerp(p.rotation.x, petPitch, Math.min(1, dt * 8));
       p.rotation.z = this.lerp(p.rotation.z, 0, Math.min(1, dt * 8));
       p.position.y = s.baseY + Math.sin(t * 6) * 0.02;
       return;
@@ -749,6 +893,27 @@ private buildClouds(count: number): void {
       p.position.y = s.baseY;
       return;
     }
+    // 🔴 鱼：沿鱼塘圆周游（让位 pet；busy 不参与）。不随机游走，按池周参数驱动作圆。
+    if (s.code === 'fish') {
+      const w = (Math.PI * 2) / FISH_PERIOD;
+      const ang = t * w;
+      const tx = POND.x + Math.cos(ang) * FISH_SWIM_R;
+      const tz = POND.z + Math.sin(ang) * FISH_SWIM_R;
+      // 切线方向（游动方向）：(-sin ang, cos ang)，沿用与陆生一致的 atan2(dx,dz) 朝向
+      const headAng = Math.atan2(-Math.sin(ang), Math.cos(ang));
+      p.position.x = tx;
+      p.position.z = tz;
+      p.position.y = s.baseY + Math.sin(t * 2.5) * 0.02;   // 轻微 bob
+      p.rotation.x = this.lerp(p.rotation.x, 0, Math.min(1, dt * 6));
+      let diff = headAng - p.rotation.y;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      p.rotation.y = p.rotation.y + diff * Math.min(1, dt * 3.5);
+      p.rotation.z = Math.sin(t * 4 + s.phase) * 0.04;      // 游动 sway
+      s.targetX = tx; s.targetZ = tz;
+      return;
+    }
+
     // 朝目标走
     const dx = s.targetX - p.position.x;
     const dz = s.targetZ - p.position.z;

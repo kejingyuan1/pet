@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { GameState, Category, StudySubject, StudySession, GAME_DAY_MS, DAY_START_H, NIGHT_START_H,
   FARM_PLOTS, FARM_UP_COST, POND_SLOTS, POND_UP_COST, RANCH_SLOTS, RANCH_UP_COST, STUDY_DAILY_LIMIT,
   HOUSE_TIERS, RANCH_ANIMALS, DAILY_CLAIM_COINS, EGG_LAYERS, EGG_COINS, HouseTier, RanchAnimal } from '../models';
@@ -701,16 +702,58 @@ export class StateService {
   }
 
   // ================= 牧场动物购买 =================
-  /** 购买一只动物（重复购买 / 金币不足返回 false） */
-  buyAnimal(code: string): boolean {
+  /** 服务端"已拥有"镜像：进牧场时由 loadOwnedAnimalsFromServer 覆盖，买完立即同步 */
+  private _ownedAnimalsFromServer: Set<string> = new Set();
+
+  /**
+   * 进牧场时从服务端拉取权威"已拥有"全集，覆盖本地镜像，避免脏数据（"没买却已拥有"）。
+   * 未登录则保留本地并直接返回（离线可玩）。
+   */
+  async loadOwnedAnimalsFromServer(): Promise<void> {
+    if (!this.auth.isLoggedIn) return;
+    const list = await firstValueFrom(this.worldApi.getOwnedRanchAnimals());
+    if (!Array.isArray(list)) return;
+    this._ownedAnimalsFromServer = new Set(list);
+    // 用服务端全集覆盖本地 ownedAnimals（服务端权威）
+    this.state.ranch.ownedAnimals = list.slice();
+  }
+
+  /**
+   * 购买一只动物（异步，服务端权威落库）：
+   *  - 重复购买 / 金币不足 → 返回 false
+   *  - 金币扣除保留在前端入口（预校验体验）；后端 INSERT IGNORE 兜底防并发重复
+   *  - 成功：以服务端返回的已拥有全集写入本地并返回 true；失败：回退金币
+   */
+  async buyAnimal(code: string): Promise<boolean> {
     const a = RANCH_ANIMALS.find(x => x.code === code);
     if (!a) return false;
     if (this.state.ranch.ownedAnimals.includes(code)) return false;
+    // 金币预校验（前端体验用；后端不重复校验金币）
     if (!this.spendCoins(a.price)) return false;
-    this.state.ranch.ownedAnimals.push(code);
-    this.addLog('feed', '在牧场购买了一只' + a.name + '（' + a.price + '金）');
-    this.save();
-    return true;
+    try {
+      const res = await firstValueFrom(this.worldApi.buyRanchAnimal(code));
+      if (res && res.ok) {
+        const owned = Array.isArray(res.owned) ? res.owned.slice() : this.state.ranch.ownedAnimals.concat([code]);
+        this.state.ranch.ownedAnimals = owned;
+        this._ownedAnimalsFromServer = new Set(owned);
+        this.addLog('feed', '在牧场购买了一只' + a.name + '（' + a.price + '金）');
+        this.save();
+        return true;
+      }
+      // 后端拒（已拥有/并发）：用服务端返回的 owned 修正本地（若无则维持），回退金币
+      if (res && Array.isArray(res.owned) && res.owned.length) {
+        this.state.ranch.ownedAnimals = res.owned.slice();
+        this._ownedAnimalsFromServer = new Set(res.owned);
+      }
+      this.addCoins(a.price);
+      this.save();
+      return false;
+    } catch (e) {
+      // 网络异常：回退金币
+      this.addCoins(a.price);
+      this.save();
+      return false;
+    }
   }
   ownsAnimal(code: string): boolean { return this.state.ranch.ownedAnimals.includes(code); }
   ranchAnimalList(): RanchAnimal[] { return RANCH_ANIMALS; }

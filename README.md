@@ -26,7 +26,9 @@
 | 项 | 说明 |
 |---|---|
 | 场景 | 双层草地 + 32 立柱 2 横栏围栏 + 30 草簇（替代白地板）+ CanvasTexture 渐变天空 + 4 朵漂移云 |
-| 动物行为 | 7 只动物程序化状态机（wander→到达→吃草/闲歇→pickTarget），随机游走 + 低头吃草（YXZ 欧拉），全在围栏内 |
+| 动物行为 | 7 只动物：6 陆生程序化状态机（wander→到达→吃草/闲歇→pickTarget，随机游走 + 低头吃草，YXZ 欧拉，全在围栏内）+ 1 鱼在围栏外圆形鱼池 `POND(-6,5)` 沿池周游（baseY 介于池底/水面之间，半透明水下可见）|
+| 鱼池 | 围栏外圆形水池（池底/水面/石圈以 `depth=0.0` 为基准上抬 `-0.01/+0.01`，根治被外圈草地 `y=-0.02` 遮挡看不见）；相机高位 3/4 俯视 `position(0,9,12) lookAt(-2,1.5,1) fov=50°` 容纳鱼池 + 避开商店/房屋面板 |
+| 拥有动物持久化 | 后端 `user_ranch_animals` 表（复合主键 user_id+animal_code）+ `GET /api/ranch/animals` / `POST /api/ranch/buy`（动物代码白名单校验 + `INSERT IGNORE` 防重复）；前端进牧场先拉服务端覆盖本地（治"没买却已拥有"）|
 | 幼崽/蛋 | `RANCH_BABIES`/`RANCH_EGGS`（lifecycle_*.glb）；幼崽区 + 产蛋区展示；拾蛋 +6 金 |
 
 ### 联机 + 入口
@@ -46,6 +48,7 @@
 ### 验证
 
 - E2E（Playwright + Chromium headless/swiftshader）：`tools/verify_ranch.cjs`（牧场动物游走 7/7）、`tools/verify_world_polish.cjs`（星空/徽章/牧场按钮）、`tools/verify_shore_clip.cjs`（湖岛稳定浮水 + 0 报错）。全部 0 console error。
+- **v52 牧场鱼池 + 持久化 E2E**：`tools/verify_ranch_fish.cjs`（鱼在池周 distPond<2.2 且围栏外 + 6 陆生在 paddock，0 报错）、`tools/verify_ranch_pet.cjs`（v51 抚摸交互在高位相机下无回归，rx 0.48>0.3）、`tools/verify_ranch_db.mjs`（注册→买鱼→重复购买拒 1001001→非法 code 拒，9/9）、`tools/verify_ranch_persist.mjs`（重启后端后鱼仍在，确证 DB 持久化非内存）。
 
 ---
 
@@ -123,6 +126,7 @@ pet-park/
 | `questions` | 13 | 含 `subject` + `education`（题库学历）+ `q_type`（choice/match/fill/qa/card）+ `options`（JSON）+ `answer` |
 | `logs` | 5 | 事件流水（喂食/收获/学习/...）|
 | `categories` | 19 | 统一类目（植物/鱼/动物/家具 · `model` 路径 + `fallback` 颜色）|
+| `user_ranch_animals` | 3 | 牧场拥有动物（复合主键 `user_id`+`animal_code` · `bought_at` 默认 CURRENT_TIMESTAMP · v52 持久化"用户牧场有哪些动物"）|
 
 `SHOW FULL COLUMNS FROM <table>` 可看完整字段 + COMMENT（Navicat / DBeaver 都能直接显示）。
 
@@ -285,6 +289,8 @@ mysql -uroot -p123456 --default-character-set=utf8mb4 < pet-park-server/src/main
 | `/api/auth/admin/users/:id` | PUT | admin | admin 改用户（username/nickname/role/coins/**education**）|
 | `/api/state` | GET | 是 | 拉存档 |
 | `/api/state` | PUT | 是 | 推存档 |
+| `/api/ranch/animals` | GET | 是 | 拉当前用户「已拥有牧场动物」权威列表（v52 · 后端 `user_ranch_animals` 表）|
+| `/api/ranch/buy` | POST | 是 | 购买动物（`{code}` · 白名单校验 + `INSERT IGNORE` 防重复 · v52）|
 | `/api/categories` | GET | 否 | 19 类目 |
 | `/api/questions` | GET | 否 | 题库（`?subject=math&education=JUNIOR_2` · v47 按学历过滤）|
 | `/api/logs` | POST | 是 | 写日志 |
@@ -364,6 +370,7 @@ pkill -f pet-park-server
 | **v49** | **3D 大世界联机化**：22 岛网格布局根治重叠 + 星空 CanvasTexture + 云朵 + 半透明水面；**牧场打磨**（草地围栏 / 动物游走吃草 / 幼崽蛋）；**移动提速**（物理独立调度器 60Hz）；**登录 500 修复**（补 gender 列）；**湖岛沉水修复**（heightAt 钳到 waterLevel）；删「已连接」徽章、牧场入口移到工具栏 |
 | **v50** | **阶段 E · 大世界四项修复**：A **海面扩展** `size` 3200→10000（半径 5000m，边界大幅外推）；B **水速降 4×** `uTime` 系数 0.00020→0.00005 + Gerstner 陡度降；C **湖岛岸边穿模黑坑根治** 4 变体 HY3D 加不透明 `addLakeBottomDisk` 湖底盘（`diskRadiusByVariant` plain/lake/peninsula/mountain 均 > 0）+ 入水回退硬保护 `dpy < wl-0.5` 推回 `wl-0.05`；D **玩家位置持久化根因修复** 新增 `user_world_state` 业务表 + `PositionController` + `WorldPhysicsService.addPlayer` 优先级反转（业务持久化 > 物理快照 > 随机）+ 前端 `restoreLastPosition`/`saveCurrentPosition` + **落地即保存** + **进世界每 10s 定时保存**（覆盖刷新/断线时 beforeunload 异步 POST 发不出的丢失，彻底解决"每次刷新随机到新岛"）|
 | **v51** | **牧场交互打磨**：进牧场鼠标变「小手」（`cursor: pointer` 覆盖展台与 canvas）；**点击动物抚摸触发低头**（`AnimalState.petUntil` + canvas `click` 射线拾取命中动物后开 ~2s 低头窗口，`rotation.x→0.5` 前倾 + 轻微点头）；**去掉随机游走低头**（`updateAnimal` 移除 32%「吃草」前倾分支，到达目标仅做站立闲歇 `rotation.x→0`，随机运动不再出现低头，低头只在抚摸时出现）|
+| **v52** | **牧场鱼池 + 拥有动物持久化（RANCH-FISH-DB-001）**：① **鱼入池**——鱼从围栏草地移出，新建围栏外圆形鱼池 `POND(-6,5)`、鱼沿池周（`FISH_SWIM_R=1.6`）游；**鱼池可见性根治**——外圈草地不透明平面 `y=-0.02` 会盖住下沉水池，故池底/水面/石圈以 `depth=0.0` 为基准上抬（`-0.01/+0.01`），水池真正浮在草地上；② **拥有动物后端持久化**——新增 `user_ranch_animals` 表（复合主键 user_id+animal_code）+ `RanchController`（`GET /api/ranch/animals` 拉权威列表 / `POST /api/ranch/buy` 购买，`INSERT IGNORE` 防重复）+ 动物代码白名单校验（不信任客户端枚举）；前端 `state.service` 新增 `loadOwnedAnimalsFromServer`/`buyAnimal`，进牧场先拉服务端覆盖本地（治"没买却已拥有"）；③ **相机改高位 3/4 俯视** `position(0,9,12) lookAt(-2,1.5,1) fov=50°` 以同时容纳围栏内 paddock + 围栏外鱼池 + 后方房屋，并避开右侧商店/左下房屋 HTML 面板遮挡；④ 验证：Playwright `verify_ranch_fish.cjs`（鱼在池周 distPond<2.2 且围栏外 + 6 陆生在 paddock，0 报错）、`verify_ranch_db.mjs`（注册→买鱼→重复购买拒 1001001→非法 code 拒，9/9）、`verify_ranch_persist.mjs`（重启后端鱼仍在，确证 DB 持久化非内存）、`verify_ranch_pet.cjs`（v51 抚摸交互在高位相机下无回归，rx 0.48>0.3）|
 
 ---
 
@@ -385,4 +392,4 @@ pkill -f pet-park-server
 - **题库内容**：开源 + 原创混合
 - **致谢**：Three.js / Angular / Spring Boot / MyBatis-Plus / MySQL 社区
 
-> 最后更新：2026-08-19 · v51 牧场鼠标小手 / 点击抚摸低头 / 去掉随机低头
+> 最后更新：2026-08-19 · v52 牧场鱼池（鱼入池）/ 拥有动物后端持久化 / 高位 3-4 俯视相机

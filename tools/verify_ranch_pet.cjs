@@ -15,7 +15,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const browser = await PW.chromium.launch({
     executablePath: 'C:/Users/WIN11/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe',
-    args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist']
+    args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist',
+           '--disable-dev-shm-usage', '--no-sandbox', '--disable-gpu-sandbox']
   });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const errors = [];
@@ -41,7 +42,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // 3) 进牧场
   await page.evaluate(() => { const b = document.querySelector('.ranch-btn'); if (b) b.click(); });
   await page.waitForSelector('.ranch-stage canvas', { timeout: 20000 });
-  await sleep(3000); // 等模型加载 + 动物就位
+  // 等模型加载 + 动物就位（轮询 animalCount，避免固定 sleep 的时序竞态）
+  for (let i = 0; i < 50; i++) {
+    const d = await page.evaluate(() => (window).__ranchDebug || null);
+    if (d && d.animalCount > 0) break;
+    await sleep(300);
+  }
+  await sleep(2000); // 额外稳一下，让鱼游到稳定相位、贴图就位
 
   // D1：鼠标小手
   const cursor = await page.evaluate(() => {
@@ -68,9 +75,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // 精确算出动物在 canvas 上的屏幕坐标，再派发 click（避免粗网格漏掉细网格动物）。
   const box = await page.locator('.ranch-stage canvas').boundingBox();
   const W = box.width, H = box.height, L = box.x, T = box.y;
-  const fovY = 45 * Math.PI / 180, ty = Math.tan(fovY / 2), aspect = W / H;
-  // 相机：position(0,5.2,13) lookAt(0,2.6,0) up(0,1,0)（与 initThree 一致）
-  const C = [0, 5.2, 13], Tg = [0, 2.6, 0], Up = [0, 1, 0];
+  const fovY = 50 * Math.PI / 180, ty = Math.tan(fovY / 2), aspect = W / H;
+  // 相机（与 ranch.component.initThree 一致；v52 改为高位 3/4 俯视以容纳围栏外鱼池）：
+  // position(0,9,12) lookAt(-2,1.5,1) up(0,1,0) fov=50°
+  const C = [0, 9, 12], Tg = [-2, 1.5, 1], Up = [0, 1, 0];
   const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
   const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
   const dot = (a, b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -98,25 +106,34 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   let petHit = null;
   const dbgA = await page.evaluate(() => (window).__ranchDebug || null);
   if (dbgA && dbgA.animals) {
+    // 高位 3/4 俯视相机下，动物 mesh 在屏幕上的"足迹"比 pivot 地面投影点更高：
+    // 陆生动物高 ~1.7（身体中心 y≈0.85）、鱼高 ~1.0，若只投影 pivot(y≈0, 脚) 会打到 mesh 下方的空地而 miss。
+    // 故对每只动物在多个 y 高度投影，并在投影点附近做小幅像素扰动，命中即停（petUntil 是 2s 窗口，命中立即可见）。
+    const yCandidates = [0.3, 0.7, 1.1, 1.5];
+    const jitter = [[0,0],[9,0],[-9,0],[0,9],[0,-9],[13,13],[-13,-13]];
     for (let i = 0; i < dbgA.animals.length && !petHit; i++) {
       const a = dbgA.animals[i];
-      const P = [a.x, (a.y || 0) + 0.9, a.z];   // 用身体中部高度投影
-      const sp = project(P);
-      if (!sp) continue;
-      log('  click animal', i, a.code, '-> screen', sp.sx.toFixed(0), sp.sy.toFixed(0));
-      await clickAtScreen(sp.sx, sp.sy);
-      for (let k = 0; k < 8; k++) {              // 轮询 ~1.2s，检查「任意」动物是否进入 petting
-        await sleep(150);
-        const d = await page.evaluate(() => (window).__ranchDebug || null);
-        if (d && d.animals) {
-          const now = (await page.evaluate(() => performance.now() * 0.001));
-          log('    t=', now.toFixed(1), 'petUntil=', d.animals.map(a => a.petUntil).join(','));
-          const hitIdx = d.animals.findIndex(a => a.petting === true);
-          if (hitIdx !== -1) {
-            const ha = d.animals[hitIdx];
-            petHit = { rx: ha.rx, code: ha.code, idx: hitIdx, clicked: i }; break;
+      for (const yOff of yCandidates) {
+        const sp = project([a.x, yOff, a.z]);
+        if (!sp) continue;
+        let hitThis = false;
+        for (const [jx, jy] of jitter) {
+          const sx = sp.sx + jx, sy = sp.sy + jy;
+          await clickAtScreen(sx, sy);
+          await sleep(70);                       // 命中后 petUntil 立即可见，无需长等
+          const d = await page.evaluate(() => (window).__ranchDebug || null);
+          if (d && d.animals) {
+            const hitIdx = d.animals.findIndex(x => x.petting === true);
+            if (hitIdx !== -1) {
+              const ha = d.animals[hitIdx];
+              petHit = { rx: ha.rx, code: ha.code, idx: hitIdx, clicked: i, yOff };
+              log('  HIT animal', i, a.code, 'yOff', yOff, 'jitter', jx + '/' + jy,
+                  '-> screen', sx.toFixed(0), sy.toFixed(0), 'petIdx', hitIdx, '(' + ha.code + ')');
+              hitThis = true; break;
+            }
           }
         }
+        if (hitThis) break;
       }
     }
   }
@@ -124,7 +141,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   let rxDuringPet = null;
   if (petHit) {
-    // 抓住低头窗口内的 rx
+    // 抓住低头窗口内的 rx（命中后 2s 窗口内持续低头，此处采样 8×150ms≈1.2s 足够）
     for (let k = 0; k < 8; k++) {
       await sleep(150);
       const d = await page.evaluate(() => (window).__ranchDebug || null);
@@ -133,17 +150,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         if (a.petting) rxDuringPet = a.rx;
       }
     }
-    // 等 2.2s 看是否回落
-    await sleep(2200);
-    const d2 = await page.evaluate(() => (window).__ranchDebug || null);
-    const after = (d2 && d2.animals && d2.animals[petHit.idx]) ? { rx: d2.animals[petHit.idx].rx, petting: d2.animals[petHit.idx].petting } : null;
-    log('D3 rxDuringPet =', rxDuringPet, 'after =', JSON.stringify(after));
     petHit.rxDuringPet = rxDuringPet;
-    petHit.after = after;
   }
 
-  await page.screenshot({ path: OUT + '/ranch_view.png' });
-
+  // 先写判定结果（最关键），截图/关浏览器放最后且尽力而为，避免受限环境下 WebGL 崩溃导致结果丢失
   const result = {
     allPass: cursor === 'pointer' && animalCount > 0 && maxAbsRx < 0.15 && !!petHit && (petHit.rxDuringPet ?? 0) > 0.3,
     cursor,
@@ -154,5 +164,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   };
   fs.writeFileSync(OUT + '/result.json', JSON.stringify(result, null, 2));
   log('RESULT', JSON.stringify(result, null, 2));
-  await browser.close();
-})().catch(e => { console.error('FATAL', e); process.exit(1); });
+
+  try { await page.screenshot({ path: OUT + '/ranch_view.png' }); } catch (e) { log('screenshot skipped:', e && e.message); }
+  await browser.close().catch(() => {});
+})().catch(e => { console.error('FATAL', e && e.stack || e); try { require('fs').writeFileSync('D:/pet/tools/ranch_pet/result.json', JSON.stringify({ fatal: String(e && e.stack || e) }, null, 2)); } catch {} process.exit(1); });

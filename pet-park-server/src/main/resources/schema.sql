@@ -592,4 +592,18 @@ CREATE TABLE IF NOT EXISTS user_world_state (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='玩家世界最后位置（每用户一行，登录时恢复，避免每次刷新都随机到新岛）';
 
+-- ------------------------------------------------------------
+-- ★★★ 牧场拥有动物权威表（user_ranch_animals）
+-- 复合主键 (user_id, animal_code)；每用户每种动物至多一行。
+-- 取代原仅存于客户端 localStorage 的"已拥有"标记（可被篡改/丢失），
+-- 作为服务端权威来源：进牧场时拉全集覆盖本地，购买时落库。
+-- bought_at 由 DB 默认 CURRENT_TIMESTAMP 维护。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_ranch_animals (
+  user_id      BIGINT      NOT NULL,
+  animal_code  VARCHAR(32) NOT NULL,
+  bought_at    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, animal_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户牧场拥有动物权威表';
+
 

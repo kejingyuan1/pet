@@ -210,6 +210,18 @@ export class WorldApiService {
       { animalCode }, { headers: this.auth.authHeaders() });
   }
 
+  /** GET /api/ranch/animals —— 服务端权威的已拥有牧场动物 code 全集（用于进牧场覆盖本地） */
+  getOwnedRanchAnimals(): Observable<string[]> {
+    return this.http.get<ApiResult<string[]>>('/api/ranch/animals',
+      { headers: this.auth.authHeaders() }).pipe(map(r => r.data || []));
+  }
+
+  /** POST /api/ranch/buy —— 购买牧场动物（服务端落库），返回 { ok, owned: 当前已拥有全集 } */
+  buyRanchAnimal(code: string): Observable<{ ok: boolean; owned: string[] } | null> {
+    return this.http.post<ApiResult<{ ok: boolean; owned: string[] }>>('/api/ranch/buy',
+      { code }, { headers: this.auth.authHeaders() }).pipe(map(r => r.data));
+  }
+
   /** GET /api/world/mining/profile 采矿档案（能量/等级/经验/背包） */
   miningProfile(): Observable<MiningProfile> {
     return this.http.get<ApiResult<MiningProfile>>('/api/world/mining/profile',

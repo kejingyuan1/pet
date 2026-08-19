@@ -12,7 +12,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
  */
 @SpringBootApplication
 @EnableScheduling
-@MapperScan({"com.petpark.mapper", "com.petpark.world.mapper"})
+@MapperScan({"com.petpark.mapper", "com.petpark.world.mapper", "com.petpark.ranch.mapper"})
 public class PetParkApplication {
     public static void main(String[] args) {
         SpringApplication.run(PetParkApplication.class, args);
