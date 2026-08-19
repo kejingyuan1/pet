@@ -111,17 +111,37 @@ export interface ForageResult {
   inventory: InventoryItem[];
 }
 
-/** 牧场收蛋结果（动物产物写入背包） */
-export interface RanchCollectResult {
-  /** 实际写入背包的物品类型（egg_chicken / egg_duck / milk） */
-  itemType: string;
-  /** 物品名称（鸡蛋 / 鸭蛋 / 牛奶） */
-  itemName: string;
-  /** 本次获得数量 */
-  qty: number;
-  /** 最新背包（含名称/售价） */
-  inventory: InventoryItem[];
-}
+  /** 牧场收蛋结果（动物产物写入背包） */
+  export interface RanchCollectResult {
+    /** 实际写入背包的物品类型（egg_chicken / egg_duck / milk） */
+    itemType: string;
+    /** 物品名称（鸡蛋 / 鸭蛋 / 牛奶） */
+    itemName: string;
+    /** 本次获得数量 */
+    qty: number;
+    /** 最新背包（含名称/售价） */
+    inventory: InventoryItem[];
+  }
+
+  /** 玩家世界位置响应（GET /api/world/position） */
+  export interface UserWorldStateResp {
+    userId: number;
+    gx: number;
+    gz: number;
+    y: number;
+    islandIdx: number;
+    variantIdx: number;
+    updatedAt: string | null;
+  }
+
+  /** 保存位置请求体（uid 由 token 解析，不接受客户端 uid 防越权） */
+  export interface SavePositionReq {
+    gx: number;
+    gz: number;
+    y: number;
+    islandIdx: number;
+    variantIdx: number;
+  }
 
 /**
  * 大世界 REST 服务（config / chunk 流式 / build / fish / objects / mining）
@@ -211,6 +231,18 @@ export class WorldApiService {
   /** GET /api/world/codex 图鉴（鱼 + 矿石，标已发现） */
   codex(): Observable<ApiResult<any>> {
     return this.http.get<ApiResult<any>>('/api/world/codex',
+      { headers: this.auth.authHeaders() });
+  }
+
+  /** GET /api/world/position —— 返回上次保存的世界位置（无记录 null） */
+  getLastPosition(uid: number): Observable<UserWorldStateResp | null> {
+    return this.http.get<ApiResult<UserWorldStateResp | null>>('/api/world/position',
+      { headers: this.auth.authHeaders() }).pipe(map(r => r.data));
+  }
+
+  /** POST /api/world/position —— 保存当前世界位置（uid 由 token 解析，防越权） */
+  savePosition(uid: number, pos: SavePositionReq): Observable<ApiResult<void>> {
+    return this.http.post<ApiResult<void>>('/api/world/position', pos,
       { headers: this.auth.authHeaders() });
   }
 }

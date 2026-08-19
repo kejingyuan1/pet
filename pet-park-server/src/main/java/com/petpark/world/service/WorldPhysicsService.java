@@ -2,7 +2,9 @@ package com.petpark.world.service;
 
 import com.petpark.world.geo.CellType;
 import com.petpark.world.entity.PhysicsSnapshot;
+import com.petpark.world.entity.UserWorldState;
 import com.petpark.world.mapper.PhysicsSnapshotMapper;
+import com.petpark.world.service.UserWorldStateService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +46,8 @@ public class WorldPhysicsService implements InitializingBean {
     private TaskScheduler physicsScheduler;
     /** 物理快照持久化（崩溃恢复，M2 核心功能） */
     private final PhysicsSnapshotMapper snapshotMapper;
+    /** 玩家世界位置持久化（P1：登录恢复用，优先级高于物理快照） */
+    private final UserWorldStateService userWorldStateService;
 
     private static class Player {
         long uid;
@@ -82,18 +86,31 @@ public class WorldPhysicsService implements InitializingBean {
     private long lastTickNanos = 0;
 
     public WorldPhysicsService(TerrainService terrain, WorldConfigService world,
-                               RegionBroker regionBroker, PhysicsSnapshotMapper snapshotMapper) {
+                               RegionBroker regionBroker, PhysicsSnapshotMapper snapshotMapper,
+                               UserWorldStateService userWorldStateService) {
         this.terrain = terrain; this.world = world; this.regionBroker = regionBroker;
         this.snapshotMapper = snapshotMapper;
+        this.userWorldStateService = userWorldStateService;
     }
 
-    /** 注册玩家（join 时调）：优先用 MySQL 快照恢复上次位置，无记录才用 spawn */
+    /** 注册玩家（join 时调）：优先用 user_world_state 业务持久化恢复，其次物理快照，最后随机 spawn 兜底 */
     public void addPlayer(long uid, String sessionId, double gx, double gz, double y) {
-        // M2 真实持久化恢复：从最近一次全量快照按 uid 命中上次坐标（崩溃/重启后回到离开处）
-        double[] restored = restorePosition(uid);
-        if (restored != null) {
-            gx = restored[0]; gz = restored[1]; y = restored[2];
-            log.info("[physics-J] restore uid={} from snapshot pos=({}, {}, {})", uid, gx, gz, y);
+        // 🔴 P1 业务持久化（优先级最高）：user_world_state 存的"上次离开坐标"——
+        //   玩家登录时恢复到离开处，避免每次刷新随机到新岛。
+        UserWorldState uws = userWorldStateService.get(uid);
+        if (uws != null) {
+            gx = uws.getGx();
+            gz = uws.getGz();
+            y = uws.getY();
+            log.info("[physics-J] restore uid={} from user_world_state pos=({}, {}, {})", uid, gx, gz, y);
+        } else {
+            // M2 真实持久化恢复：物理快照（崩溃/重启续跑，业务持久化的备份）
+            double[] restored = restorePosition(uid);
+            if (restored != null) {
+                gx = restored[0]; gz = restored[1]; y = restored[2];
+                log.info("[physics-J] restore uid={} from snapshot pos=({}, {}, {})", uid, gx, gz, y);
+            }
+            // 否则沿用 addPlayer 入参的 gx/gz/y（首登随机 spawn 兜底）
         }
         // 🔴 y 值合理性校验：MySQL 脏数据或异常值会导致 y=-798 之类极端值
         //   → 广播到前端 → 触发落水保护 → 推回 → 下一帧又是 -798 → 死循环打转

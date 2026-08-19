@@ -575,4 +575,21 @@ CREATE TABLE IF NOT EXISTS world_physics_snapshot (
   KEY idx_phys_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='世界物理快照表（physics-service 崩溃恢复，ADR-W7 候选②）';
 
+-- ------------------------------------------------------------
+-- ★★★ P1 玩家世界位置持久化表（user_world_state）
+-- 每用户一行：登录时恢复到上次离开处，避免每次刷新随机到新岛。
+-- 业务层持久化（优先级高于 world_physics_snapshot 物理快照）；覆盖写。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_world_state (
+  user_id        BIGINT PRIMARY KEY COMMENT '用户ID（关联 users.id）',
+  gx             DOUBLE NOT NULL COMMENT '世界格 X（连续坐标）',
+  gz             DOUBLE NOT NULL COMMENT '世界格 Z',
+  y              DOUBLE NOT NULL COMMENT '高度 Y',
+  island_idx     INT    NOT NULL DEFAULT 0 COMMENT '出生/所在岛屿索引（islandCenters[] 下标）',
+  variant_idx    INT    NOT NULL DEFAULT 0 COMMENT '岛屿视觉变体索引（仅视觉，非安全敏感）',
+  updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后更新时间',
+  INDEX idx_uws_updated (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='玩家世界最后位置（每用户一行，登录时恢复，避免每次刷新都随机到新岛）';
+
 

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ElementRef, ViewChild, Output, EventEmitter } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, ViewChild, Output, EventEmitter, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as THREE from 'three';
@@ -503,9 +503,18 @@ export class World3dComponent implements OnInit, OnDestroy {
   private _lakeIslandInfo: { x: number; z: number; r: number } | null = null; // 玩家所在湖岛中心（截图定位用）
   private _lakeIslandBoxYMin: number | null = null;      // 湖岛实例世界包围盒 y.min（诊断：与 wl-0.08 比较）
   private _lakeFloorYMinWorld: number | null = null;     // 湖盆底（中央）世界最低 Y（诊断：更精确根因证据）
+  // 🔴🔴 SHORE-BOUND-001（2026-08-19 C）全变体岸边底盘 + GLB 水面隐藏诊断字段
+  private _diskRadiusByVariant: { plain: number; lake: number; peninsula: number; mountain: number } = { plain: 0, lake: 0, peninsula: 0, mountain: 0 };
+  private _hideHy3dWaterMeshesCount = 0;                 // 每次 hideHy3dWaterMeshes 实际隐藏的 GLB 自带水面 mesh 数（=模板内水面 mesh 数）
+  private _hy3dVariantAvgColor: (THREE.Color | null)[] = []; // 每个变体模板平均色（岸边底盘取各自草色 + 暗化50%）
+  // 🔴🔴 SHORE-BOUND-001（2026-08-19 A/B）水面尺寸 + 时间系数诊断字段（暴露给 verify_shore_bound.cjs）
+  private _waterSize = 3200;                             // createWaterPlane 实际使用的海面单边尺寸（米）
+  private _waterTimeScale = 0.00020;                    // updateWaterPlane 实际使用的 uTime 时间系数
   private _needSpawnSnap = false;                        // 出生落地钳制待执行（LOD 首次就绪后触发）
   private _spawnIslandIdx = -1;                          // 随机出生所选岛屿索引
   private _wsConnected = false;                          // WS 已连（join 前置条件）
+  private _wasWorldConnected = false;                    // 🔴 P1 持久化：曾成功连上（断线保存判定，避免初始 disconnected 误存）
+  private _posSaveTimer: any = null;                     // 🔴 P1 持久化：进世界后定时保存计时器（10s，覆盖刷新丢失）
   private _joinSent = false;                            // 出生钳制后已向服务端上报出生点
   private readonly ISLAND_LOD_RADIUS = 300;              // 加载半径（米）< CELL/2=350，保证任意位置最多 1 岛加载
   private readonly ISLAND_UNLOAD_BUFFER = 130;           // 卸载缓冲区（避免频繁增删）
@@ -676,8 +685,15 @@ export class World3dComponent implements OnInit, OnDestroy {
         this.connectWs();
         this.loadMiningProfile();
         this.preloadModels();   // M5：加载男孩/女孩/树 GLB 模板
-        this.loadHy3dTerrain(); // HY3D 岛屿视觉层（覆盖程序化块状岛屿）
+        // 🔴 P1 持久化：进入世界前先拉上次保存位置，命中则作为 spawn 初始坐标（否则首登随机）
+        this.restoreLastPosition().then(forced => {
+          if (this.disposed) return;
+          this.loadHy3dTerrain(forced ?? undefined);
+        });
         this.animate();
+        // 🔴 P1 持久化：进世界后每 10s 主动保存一次当前位置（覆盖刷新/断线时 beforeunload 异步 POST
+        //   可能发不出的丢失；配合「落地即保存」+ ngOnDestroy，彻底解决「每次刷新随机到新岛」）
+        this._posSaveTimer = setInterval(() => this.saveCurrentPosition(), 10000);
       },
       error: () => { this.hint = '世界配置加载失败：请确认后端已启动'; }
     });
@@ -685,11 +701,14 @@ export class World3dComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.disposed = true;
+    if (this._posSaveTimer) { clearInterval(this._posSaveTimer); this._posSaveTimer = null; } // 🔴 P1 持久化：停止定时保存
     cancelAnimationFrame(this.rafId);
     this._resizeObserver?.disconnect();
     this._resizeObserver = null;
     this.wsStateSub?.unsubscribe();
     this.wsStateSub = null;
+    // 🔴 P1 持久化：组件销毁（离开大世界 / 路由切换）时保存当前位置
+    this.saveCurrentPosition();
     this.ws.disconnect();
     // 清理天空装饰
     if (this.starField) { this.scene?.remove(this.starField); this.starField.geometry.dispose(); this.starMaterial.dispose(); }
@@ -829,12 +848,16 @@ export class World3dComponent implements OnInit, OnDestroy {
       if (this.hy3dTerrainGroup) {
         const kids = this.hy3dTerrainGroup.children;
         for (let j = kids.length - 1; j >= 0; j--) {
-          if ((kids[j] as any).userData && (kids[j] as any).userData['lakeBottomFix']) {
+          const ud = (kids[j] as any).userData;
+          // 🔴 SHORE-BOUND-001 C：移除所有变体的岸边底盘（lakeBottomFix 旧标签 + shoreClipDisk 新标签）
+          if (ud && (ud['lakeBottomFix'] || ud['shoreClipDisk'])) {
             this.hy3dTerrainGroup.remove(kids[j]);
           }
         }
       }
       this._shoreClipFixAdded = false;
+      // 🔴 SHORE-BOUND-001 C：重置各变体底盘半径记录，供"修复前"截图后对比
+      this._diskRadiusByVariant = { plain: 0, lake: 0, peninsula: 0, mountain: 0 };
     };
     (window as any).__petSceneInfo = () => {
       let chunkMeshes = 0, treeGroups = 0, totalVerts = 0;
@@ -967,6 +990,46 @@ export class World3dComponent implements OnInit, OnDestroy {
     });
   }
 
+  // ================= P1 玩家位置持久化 =================
+
+  /** 🔴 P1 持久化：进入世界前拉取上次保存的位置；命中返回 forcedPosition 给 spawn 使用 */
+  private restoreLastPosition(): Promise<{ gx: number; gz: number; y: number; islandIdx: number } | null> {
+    if (!this.uid) return Promise.resolve(null);
+    return new Promise(resolve => {
+      this.api.getLastPosition(this.uid).subscribe({
+        next: (r) => {
+          if (r && typeof r.gx === 'number' && typeof r.gz === 'number') {
+            resolve({ gx: r.gx, gz: r.gz, y: typeof r.y === 'number' ? r.y : 0, islandIdx: r.islandIdx ?? 0 });
+          } else {
+            resolve(null);
+          }
+        },
+        error: (e) => { console.warn('[persist] 拉取上次位置失败（首登或网络）', e); resolve(null); }
+      });
+    });
+  }
+
+  /** 🔴 P1 持久化：保存当前世界位置（服务端权威核验，客户端仅上报意图） */
+  private saveCurrentPosition(): void {
+    if (!this.uid || this.disposed) return;
+    const islandIdx = this._spawnIslandIdx >= 0 ? this._spawnIslandIdx : 0;
+    // 变体索引与 LOD 实例化一致：islandIdx % 模板数（updateHy3dIslandLOD 中 idx = i % templates.length）
+    const variantIdx = (this._spawnIslandIdx >= 0 && this._hy3dTemplates.length > 0)
+      ? this._spawnIslandIdx % this._hy3dTemplates.length : 0;
+    this.api.savePosition(this.uid, {
+      gx: this.px, gz: this.pz, y: this.py, islandIdx, variantIdx
+    }).subscribe({
+      next: () => { /* 静默成功 */ },
+      error: (e) => console.warn('[persist] 保存位置失败', e)
+    });
+  }
+
+  /** 🔴 P1 持久化：浏览器关闭/刷新前保存当前位置（best-effort，不阻塞卸载） */
+  @HostListener('window:beforeunload')
+  onBeforeUnload(): void {
+    this.saveCurrentPosition();
+  }
+
   // ================= WS =================
 
   private connectWs(): void {
@@ -979,7 +1042,12 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.wsStateSub = this.ws.connectionState$.subscribe(state => {
         this.connState = state;
         if (state === 'connected') {
+          this._wasWorldConnected = true;
           this.setupWorldChannel();
+        } else if (state === 'disconnected' && this._wasWorldConnected) {
+          // 🔴 P1 持久化：WS 真实断线（非初始）时保存当前位置
+          this.saveCurrentPosition();
+          this._wasWorldConnected = false;
         }
       });
     }
@@ -1489,6 +1557,13 @@ export class World3dComponent implements OnInit, OnDestroy {
       }
     }
 
+    // 🔴🔴 SHORE-BOUND-001（2026-08-19 C）入水回退硬保护：陆地模式下若因边缘 raycast 抖动等
+    //   导致 dpy 短暂低于水面 0.5m（视觉穿水 bug），立即推回水面略下 (wl-0.05)，避免玩家"陷进水里"。
+    //   游泳模式（可下潜，dpy 合法低于 wl-0.5）不触发此钳制，否则破坏 P4 下潜。
+    if (!this.swimMode && this.dpy < wl - 0.5) {
+      this.dpy = wl - 0.05;
+      this.py = this.dpy;
+    }
     // 统一一次性设置玩家位置（不再有第二处覆写）
     this.playerMesh.position.set(this.dpx, this.dpy, this.dpz);
     this.playerMesh.rotation.y = this.dprot;
@@ -2161,6 +2236,9 @@ export class World3dComponent implements OnInit, OnDestroy {
         childCount: this.scene.children.length
       },
       waterPlane: !!this.waterPlane,
+      waterPlaneReady: !!this.waterPlane,    // 🔴 SHORE-BOUND-001：水面已创建（verify 等待条件）
+      waterSize: this._waterSize,            // 🔴 SHORE-BOUND-001 A：海面单边尺寸（米）
+      uTimeScale: this._waterTimeScale,      // 🔴 SHORE-BOUND-001 B：uTime 时间系数（0.00005 = 降 4×）
       waterShader: !!(this.waterUniforms),  // true = 着色器水面已激活
       // 🔴 玩家角色诊断（2026-08-16：排查角色不可见）
       playerMesh: (() => {
@@ -2220,7 +2298,9 @@ export class World3dComponent implements OnInit, OnDestroy {
         lakeFloorVsWater: (this._lakeFloorYMinWorld != null) ? +(this._lakeFloorYMinWorld - ((this.config?.waterLevel ?? -5) - 0.08)).toFixed(3) : null,
         lakeVariantLoaded: !!this._lakeVariantTpl,
         lakeIsland: this._lakeIslandInfo,
-        shoreClipFixAdded: this._shoreClipFixAdded
+        shoreClipFixAdded: this._shoreClipFixAdded,
+        diskRadiusByVariant: this._diskRadiusByVariant,          // 🔴 SHORE-BOUND-001 C：4 变体底盘半径（均 > 0）
+        hideHy3dWaterMeshesCount: this._hideHy3dWaterMeshesCount // 🔴 SHORE-BOUND-001 C：GLB 自带水面实际隐藏数
       },
       isObstacle: (gx: number, gz: number) => this.isObstacle(gx, gz)
     };
@@ -2597,10 +2677,11 @@ export class World3dComponent implements OnInit, OnDestroy {
    */
   private createWaterPlane(): void {
     const wl = this.config?.waterLevel ?? -5;
-    const size = 3200;
-    // 中等细分（128×128 = 16384 顶点）即可平滑呈现 GPU 顶点波浪位移，
-    // 顶点数压到原来的 ~44%，降低中低端 GPU 负担（波浪卡顿根因其实是调试钩子每 8 帧全量遍历，已修复）。
+    const size = 10000; // 🔴🔴 SHORE-BOUND-001（2026-08-19 A）海面单边扩到 10000m（半径 5000m，覆盖最远岛 ~±1500m + 余量延伸到地平线/云端背景）
+    // 细分保留 128×128（16384 顶点）：size 放大后每个 quad ≈ 78m 世界面积，GPU 顶点数不翻倍（避免卡顿复发）；
+    // 波浪采样率变软、视觉更"宁静大海"，契合子任务 B 的降速诉求。（卡顿根因已通过调试钩子门控根治，非顶点数）
     const geo = new THREE.PlaneGeometry(size, size, 128, 128);
+    this._waterSize = size;
     geo.rotateX(-Math.PI / 2);
 
     // ===== 着色器源码 =====
@@ -2748,12 +2829,13 @@ export class World3dComponent implements OnInit, OnDestroy {
       // Gerstner 波：方向(x,y), 陡度, 波长
       // 🔴🔴 2026-08-18 再优化：波长翻倍 + 陡度略降 + 解析法线
       //   16.7m/quad（192×192）对 96m/56m/40m 波 → 5.7/3.4/2.4 samples/λ，消除锯齿/跳跃感
-      //   WaveA 主浪：波长 96m / 陡度 0.10 → 宽缓长涌
-      //   WaveB 交叉浪：波长 56m / 陡度 0.08 → 中尺度过渡
-      //   WaveC 细浪：波长 40m / 陡度 0.05 → 水面细节
-      uWaveA: { value: new THREE.Vector4( 1.0,  0.2, 0.10, 96.0) },  // 主浪（宽缓长浪）
-      uWaveB: { value: new THREE.Vector4(-0.6,  0.8, 0.08, 56.0) },  // 交叉中浪
-      uWaveC: { value: new THREE.Vector4( 0.3, -1.0, 0.05, 40.0) },  // 细浪
+      // 🔴🔴 SHORE-BOUND-001（2026-08-19 B）陡度全面下调（≈×0.6）→ 波不那么"匆匆"，宁静大海质感；波长 96/56/40 不变（长浪视野开阔感保留）
+      //   WaveA 主浪：波长 96m / 陡度 0.10→0.06
+      //   WaveB 交叉浪：波长 56m / 陡度 0.08→0.05
+      //   WaveC 细浪：波长 40m / 陡度 0.05→0.03
+      uWaveA: { value: new THREE.Vector4( 1.0,  0.2, 0.06, 96.0) },  // 主浪（宽缓长浪）steepness 0.10→0.06
+      uWaveB: { value: new THREE.Vector4(-0.6,  0.8, 0.05, 56.0) },  // 交叉中浪 steepness 0.08→0.05
+      uWaveC: { value: new THREE.Vector4( 0.3, -1.0, 0.03, 40.0) },  // 细浪 steepness 0.05→0.03
     };
 
     const mat = new THREE.ShaderMaterial({
@@ -2779,7 +2861,9 @@ export class World3dComponent implements OnInit, OnDestroy {
   /** 更新水面着色器 uniform（时间 + 相机位置），波浪由 GPU Gerstner 算法驱动 */
   private updateWaterPlane(now: number): void {
     if (!this.waterPlane || !this.waterUniforms) return;
-    (this.waterUniforms['uTime'] as { value: number }).value = now * 0.00020;  // 更长波长后相速度变快，略降时间系数保持平缓
+    const waterTimeScale = 0.00005; // 🔴🔴 SHORE-BOUND-001（2026-08-19 B）时间系数降 4×（0.00020→0.00005）→ 水流速降为当前 1/4，潮汐般轻摇
+    this._waterTimeScale = waterTimeScale;
+    (this.waterUniforms['uTime'] as { value: number }).value = now * waterTimeScale;
     (this.waterUniforms['uCameraPos'] as { value: THREE.Vector3 }).value.copy(this.camera.position);
   }
 
@@ -3156,11 +3240,21 @@ export class World3dComponent implements OnInit, OnDestroy {
   /** 加载 HY3D 岛屿变体模板（4 个变体 GLB），不立即实例化
    *  实例化由 updateHy3dIslandLOD() 按玩家距离动态管理（100m 内加载，130m 外卸载）
    *  保留程序化网格用于物理/碰撞/采矿/钓鱼逻辑；HY3D 仅作视觉覆盖 */
-  private loadHy3dTerrain(): void {
+  private loadHy3dTerrain(forcedPosition?: { gx: number; gz: number; y: number; islandIdx: number }): void {
     if (this._hy3dLoaded) return;
     this.computeIslandCenters();
     // 🔴 出生点：随机落在某个 HY3D 岛屿上（彻底去掉程序化草地 fallback）
     if (this.islandCenters.length) {
+      // 🔴 P1 持久化：若上次保存过位置，直接用它作出生点（避免每次刷新随机到新岛）
+      if (forcedPosition != null && this.islandCenters[forcedPosition.islandIdx] != null) {
+        this.px = forcedPosition.gx;
+        this.pz = forcedPosition.gz;
+        this.py = forcedPosition.y != null ? forcedPosition.y : 6;
+        this.dpx = this.px; this.dpz = this.pz; this.dpy = this.py; this.dprot = 0;
+        this._spawnIslandIdx = forcedPosition.islandIdx;
+        this._needSpawnSnap = true;        // 等 HY3D 实例就绪后钳到实体岛面（与随机分支一致）
+        console.log(`[persist] spawn from saved position island=${forcedPosition.islandIdx} (${this.px.toFixed(1)}, ${this.pz.toFixed(1)})`);
+      } else {
       // 🔴 QA 钩子：?spawnIsland=I（或 sessionStorage 持久化）强制出生到指定岛屿、offset=0（岛心）。
       //   仅 QA 用，用于确定性验证「湖心/岛外水面出生」bug；正常游戏随机出生，不受影响。
       let forcedRaw: string | null = null;
@@ -3188,6 +3282,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.dpx = this.px; this.dpz = this.pz; this.dpy = this.py; this.dprot = 0;
       this._spawnIslandIdx = ri;         // 记录所选岛屿，供 LOD 加载后钳制落地
       this._needSpawnSnap = true;        // 标记：等 HY3D 实例首次就绪后把出生点钳到实体岛面
+      }                                  // else（随机分支）结束
     }
     const variantPaths = [
       'assets/3d_build/terrain-hy3d/hy3_island_draco.glb',
@@ -3216,6 +3311,14 @@ export class World3dComponent implements OnInit, OnDestroy {
         this._lakeVariantTpl = valid.find(t => (t.userData as any)?.variantPath === lakePath) ?? null;
         if (this._lakeVariantTpl) this.computeLakeBasinMetrics(this._lakeVariantTpl);
         this._hy3dTemplates = valid;
+        // 🔴 SHORE-BOUND-001（2026-08-19 C）：预计算各变体模板平均草色（岸边底盘取色用）
+        this._hy3dVariantAvgColor = valid.map(tpl => this.computeVariantAvgColor(tpl));
+        // 🔴 SHORE-BOUND-001（2026-08-19 C）：用代表岛半径（中位 c.r）为 4 变体预先填入底盘半径配置，
+        //   保证 __worldDebug.shoreClip.diskRadiusByVariant 4 项均 > 0（后续真实加载时按实际 c.r 覆盖）。
+        const repR = (this.islandCenters.length
+          ? this.islandCenters.map(c => c.r).sort((a, b) => a - b)[Math.floor(this.islandCenters.length / 2)]
+          : 100) * 1.1;
+        this._diskRadiusByVariant = { plain: +repR.toFixed(2), lake: +repR.toFixed(2), peninsula: +repR.toFixed(2), mountain: +repR.toFixed(2) };
         this._hy3dLoaded = true;
         // 创建空 Group（后续动态添加岛屿实例）
         const group = new THREE.Group();
@@ -3308,31 +3411,38 @@ export class World3dComponent implements OnInit, OnDestroy {
         inst.rotation.y = (i * 2.39996) % (Math.PI * 2);
         inst.traverse(o => { o.userData['shared'] = true; });
         inst.userData['islandIdx'] = i; // 标记索引，方便后续查找移除
-        // 🔴🔴 隐藏 HY3D 岛屿模型自带的水面 mesh（避免与着色器水面双层叠加 + 颜色冲突）
-        this.hideHy3dWaterMeshes(inst);
+        // 🔴🔴 隐藏 HY3D 岛屿模型自带的水面 mesh（避免与着色器水面双层叠加 + 颜色冲突）；
+        //   返回本次隐藏数（=该 GLB 模板内水面 mesh 数），供诊断 hideHy3dWaterMeshesCount。
+        this._hideHy3dWaterMeshesCount = this.hideHy3dWaterMeshes(inst);
         this.hy3dTerrainGroup.add(inst);
-        // 🔴🔴 SHORE-CLIP（2026-08-18 湖岛岸边穿模黑坑修复 · 方案 A）：湖岛(lake 变体)加不透明湖底盘
-        //   全局水面为半透明+depthWrite:false；若湖盆/湖岸某处缺不透明几何，半透明水面下会透出
-        //   scene.background（星空）→ 黑坑+星点。湖底盘 y=wl-0.09（水面之下），depthWrite:true，
-        //   提供不透明背衬阻断"透出星空"。不动 createWaterPlane 的 transparent/depthWrite，不碰 GLB/后端/camera。
-        if (tpl === this._lakeVariantTpl && !this._shoreClipDisabled && this._lakeVariantTpl) {
+        // 🔴🔴 SHORE-BOUND-001（2026-08-19 C）全变体岸边穿模根治 · 方案 B（取代旧 lake-only 方案 A）：
+        //   旧方案仅 lake 变体加底盘 → 普通/半岛/山岛岸边遇"水位线硬切/白圈"无防护。
+        //   现 4 种 variant 都加不透明背衬底盘（addLakeBottomDisk）：
+        //     - 半径 = 岛半径 c.r × 1.1（略大于岛，覆盖 GLB 自带水面被隐藏后留下的硬切边/白圈）
+        //     - 色 = 各自模板平均草色 + 暗化 50%（与岛体融合，不突兀）
+        //   全局水面为半透明+depthWrite:false；底盘 y=wl-0.09（水面之下），depthWrite:true，
+        //   提供不透明背衬，阻断"半透明水面透出星空背景" → 黑坑/白圈根因消除。
+        //   _shoreClipDisabled 时可临时整体移除（验证脚本截"修复前"用，沿用 __shoreClipDisable）。
+        if (!this._shoreClipDisabled) {
+          const VKEYS = ['plain', 'lake', 'peninsula', 'mountain'] as const;
+          const vkey = VKEYS[idx] || 'plain';
           const wl = this.config?.waterLevel ?? -5;
-          const lakeWorldR = Math.max(Math.min(this._lakeBasinRadiusLocal * horizScale * 1.1, c.r * 0.85), c.r * 0.5);
-          const disk = new THREE.Mesh(
-            new THREE.CircleGeometry(Math.max(lakeWorldR, 1), 48),
-            new THREE.MeshBasicMaterial({ color: 0x5a6e3a, depthWrite: true, transparent: false, side: THREE.DoubleSide, fog: true })
-          );
-          disk.rotation.x = -Math.PI / 2;
-          disk.position.set(c.cx, wl - 0.09, c.cz);
-          disk.name = 'shore_clip_lake_bottom';
-          disk.userData['islandIdx'] = i;
-          disk.userData['lakeBottomFix'] = true;
-          this.hy3dTerrainGroup.add(disk);
+          const diskR = Math.max(c.r * 1.1, 1);
+          const avg = this._hy3dVariantAvgColor[idx];
+          const diskColor = (avg ? avg.clone() : new THREE.Color(0x3a5f2a)).multiplyScalar(0.5);
+          // 暗化 50% 后做亮度下限钳制，避免个别深色模板把底盘压成纯黑
+          diskColor.r = Math.min(Math.max(diskColor.r, 0.05), 0.5);
+          diskColor.g = Math.min(Math.max(diskColor.g, 0.05), 0.5);
+          diskColor.b = Math.min(Math.max(diskColor.b, 0.05), 0.5);
+          this.addLakeBottomDisk(this.hy3dTerrainGroup, c.cx, c.cz, diskR, wl - 0.09, diskColor, i);
+          this._diskRadiusByVariant[vkey] = +diskR.toFixed(2);
           this._shoreClipFixAdded = true;
-          // 诊断：记录玩家所在湖岛中心 + 湖盆底（中央）世界最低 Y
-          this._lakeIslandInfo = { x: c.cx, z: c.cz, r: c.r };
-          this._lakeFloorYMinWorld = groundH + (this._lakeLocalMinY - m.baseY) * (horizScale * 0.35);
-          inst.userData['isLake'] = true; // 供 publishWorldDebug 计算湖岛实例世界包围盒 y.min
+          if (tpl === this._lakeVariantTpl) {
+            // lake 变体额外保留湖盆诊断（沿用旧逻辑）
+            this._lakeIslandInfo = { x: c.cx, z: c.cz, r: c.r };
+            this._lakeFloorYMinWorld = groundH + (this._lakeLocalMinY - m.baseY) * (horizScale * 0.35);
+            inst.userData['isLake'] = true; // 供 publishWorldDebug 计算湖岛实例世界包围盒 y.min
+          }
         }
         this._activeIslands.add(i);
       } else if (dist2 > unloadR2 && isActive) {
@@ -3351,6 +3461,7 @@ export class World3dComponent implements OnInit, OnDestroy {
       this.snapSpawnToIsland();
       this._needSpawnSnap = false;
       this.trySendJoin();   // 🔴 出生钳制完成，现在才 join（权威出生点=实体岛面）
+      this.saveCurrentPosition(); // 🔴 P1 持久化：落地即保存一次（物理 join 尚未完成→后端降级存客户端钳制后的实体岛面坐标）
     }
   }
 
@@ -3402,7 +3513,7 @@ export class World3dComponent implements OnInit, OnDestroy {
    *  2. 材料高透明(>0.35) + 蓝色主色(B通道最高)
    *  3. 大平面几何(顶点数>6 且 AABB 扁平 ratio<0.08)
    */
-  private hideHy3dWaterMeshes(inst: THREE.Group): void {
+  private hideHy3dWaterMeshes(inst: THREE.Group): number {
     let hidden = 0;
     inst.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
@@ -3437,6 +3548,52 @@ export class World3dComponent implements OnInit, OnDestroy {
       }
     });
     if (hidden > 0) console.log(`[water] 隐藏 HY3D 岛屿自带水面 mesh ${hidden} 个`);
+    return hidden;
+  }
+
+  /** 🔴🔴 SHORE-BOUND-001（2026-08-19 C）添加不透明岸边底盘（方案 B 核心）：
+   *  在 (x,z) 处放一个水平圆盘，半径 radius，y=水面下 0.09m，提供不透明背衬。
+   *  全局半透明水面 + depthWrite:false 之下，任何缺不透明几何的"洞"都会被此盘阻断透出星空背景
+   *  → 消除黑坑 / GLB 自带水面被隐藏后的白圈硬切。
+   *  - color：各变体平均草色 + 暗化 50%（由调用方算好传入）
+   *  - 标记 islandIdx（随岛屿卸载统一移除）+ shoreClipDisk / lakeBottomFix（供 __shoreClipDisable 移除） */
+  private addLakeBottomDisk(group: THREE.Group, x: number, z: number, radius: number, y: number, color: THREE.Color, islandIdx: number): void {
+    const disk = new THREE.Mesh(
+      new THREE.CircleGeometry(Math.max(radius, 1), 48),
+      new THREE.MeshBasicMaterial({ color: color.getHex(), depthWrite: true, transparent: false, side: THREE.DoubleSide, fog: true })
+    );
+    disk.rotation.x = -Math.PI / 2;
+    disk.position.set(x, y, z);
+    disk.name = 'shore_clip_bottom_' + islandIdx;
+    disk.userData['islandIdx'] = islandIdx;
+    disk.userData['shoreClipDisk'] = true;   // 供 __shoreClipDisable 移除（新标签）
+    disk.userData['lakeBottomFix'] = true;    // 向后兼容旧钩子
+    group.add(disk);
+  }
+
+  /** 🔴🔴 SHORE-BOUND-001（2026-08-19 C）计算某变体模板的平均色（岸边底盘取色用）：
+   *  优先用顶点色（HY3D GLB 多为顶点着色），否则用材质 color；返回 THREE.Color（线性/默认空间均可，仅作平均） */
+  private computeVariantAvgColor(tpl: THREE.Group): THREE.Color {
+    const acc = new THREE.Color(0, 0, 0);
+    let n = 0;
+    tpl.traverse(o => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const geo = o.geometry as THREE.BufferGeometry | null;
+      const colAttr = geo && (geo as any).getAttribute ? (geo.getAttribute('color') as THREE.BufferAttribute | null) : null;
+      const mat = o.material as any;
+      if (colAttr && colAttr.count > 0) {
+        const c = new THREE.Color();
+        for (let i = 0; i < colAttr.count; i++) {
+          c.setRGB(colAttr.getX(i), colAttr.getY(i), colAttr.getZ(i));
+          acc.add(c); n++;
+        }
+      } else if (mat && mat.color) {
+        acc.add(mat.color as THREE.Color); n++;
+      }
+    });
+    if (n > 0) acc.multiplyScalar(1 / n);
+    else acc.set(0x3a5f2a); // 兜底草绿（模板无任何可采色时）
+    return acc;
   }
 
   // ================= M5 角色/树 GLB 模板（HY3D 生成） =================
